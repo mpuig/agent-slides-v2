@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
 from websockets.asyncio.client import connect
+from websockets.exceptions import InvalidStatus
 
 from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide
 from agent_slides.preview import chat_html_path, client_html_path, read_chat_html, read_client_html
@@ -261,6 +264,108 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_preview_server_chat_mode_serves_chat_client_and_messages(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        download_path = tmp_path / "deck-output.pptx"
+        download_bytes = b"pptx-bytes"
+        download_path.write_bytes(download_bytes)
+
+        async def handle_chat_message(message: dict[str, object], emit) -> None:
+            assert message == {"type": "user_message", "text": "Add a slide about Q3 revenue"}
+
+            await emit({"type": "assistant_message", "text": "Adding a slide...", "status": "thinking"})
+            await emit(
+                {
+                    "type": "tool_call",
+                    "text": "Running slide_add...",
+                    "status": "executing",
+                    "tool_name": "slide_add",
+                }
+            )
+            await emit({"type": "assistant_message", "text": "Done. Added slide 3.", "status": "done"})
+
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            mode="chat",
+            chat_message_handler=handle_chat_message,
+            debounce_ms=20,
+        )
+        await server.start()
+        try:
+            html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            download_response = await asyncio.to_thread(
+                _fetch_response, f"{server.origin}/download/{download_path.name}"
+            )
+
+            assert "agent-slides chat" in html
+            assert "/chat/ws" in html
+            assert payload["revision"] == 1
+            assert download_response["body"] == download_bytes
+            assert (
+                download_response["headers"]["Content-Disposition"]
+                == f'attachment; filename="{download_path.name}"'
+            )
+
+            async with connect(f"ws://127.0.0.1:{server.port}/chat/ws") as chat_client:
+                await chat_client.send(
+                    json.dumps({"type": "user_message", "text": "Add a slide about Q3 revenue"})
+                )
+
+                first = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+                second = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+                third = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+
+                assert first == {
+                    "type": "assistant_message",
+                    "text": "Adding a slide...",
+                    "status": "thinking",
+                }
+                assert second == {
+                    "type": "tool_call",
+                    "text": "Running slide_add...",
+                    "status": "executing",
+                    "tool_name": "slide_add",
+                }
+                assert third == {
+                    "type": "assistant_message",
+                    "text": "Done. Added slide 3.",
+                    "status": "done",
+                }
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_chat_websocket_is_not_available_in_preview_mode(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            with pytest.raises(InvalidStatus) as exc_info:
+                async with connect(f"ws://127.0.0.1:{server.port}/chat/ws"):
+                    pass
+
+            assert exc_info.value.response.status_code == 404
+
+            with pytest.raises(urllib.error.HTTPError) as http_exc:
+                await asyncio.to_thread(_fetch_bytes, f"{server.origin}/download/../outside.pptx")
+
+            assert http_exc.value.code == 404
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
 def test_client_html_is_packaged_and_self_contained() -> None:
     html_path = client_html_path()
     parser = InlineAssetParser()
@@ -401,3 +506,11 @@ def _fetch_text(url: str) -> str:
 def _fetch_bytes(url: str) -> bytes:
     with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
         return response.read()
+
+
+def _fetch_response(url: str) -> dict[str, object]:
+    with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
+        return {
+            "body": response.read(),
+            "headers": dict(response.headers.items()),
+        }

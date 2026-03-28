@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>agent-slides chat preview</title>
+    <title>agent-slides chat</title>
     <style>
       :root {
         color-scheme: light;
@@ -17,7 +17,6 @@
         --text-soft: #6a5841;
         --accent: #99602a;
         --accent-strong: #7f4814;
-        --accent-soft: #f0e1d0;
         --assistant: #ece7de;
         --shadow: 0 24px 80px rgba(78, 55, 21, 0.15);
       }
@@ -134,7 +133,8 @@
       }
 
       .status-dot[data-state="disconnected"],
-      .status-dot[data-state="reconnecting"] {
+      .status-dot[data-state="reconnecting"],
+      .status-dot[data-state="error"] {
         background: #b44933;
         box-shadow: 0 0 0 3px rgba(180, 73, 51, 0.16);
       }
@@ -437,15 +437,10 @@
           padding-right: 16px;
         }
 
-        .composer-shell,
-        .preview-meta,
-        .preview-footer {
-          align-items: stretch;
-        }
-
         .preview-meta,
         .preview-footer {
           flex-direction: column;
+          align-items: stretch;
         }
 
         .footer-actions {
@@ -487,8 +482,8 @@
           </div>
           <div class="composer">
             <div class="composer-shell">
-              <label for="chat-input" class="sr-only" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0);">Message</label>
-              <textarea id="chat-input" placeholder="Type a message, then wait 500ms to send…" autocomplete="off"></textarea>
+              <label for="chat-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0);">Message</label>
+              <textarea id="chat-input" placeholder="Add a slide about Q3 revenue, then wait 500ms to send…" autocomplete="off"></textarea>
               <button class="send-button" id="send-button" type="button" disabled>Send</button>
             </div>
           </div>
@@ -523,7 +518,7 @@
 
           <div class="panel-footer preview-footer">
             <span class="status">
-              <span class="status-dot" id="build-status-dot" data-state="idle"></span>
+              <span class="status-dot" id="build-status-dot" data-state="connected"></span>
               <span id="build-status-text">Ready to build</span>
             </span>
             <div class="footer-actions">
@@ -1020,17 +1015,24 @@
         if (typeof payload?.content === "string" && payload.content.trim()) {
           return payload.content;
         }
-        if (typeof payload?.detail === "string" && payload.detail.trim()) {
-          return payload.detail;
-        }
-        if (typeof payload?.status === "string" && payload.status.trim()) {
-          return payload.status;
-        }
         return "";
       };
 
+      const basename = (path) => {
+        if (typeof path !== "string" || !path.trim()) {
+          return null;
+        }
+        const parts = path.split(/[\\/]/).filter(Boolean);
+        return parts.length > 0 ? parts[parts.length - 1] : null;
+      };
+
+      const downloadHrefFromPath = (path) => {
+        const name = basename(path);
+        return name ? `/download/${encodeURIComponent(name)}` : null;
+      };
+
       const extractDownloadUrl = (payload) => {
-        const candidates = [
+        const explicit = [
           payload?.download_url,
           payload?.downloadUrl,
           payload?.url,
@@ -1039,8 +1041,17 @@
           payload?.data?.download_url,
           payload?.data?.downloadUrl,
           payload?.data?.url
-        ];
-        return candidates.find((candidate) => typeof candidate === "string" && candidate.trim()) || null;
+        ].find((candidate) => typeof candidate === "string" && candidate.trim());
+
+        if (explicit) {
+          return explicit;
+        }
+
+        return (
+          downloadHrefFromPath(payload?.tool_result?.output) ||
+          downloadHrefFromPath(payload?.toolResult?.output) ||
+          null
+        );
       };
 
       const showDownloadLink = (url) => {
@@ -1051,28 +1062,32 @@
 
       const handleChatMessage = (payload) => {
         const type = String(payload?.type ?? "");
-        const role = String(payload?.role ?? "");
-
-        if (type === "typing") {
-          setTypingVisible(Boolean(payload?.active ?? payload?.waiting ?? false));
-          return;
-        }
-
-        if (type === "tool_call" || type === "tool_start" || payload?.tool_name || payload?.toolName) {
-          const toolName = payload?.tool_name || payload?.toolName || payload?.name || "tool";
-          const toolStatus = payload?.status || payload?.phase || "Running";
-          addToolStatus(`${toolStatus} ${toolName}...`);
-          setTypingVisible(false);
-          return;
-        }
-
+        const text = extractText(payload);
         const downloadUrl = extractDownloadUrl(payload);
+
         if (downloadUrl) {
           showDownloadLink(downloadUrl);
         }
 
-        const text = extractText(payload);
-        if (type === "assistant_message" || role === "assistant") {
+        if (type === "thinking") {
+          setTypingVisible(true);
+          if (text) {
+            addMessage("system", text);
+          }
+          return;
+        }
+
+        if (type === "tool_call") {
+          const toolName = payload?.tool_name || payload?.toolName || "tool";
+          addToolStatus(text || `Running ${toolName}...`);
+          if (toolName === "build") {
+            setBuildState("connecting", "Building PPTX");
+          }
+          setTypingVisible(false);
+          return;
+        }
+
+        if (type === "assistant_message") {
           if (text) {
             addMessage("assistant", text);
           }
@@ -1080,17 +1095,12 @@
           return;
         }
 
-        if (type === "build_complete" || type === "build_result") {
-          const suffix = downloadUrl ? '<br><br><a class="download-link" href="' + downloadUrl + '">Download PPTX</a>' : "";
-          addHtmlMessage("assistant", text || "Build complete.", suffix);
-          setTypingVisible(false);
-          return;
-        }
-
-        if (type === "system" || role === "system") {
+        if (type === "error") {
           if (text) {
             addMessage("system", text);
           }
+          setBuildState("error", "Build failed");
+          setTypingVisible(false);
           return;
         }
 
@@ -1113,8 +1123,7 @@
         });
 
         chatSocket.addEventListener("message", (event) => {
-          const payload = JSON.parse(event.data);
-          handleChatMessage(payload);
+          handleChatMessage(JSON.parse(event.data));
         });
 
         chatSocket.addEventListener("close", () => {
@@ -1174,7 +1183,6 @@
         .finally(() => {
           connectPreview();
           connectChat();
-          setBuildState("connected", "Ready to build");
           updateSendState();
         });
     </script>
