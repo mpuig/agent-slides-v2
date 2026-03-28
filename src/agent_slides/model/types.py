@@ -17,7 +17,7 @@ EMU_PER_POINT = 12_700
 MAX_IMAGE_SIZE_WARNING_BYTES = 5 * 1024 * 1024
 SUPPORTED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".svg"})
 
-NodeType = Literal["text", "image"]
+NodeType = Literal["text", "image", "chart"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 
@@ -127,6 +127,11 @@ class Node(AgentSlidesModel):
                 self.content = NodeContent.model_validate(self.content)
             if self.image_path is not None:
                 raise ValueError("text nodes cannot define image_path")
+            return self
+
+        if self.type == "chart":
+            if self.image_path is not None:
+                raise ValueError("chart nodes cannot define image_path")
             return self
 
         if not self.image_path:
