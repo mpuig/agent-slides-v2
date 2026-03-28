@@ -23,11 +23,13 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
             async with connect(server.url) as websocket:
                 initial = await receive_update(websocket)
                 updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("watcher"))
+                rendering = await receive_update(websocket)
                 payload = await receive_update(websocket)
 
         assert initial["type"] == "slides_updated"
         assert initial["revision"] == 2
         assert initial["slides"] == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
+        assert rendering == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
         assert payload["type"] == "slides_updated"
         assert payload["revision"] == updated_deck.revision
         assert payload["slides"] == [
@@ -91,6 +93,11 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
                     receive_update(client_three),
                 )
                 updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("fanout"))
+                rendering_updates = await asyncio.gather(
+                    receive_update(client_one),
+                    receive_update(client_two),
+                    receive_update(client_three),
+                )
                 updates = await asyncio.gather(
                     receive_update(client_one),
                     receive_update(client_two),
@@ -101,6 +108,10 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
         assert all(
             update["slides"] == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
             for update in initial_updates
+        )
+        assert all(
+            update == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+            for update in rendering_updates
         )
         assert all(update["revision"] == updated_deck.revision for update in updates)
         assert all(
