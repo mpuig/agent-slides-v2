@@ -7,10 +7,10 @@ import json
 import click
 
 from agent_slides.commands.mutations import apply_mutation
-from agent_slides.errors import UNBOUND_NODES
+from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR, UNBOUND_NODES
 from agent_slides.io import mutate_deck
+from agent_slides.model import Deck, NodeContent
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model import Deck
 
 
 def _emit_json(payload: dict[str, object], *, err: bool = False) -> None:
@@ -40,14 +40,57 @@ def slide() -> None:
     """Manage deck slides."""
 
 
+def _parse_content_json(raw: str) -> dict[str, object]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Invalid JSON for '--content': {exc.msg} at line {exc.lineno} column {exc.colno}",
+        ) from exc
+
+    try:
+        return NodeContent.model_validate(payload).model_dump(mode="json")
+    except Exception as exc:
+        raise AgentSlidesError(SCHEMA_ERROR, "Argument '--content' must be valid structured text") from exc
+
+
 @slide.command("add")
 @click.argument("path")
-@click.option("--layout", "layout_name", required=True)
-def add_slide_command(path: str, layout_name: str) -> None:
+@click.option("--layout", "layout_name")
+@click.option("--auto-layout", is_flag=True, default=False)
+@click.option("--content", "content_json")
+@click.option("--image-count", default=0, type=int, show_default=True)
+def add_slide_command(
+    path: str,
+    layout_name: str | None,
+    auto_layout: bool,
+    content_json: str | None,
+    image_count: int,
+) -> None:
     """Append a slide using a named layout."""
 
+    if auto_layout and layout_name:
+        raise AgentSlidesError(SCHEMA_ERROR, "`--auto-layout` and `--layout` are mutually exclusive.")
+    if auto_layout:
+        if content_json is None:
+            raise AgentSlidesError(SCHEMA_ERROR, "`--content` is required when using `--auto-layout`.")
+        mutation_args: dict[str, object] = {
+            "auto_layout": True,
+            "content": _parse_content_json(content_json),
+            "image_count": image_count,
+        }
+    else:
+        if layout_name is None:
+            raise AgentSlidesError(SCHEMA_ERROR, "`--layout` is required unless `--auto-layout` is set.")
+        if content_json is not None:
+            raise AgentSlidesError(SCHEMA_ERROR, "`--content` requires `--auto-layout`.")
+        if image_count != 0:
+            raise AgentSlidesError(SCHEMA_ERROR, "`--image-count` requires `--auto-layout`.")
+        mutation_args = {"layout": layout_name}
+
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
-        return apply_mutation(deck, "slide_add", {"layout": layout_name}, provider)
+        return apply_mutation(deck, "slide_add", mutation_args, provider)
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})

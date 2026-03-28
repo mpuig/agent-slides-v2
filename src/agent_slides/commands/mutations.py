@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+from math import ceil
 from typing import Any
 
+from pydantic import ValidationError
+
+from agent_slides.engine.layout_suggestions import suggest_layouts
 from agent_slides.engine.reflow import rebind_slots
-from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
-from agent_slides.model import Deck, Node, NodeContent, Slide
+from agent_slides.errors import (
+    AgentSlidesError,
+    CHART_DATA_ERROR,
+    INVALID_CHART_TYPE,
+    INVALID_NODE_TYPE,
+    INVALID_SLOT,
+    SCHEMA_ERROR,
+)
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide
 from agent_slides.model.layout_provider import LayoutProvider
+from agent_slides.model.types import CHART_TYPE_VALUES
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -24,8 +36,11 @@ SUPPORTED_MUTATION_COMMANDS = frozenset(
         "slot_set",
         "slot_clear",
         "slot_bind",
+        "chart_add",
+        "chart_update",
     }
 )
+_UNSET = object()
 
 
 def _normalize_slide_ref(ref: Any) -> str | int:
@@ -55,6 +70,27 @@ def _require_string(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-empty string")
     return value.strip()
+
+
+def _require_bool(args: dict[str, Any], key: str, *, default: bool = False) -> bool:
+    value = args.get(key, default)
+    if not isinstance(value, bool):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a boolean")
+    return value
+
+
+def _require_non_negative_int(args: dict[str, Any], key: str, *, default: int = 0) -> int:
+    value = args.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative integer")
+    return value
+
+
+def _require_object(args: dict[str, Any], key: str) -> dict[str, Any]:
+    value = args.get(key)
+    if not isinstance(value, dict):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be an object")
+    return value
 
 
 def _create_slot_nodes(deck: Deck, layout_name: str, provider: LayoutProvider) -> Slide:
@@ -157,6 +193,136 @@ def _coerce_slot_set_payload(args: dict[str, Any]) -> tuple[str, NodeContent, st
     return "text", _coerce_content(args), None, _coerce_image_fit(args)
 
 
+def _validate_chart_type(chart_type: str) -> str:
+    if chart_type not in CHART_TYPE_VALUES:
+        raise AgentSlidesError(
+            INVALID_CHART_TYPE,
+            f"Unknown chart type {chart_type!r}",
+            details={
+                "chart_type": chart_type,
+                "valid_types": list(CHART_TYPE_VALUES),
+            },
+        )
+    return chart_type
+
+
+def _raise_chart_validation_error(exc: ValidationError) -> None:
+    errors = exc.errors(include_url=False)
+    first_error = errors[0] if errors else {"msg": "invalid chart data"}
+    raise AgentSlidesError(
+        CHART_DATA_ERROR,
+        f"Invalid chart data: {first_error['msg']}",
+        details={"validation_errors": errors},
+    ) from exc
+
+
+def _build_chart_spec(
+    raw_data: object,
+    *,
+    chart_type: str | None = None,
+    title: str | None | object = _UNSET,
+    existing: ChartSpec | None = None,
+) -> ChartSpec:
+    if not isinstance(raw_data, dict):
+        raise AgentSlidesError(SCHEMA_ERROR, "Argument 'data' must be an object")
+
+    payload = existing.model_dump(mode="json") if existing is not None else {}
+    payload.update(raw_data)
+    if chart_type is not None:
+        payload["chart_type"] = _validate_chart_type(chart_type)
+    if title is not _UNSET:
+        payload["title"] = title
+
+    try:
+        return ChartSpec.model_validate(payload)
+    except ValidationError as exc:
+        _raise_chart_validation_error(exc)
+
+
+def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
+    slot_nodes = _find_slot_nodes(slide, slot_name)
+    if slot_nodes:
+        node = slot_nodes[0]
+        _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+    else:
+        node = Node(
+            node_id=deck.next_node_id(),
+            slot_binding=slot_name,
+            type="text",
+        )
+        slide.nodes.append(node)
+
+    node.slot_binding = slot_name
+    node.type = "text"
+    node.content = content
+
+
+def _chunk_blocks(blocks: list[Any], chunk_count: int) -> list[list[Any]]:
+    if chunk_count <= 0 or not blocks:
+        return []
+    if chunk_count == 1:
+        return [blocks]
+    if len(blocks) <= chunk_count:
+        return [[block] for block in blocks]
+
+    chunks: list[list[Any]] = []
+    index = 0
+    remaining_blocks = len(blocks)
+    remaining_chunks = chunk_count
+    while remaining_chunks > 0 and index < len(blocks):
+        size = ceil(remaining_blocks / remaining_chunks)
+        chunks.append(blocks[index : index + size])
+        index += size
+        remaining_blocks = len(blocks) - index
+        remaining_chunks -= 1
+    return chunks
+
+
+def _populate_auto_layout_slide(
+    deck: Deck,
+    slide: Slide,
+    content: NodeContent,
+    provider: LayoutProvider,
+) -> None:
+    layout = provider.get_layout(slide.layout)
+    blocks = [block for block in content.blocks if block.text.strip()]
+    if not blocks:
+        return
+
+    heading_slot = next(
+        (slot_name for slot_name, slot in layout.slots.items() if slot.role == "heading"),
+        None,
+    )
+    heading_index = next((index for index, block in enumerate(blocks) if block.type == "heading"), None)
+    if heading_slot is not None:
+        if heading_index is None:
+            heading_index = 0
+        heading_block = blocks.pop(heading_index)
+        _set_slot_content(deck, slide, heading_slot, NodeContent(blocks=[heading_block]))
+
+    target_slots = [
+        slot_name
+        for slot_name, slot in layout.slots.items()
+        if slot.role != "image" and slot_name != heading_slot
+    ]
+    for slot_name, block_group in zip(target_slots, _chunk_blocks(blocks, len(target_slots)), strict=False):
+        _set_slot_content(deck, slide, slot_name, NodeContent(blocks=block_group))
+
+
+def _summarize_auto_layout_reason(reason: str) -> str:
+    prefixes = (
+        "Heading-focused content",
+        "Single supporting content block",
+        "Two balanced content blocks",
+        "Three balanced content blocks",
+        "Image-led layout with supporting content",
+    )
+    for prefix in prefixes:
+        if reason.startswith(prefix):
+            return prefix
+    return reason.rstrip(".")
+
+
 def apply_mutation(
     deck: Deck,
     command: str,
@@ -166,6 +332,40 @@ def apply_mutation(
     """Apply one supported mutation and return its structured result."""
 
     if command == "slide_add":
+        auto_layout = _require_bool(args, "auto_layout", default=False)
+        if auto_layout:
+            if isinstance(args.get("layout"), str) and args["layout"].strip():
+                raise AgentSlidesError(
+                    SCHEMA_ERROR,
+                    "Arguments 'auto_layout' and 'layout' are mutually exclusive",
+                )
+
+            content = _coerce_content(args)
+            if content.is_empty():
+                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must include at least one text block")
+
+            image_count = _require_non_negative_int(args, "image_count", default=0)
+            suggestions = suggest_layouts(content, image_count=image_count, limit=1)
+            if not suggestions:
+                raise AgentSlidesError(SCHEMA_ERROR, "No suitable layout found for the provided content")
+
+            suggestion = suggestions[0]
+            slide = _create_slot_nodes(deck, suggestion.layout, provider)
+            _populate_auto_layout_slide(deck, slide, content, provider)
+            deck.slides.append(slide)
+            return {
+                "slide_index": len(deck.slides) - 1,
+                "slide_id": slide.slide_id,
+                "layout": slide.layout,
+                "auto_selected": True,
+                "reason": _summarize_auto_layout_reason(suggestion.reason),
+            }
+
+        if "content" in args:
+            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' requires 'auto_layout' to be true")
+        if "image_count" in args:
+            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'image_count' requires 'auto_layout' to be true")
+
         slide = _create_slot_nodes(deck, _require_string(args, "layout"), provider)
         deck.slides.append(slide)
         return {
@@ -208,6 +408,9 @@ def apply_mutation(
                 node_id=deck.next_node_id(),
                 slot_binding=slot_name,
                 type=node_type,
+                content=content,
+                image_path=image_path,
+                image_fit=image_fit,
             )
             slide.nodes.append(node)
 
@@ -216,6 +419,8 @@ def apply_mutation(
         node.content = content
         node.image_path = image_path
         node.image_fit = image_fit
+        node.chart_spec = None
+        node.style_overrides.pop("placeholder", None)
 
         if "font_size" in args:
             font_size = args["font_size"]
@@ -264,6 +469,82 @@ def apply_mutation(
             "slide_id": slide.slide_id,
             "slot": slot_name,
             "node_id": node.node_id,
+        }
+
+    if command == "chart_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
+
+        title: str | None | object = _UNSET
+        if "title" in args:
+            raw_title = args["title"]
+            if raw_title is None:
+                title = None
+            elif not isinstance(raw_title, str) or not raw_title.strip():
+                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'title' must be a non-empty string")
+            else:
+                title = raw_title.strip()
+
+        chart_spec = _build_chart_spec(
+            _require_object(args, "data"),
+            chart_type=_require_string(args, "type"),
+            title=title,
+        )
+
+        slot_nodes = _find_slot_nodes(slide, slot_name)
+        if slot_nodes:
+            node = slot_nodes[0]
+            _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+        else:
+            node = Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="chart",
+                chart_spec=chart_spec,
+            )
+            slide.nodes.append(node)
+
+        node.slot_binding = slot_name
+        node.type = "chart"
+        node.content = NodeContent()
+        node.image_path = None
+        node.image_fit = "contain"
+        node.chart_spec = chart_spec
+        node.style_overrides.pop("placeholder", None)
+
+        return {
+            "slide_id": slide.slide_id,
+            "slot": slot_name,
+            "node_id": node.node_id,
+            "chart_type": chart_spec.chart_type,
+        }
+
+    if command == "chart_update":
+        node_id = _require_string(args, "node")
+        _, node = _find_node(deck, node_id)
+        if node.type != "chart":
+            raise AgentSlidesError(
+                INVALID_NODE_TYPE,
+                f"Node {node_id!r} is not a chart node",
+                details={
+                    "node_id": node_id,
+                    "expected_type": "chart",
+                    "actual_type": node.type,
+                },
+            )
+        if node.chart_spec is None:
+            raise AgentSlidesError(SCHEMA_ERROR, f"Chart node {node_id!r} is missing chart_spec")
+
+        chart_spec = _build_chart_spec(
+            _require_object(args, "data"),
+            chart_type=node.chart_spec.chart_type,
+            existing=node.chart_spec,
+        )
+        node.chart_spec = chart_spec
+        return {
+            "node_id": node.node_id,
+            "chart_type": chart_spec.chart_type,
+            "updated": True,
         }
 
     raise AgentSlidesError(
