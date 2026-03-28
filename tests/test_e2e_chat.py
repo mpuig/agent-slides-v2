@@ -121,7 +121,7 @@ def test_multi_turn_conversation_preserves_history_and_builds(tmp_path: Path) ->
                     },
                 ),
                 tool_use("toolu-4", "slide_set_layout", {"slide": 0, "layout": "two_col"}),
-                tool_use("toolu-5", "build", {"output": "chat-export.pptx"}),
+                tool_use("toolu-5", "build", {"output_path": "chat-export.pptx"}),
             ],
             [text_block("Updated the deck and exported the PPTX.")],
         ]
@@ -182,7 +182,7 @@ def test_build_tool_creates_pptx_and_returns_download_url(tmp_path: Path) -> Non
             ],
             [text_block("Prepared the slide.")],
             [
-                tool_use("toolu-3", "build", {"output": "downloads/final-deck.pptx"}),
+                tool_use("toolu-3", "build", {"output_path": "downloads/final-deck.pptx"}),
             ],
             [text_block("Export is ready.")],
         ]

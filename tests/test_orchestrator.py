@@ -8,8 +8,8 @@ from typing import Any
 
 from agent_slides.io import init_deck, read_deck
 from agent_slides.model.constraints import Constraint
-from agent_slides.preview import orchestrator as orchestrator_module
-from agent_slides.preview.orchestrator import DeckOrchestrator, SYSTEM_PROMPT
+from agent_slides import orchestrator as orchestrator_module
+from agent_slides.orchestrator import DeckOrchestrator, SYSTEM_PROMPT
 
 
 def test_orchestrator_system_prompt_references_storytelling_guide() -> None:
@@ -88,8 +88,10 @@ def test_orchestrator_executes_tool_calls_and_preserves_conversation_history(
     assert {tool["name"] for tool in api_calls[0]["tools"]} == {
         "slide_add",
         "slot_set",
+        "slot_bind",
         "slot_clear",
         "chart_add",
+        "chart_update",
         "slide_set_layout",
         "slide_remove",
         "get_deck_info",
@@ -217,11 +219,12 @@ def test_orchestrator_build_tool_writes_requested_output(tmp_path: Path, monkeyp
 
     output_path = tmp_path / "artifacts" / "demo.pptx"
     assert output_path.read_bytes() == b"pptx"
-    assert responses[1].tool_result == {
-        "ok": True,
-        "output": str(output_path),
-        "slides": 0,
-    }
+    assert responses[1].tool_result["ok"] is True
+    assert responses[1].tool_result["tool"] == "build"
+    assert responses[1].tool_result["slides"] == 0
+    assert responses[1].tool_result["output"] == str(output_path)
+    assert responses[1].tool_result["output_path"] == str(output_path)
+    assert responses[1].tool_result["download_url"] == output_path.resolve().as_uri()
     assert responses[-1].text == "Built the presentation."
 
 
