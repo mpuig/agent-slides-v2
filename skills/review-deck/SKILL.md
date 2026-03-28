@@ -75,7 +75,7 @@ Use the rendered PNG as the source of truth for what the slide actually looks li
 
 Treat `report.json` as the machine baseline and the slide PNGs as the visual evidence.
 
-Inline the actual checklist. Evaluate each rendered slide against these items:
+Use this 38-item checklist directly during the audit:
 
 ### 1. Visual Hierarchy (6 items)
 
@@ -142,7 +142,7 @@ Your output should summarize:
 - the top issues with screenshot evidence
 - specific fixes that will materially improve the deck
 
-Use this rubric for every category:
+Use this rubric for each category:
 
 ```text
 A  = 0 failures in category
@@ -154,6 +154,12 @@ C  = 4+ failures
 D  = majority of items fail
 F  = category completely ignored
 ```
+
+Calculate overall grade as a weighted average:
+
+- Content Quality counts 2x
+- AI Slop Detection counts 1.5x
+- Visual Hierarchy, Typography, Layout Quality, and Deck-Level Patterns count 1x each
 
 Prefer pointing to concrete slide files such as:
 
@@ -171,12 +177,37 @@ Only use auto-fix when the user explicitly wants fixes applied. The explicit app
 uv run agent-slides review deck.json --fix
 ```
 
-Current auto-fixes target common mechanical issues:
+Use an iterative fix loop, not a single cleanup pass:
+
+```text
+Fix Loop (max 3 passes):
+  Pass N:
+    -> Fix top issue
+    -> Re-render affected slide via LibreOffice
+    -> Re-evaluate against checklist
+    -> Pass? -> next issue
+    -> Still failing after 2 attempts? -> flag as unresolvable, move on
+
+  Stop early when: all categories B+ or above, or 3 passes complete
+  Each fix produces a before/after PNG pair as evidence
+```
+
+Apply fixes in this priority order:
+
+1. Content quality (action titles, body proves title)
+2. Bullet count (split slides >6 bullets)
+3. Missing elements (chart titles, source lines)
+4. Layout variety (swap repeated layouts)
+5. Visual issues (spacing, alignment)
+
+Within that loop, prefer these common mechanical fixes when they match the top issue:
 
 - rewrite generic topic-label titles using slide evidence when possible
 - add missing chart titles
+- add missing source lines for quantified claims
 - split bullet-heavy `title_content` slides into a follow-up slide
-- rerender the deck and produce before/after comparison output
+- swap repeated layouts when deck-level monotony is dragging the grade
+- rerender the deck and produce before/after comparison output for each fix
 
 After `--fix`, inspect the new `after/` screenshots and compare the `before` and `after` grades in `report.json`.
 
