@@ -354,13 +354,6 @@ DEFINITIONS: dict[str, Any] = {
         },
         required=["stopped"],
     ),
-    "chat_started_result": _object_schema(
-        {
-            "url": _string_schema(min_length=1),
-            "mode": {"const": "chat"},
-        },
-        required=["url", "mode"],
-    ),
     "tool_result_build": _object_schema(
         {
             "ok": {"const": True},
@@ -625,24 +618,6 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("chart_update_result"))}],
         "errors": MUTATION_CONTRACTS["chart_update"]["errors"],
-    },
-    "chat": {
-        "kind": "cli",
-        "summary": "Start the chat-mode preview server and auto-create a deck when the target file is missing.",
-        "cli_command": _cli_command("chat"),
-        "input_schema": _object_schema(
-            {
-                "path": _string_schema(min_length=1),
-                "port": _integer_schema(minimum=0, default=8765),
-                "no_open": _boolean_schema(default=False),
-            },
-            required=["path"],
-        ),
-        "outputs": [
-            {"channel": "stdout", "schema": _success_envelope(_ref("chat_started_result"))},
-            {"channel": "stdout", "schema": _success_envelope(_ref("server_stopped_result"))},
-        ],
-        "errors": [SCHEMA_ERROR],
     },
     "contract": {
         "kind": "cli",

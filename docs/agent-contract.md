@@ -14,7 +14,7 @@ The emitted JSON documents:
 
 - CLI commands and subcommands
 - mutation commands accepted by `apply_mutation()` and `batch`
-- agent tool definitions used by the legacy orchestrator and preview chat orchestrator
+- agent tool definitions for integrations that want schema-backed deck operations
 - input schemas
 - output schemas
 - warning payloads
