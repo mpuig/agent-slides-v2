@@ -166,7 +166,7 @@ def test_template_layout_registry_uses_default_text_fitting(tmp_path: Path) -> N
 def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    template_reflow_module = __import__("agent_slides.engine.template_reflow", fromlist=["template_reflow"])
+    reflow_module = __import__("agent_slides.engine.reflow", fromlist=["reflow_deck"])
     manifest_path = _build_manifest(tmp_path)
     deck_path = tmp_path / "deck.json"
     deck = _build_template_deck(str(manifest_path.relative_to(tmp_path)))
@@ -175,13 +175,13 @@ def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
     seen_provider_types: list[type[object]] = []
     seen_layouts: list[list[str]] = []
 
-    def fake_template_reflow(updated_deck: Deck, provider, **_: object) -> None:
+    def fake_reflow(updated_deck: Deck, provider, **_: object) -> None:
         assert updated_deck.revision == 5
         seen_provider_types.append(type(provider))
         assert isinstance(provider, TemplateLayoutRegistryImpl)
         seen_layouts.append(provider.list_layouts())
 
-    monkeypatch.setattr(template_reflow_module, "template_reflow", fake_template_reflow)
+    monkeypatch.setattr(reflow_module, "reflow_deck", fake_reflow)
 
     updated_deck, result = mutate_deck(
         str(deck_path),

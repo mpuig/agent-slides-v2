@@ -120,6 +120,10 @@ def _build_slot(
         bg_color=slot_mapping.get("bg_color"),
         bg_transparency=float(slot_mapping.get("bg_transparency", 0.0)),
         full_bleed=bool(slot_mapping.get("full_bleed", False)),
+        alignment_group=slot_mapping.get("alignment_group"),
+        reading_order=slot_mapping.get("reading_order"),
+        height_mode=str(slot_mapping.get("height_mode", "fixed")),
+        width_mode=str(slot_mapping.get("width_mode", "fixed")),
     )
 
 

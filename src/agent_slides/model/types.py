@@ -25,6 +25,8 @@ ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut
 NodeType = Literal["text", "image", "chart"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
+ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
+ConstraintWidthMode = Literal["fixed", "equal_share"]
 
 
 class AgentSlidesModel(BaseModel):
@@ -348,6 +350,10 @@ class SlotDef(AgentSlidesModel):
     height: float | None = None
     bg_color: str | None = None
     bg_transparency: float = 0.0
+    alignment_group: str | None = None
+    reading_order: int | None = None
+    height_mode: ConstraintHeightMode = "fixed"
+    width_mode: ConstraintWidthMode = "fixed"
 
     @field_validator("bg_transparency")
     @classmethod

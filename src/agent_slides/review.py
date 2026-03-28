@@ -13,11 +13,10 @@ from statistics import median
 from typing import Any
 
 from agent_slides.engine.reflow import reflow_deck
-from agent_slides.engine.template_reflow import template_reflow
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
 from agent_slides.io import mutate_deck, read_deck, resolve_manifest_path, write_computed_deck, write_pptx
 from agent_slides.model import Deck, Node, NodeContent, Slide
-from agent_slides.model.layout_provider import LayoutProvider, TemplateLayoutRegistry, resolve_layout_provider
+from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
 from agent_slides.model.types import STANDARD_SLIDE_HEIGHT_PT, STANDARD_SLIDE_WIDTH_PT, TextBlock
 
 CHECKLIST: dict[str, list[dict[str, str]]] = {
@@ -205,10 +204,7 @@ def _build_deck_artifact(deck_path: Path, pptx_path: Path) -> tuple[Deck, Layout
     if manifest_path is not None:
         deck.template_manifest = manifest_path
     provider = resolve_layout_provider(manifest_path)
-    if isinstance(provider, TemplateLayoutRegistry):
-        template_reflow(deck, provider)
-    else:
-        reflow_deck(deck, provider)
+    reflow_deck(deck, provider)
     write_computed_deck(str(deck_path), deck)
     write_pptx(deck, str(pptx_path), asset_base_dir=deck_path.parent)
     return deck, provider
