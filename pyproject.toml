@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Scene-graph engine for presentations."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.12,<3",
+]
 
 [dependency-groups]
 dev = [

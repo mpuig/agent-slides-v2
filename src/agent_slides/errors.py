@@ -1,5 +1,7 @@
 """Project error types."""
 
+INVALID_SLIDE = "INVALID_SLIDE"
+
 
 class AgentSlidesError(Exception):
     """Base project exception with a stable machine-readable code."""
