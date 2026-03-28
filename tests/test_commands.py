@@ -449,10 +449,19 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
             "slot": "heading",
             "node_id": "n-1",
             "text": "New Title",
+            "content": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text": "New Title",
+                        "level": 0,
+                    }
+                ]
+            },
             "font_size": None,
         },
     }
-    assert updated.slides[0].nodes[0].content == "New Title"
+    assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
 
 
 def test_slot_clear_removes_bound_nodes(tmp_path: Path) -> None:
