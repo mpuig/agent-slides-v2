@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from click.testing import CliRunner, Result
+from pptx import Presentation
 
 from agent_slides.cli import cli
 from agent_slides.errors import (
@@ -19,6 +20,8 @@ from agent_slides.errors import (
 )
 from agent_slides.io import init_deck, read_deck
 from agent_slides.model import Counters, Deck, Node, Slide, get_layout, list_layouts
+from agent_slides.model.design_rules import load_design_rules
+from agent_slides.model.types import ComputedNode
 
 
 def read_payload(path: Path) -> dict[str, object]:
@@ -59,6 +62,96 @@ def make_empty_deck() -> Deck:
 def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
     runner = CliRunner()
     return runner.invoke(cli, args, input=input)
+
+
+def make_computed_node(font_size_pt: float, *, overflow: bool = False) -> ComputedNode:
+    return ComputedNode(
+        x=72.0,
+        y=54.0,
+        width=576.0,
+        height=80.0,
+        font_size_pt=font_size_pt,
+        font_family="Aptos",
+        color="#333333",
+        bg_color="#FFFFFF",
+        font_bold=False,
+        text_overflow=overflow,
+        revision=1,
+    )
+
+
+def make_clean_deck() -> Deck:
+    return Deck(
+        deck_id="deck-clean",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Deck title",
+                    )
+                ],
+                computed={"n-1": make_computed_node(28.0)},
+            ),
+            Slide(
+                slide_id="s-2",
+                layout="closing",
+                nodes=[
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Thanks",
+                    )
+                ],
+                computed={"n-2": make_computed_node(14.0)},
+            ),
+        ],
+    )
+
+
+def make_overflow_deck() -> Deck:
+    rules = load_design_rules("default")
+    return Deck(
+        deck_id="deck-overflow",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Overflow heading",
+                    )
+                ],
+                computed={
+                    "n-1": make_computed_node(
+                        float(rules.overflow_policy.min_font_size),
+                        overflow=True,
+                    )
+                },
+            ),
+            Slide(
+                slide_id="s-2",
+                layout="closing",
+                nodes=[
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Bye",
+                    )
+                ],
+                computed={"n-2": make_computed_node(14.0)},
+            ),
+        ],
+    )
 
 
 def test_init_creates_valid_deck_file_and_reports_success_json(tmp_path: Path) -> None:
@@ -162,7 +255,6 @@ def test_init_returns_rules_validation_error_for_invalid_rules(tmp_path: Path) -
         },
     }
     assert not deck_path.exists()
-
 
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
@@ -378,7 +470,6 @@ def test_slide_set_layout_invalid_layout_returns_invalid_layout(tmp_path: Path) 
     assert result.exit_code == 1
     assert payload["error"]["code"] == INVALID_LAYOUT
 
-
 def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(deck_path, make_empty_deck())
@@ -553,3 +644,96 @@ def test_batch_uses_single_mutate_deck_call(monkeypatch) -> None:
     assert result.exit_code == 0
     assert calls == ["deck.json"]
     assert json.loads(result.output)["data"]["operations"] == 1
+
+
+def test_build_command_creates_valid_pptx_and_reports_slide_count(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    output_path = tmp_path / "presentation.pptx"
+    write_deck(deck_path, make_clean_deck())
+
+    result = invoke_cli(["build", str(deck_path), "-o", str(output_path)])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "output": str(output_path),
+            "slides": 2,
+        },
+    }
+    presentation = Presentation(output_path)
+    assert len(presentation.slides) == 2
+
+
+def test_build_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
+    result = invoke_cli(
+        ["build", str(tmp_path / "missing.json"), "-o", str(tmp_path / "presentation.pptx")]
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": FILE_NOT_FOUND,
+            "message": f"Deck file not found: {tmp_path / 'missing.json'}",
+        },
+    }
+
+
+def test_validate_command_reports_clean_deck(tmp_path: Path) -> None:
+    deck_path = tmp_path / "clean.json"
+    write_deck(deck_path, make_clean_deck())
+
+    result = invoke_cli(["validate", str(deck_path)])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "warnings": [],
+            "clean": True,
+        },
+    }
+
+
+def test_validate_command_returns_structured_overflow_warning(tmp_path: Path) -> None:
+    deck_path = tmp_path / "overflow.json"
+    write_deck(deck_path, make_overflow_deck())
+
+    result = invoke_cli(["validate", str(deck_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["data"]["clean"] is False
+    assert any(warning["code"] == "OVERFLOW" for warning in payload["data"]["warnings"])
+    for warning in payload["data"]["warnings"]:
+        assert {"code", "severity", "message"} <= warning.keys()
+
+
+def test_info_command_dumps_indented_deck_json(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = make_clean_deck()
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(["info", str(deck_path)])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert result.output == f"{deck.model_dump_json(by_alias=True, indent=2)}\n"
+    assert result.output.startswith("{\n  ")
+
+
+def test_info_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
+    result = invoke_cli(["info", str(tmp_path / "missing.json")])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": FILE_NOT_FOUND,
+            "message": f"Deck file not found: {tmp_path / 'missing.json'}",
+        },
+    }
