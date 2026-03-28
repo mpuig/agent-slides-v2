@@ -27,6 +27,7 @@ ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
 ConstraintWidthMode = Literal["fixed", "equal_share"]
+_HEX_COLOR_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
 class AgentSlidesModel(BaseModel):
@@ -56,10 +57,40 @@ class ComputedNode(AgentSlidesModel):
     image_fit: ImageFit = "contain"
 
 
+class TextRun(AgentSlidesModel):
+    text: str
+    bold: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    italic: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    color: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    font_size: float | None = Field(default=None, exclude_if=lambda value: value is None)
+    underline: bool = Field(default=False, exclude_if=lambda value: value is False)
+    strikethrough: bool = Field(default=False, exclude_if=lambda value: value is False)
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.lstrip("#")
+        if len(normalized) != 6 or any(char not in _HEX_COLOR_DIGITS for char in normalized):
+            raise ValueError("color must use #RRGGBB or RRGGBB format")
+        return f"#{normalized.upper()}"
+
+    @field_validator("font_size")
+    @classmethod
+    def validate_font_size(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError("font_size must be greater than 0")
+        return float(value)
+
+
 class TextBlock(AgentSlidesModel):
     type: Literal["paragraph", "bullet", "heading"]
-    text: str
+    text: str = ""
     level: int = 0
+    runs: list[TextRun] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("level")
     @classmethod
@@ -67,6 +98,17 @@ class TextBlock(AgentSlidesModel):
         if value < 0:
             raise ValueError("level must be greater than or equal to 0")
         return value
+
+    @model_validator(mode="after")
+    def normalize_text_from_runs(self) -> TextBlock:
+        if self.runs is not None:
+            self.text = "".join(run.text for run in self.runs)
+        return self
+
+    def resolved_runs(self) -> list[TextRun]:
+        if self.runs is not None:
+            return list(self.runs)
+        return [TextRun(text=self.text)]
 
 
 class NodeContent(AgentSlidesModel):
@@ -100,6 +142,92 @@ class NodeContent(AgentSlidesModel):
 
     def is_empty(self) -> bool:
         return not self.blocks or all(block.text == "" for block in self.blocks)
+
+
+def parse_inline_markdown_runs(text: str) -> list[TextRun] | None:
+    """Parse a minimal inline markdown dialect supporting **bold** and *italic* spans."""
+
+    if text == "":
+        return None
+
+    runs: list[TextRun] = []
+    buffer: list[str] = []
+    bold = False
+    italic = False
+    saw_markup = False
+    index = 0
+
+    def flush() -> None:
+        if not buffer:
+            return
+        payload: dict[str, object] = {"text": "".join(buffer)}
+        if bold:
+            payload["bold"] = True
+        if italic:
+            payload["italic"] = True
+        runs.append(TextRun.model_validate(payload))
+        buffer.clear()
+
+    while index < len(text):
+        if text.startswith("**", index) and (bold or text.find("**", index + 2) != -1):
+            flush()
+            bold = not bold
+            saw_markup = True
+            index += 2
+            continue
+        if text[index] == "*" and (italic or text.find("*", index + 1) != -1):
+            flush()
+            italic = not italic
+            saw_markup = True
+            index += 1
+            continue
+        buffer.append(text[index])
+        index += 1
+
+    flush()
+    if not saw_markup:
+        return None
+    return _merge_adjacent_runs(runs) or [TextRun(text="")]
+
+
+def split_text_runs_by_line(block: TextBlock) -> list[list[TextRun]]:
+    """Split a block into line-oriented runs while preserving inline formatting."""
+
+    line_runs: list[list[TextRun]] = [[]]
+    for run in block.resolved_runs():
+        parts = run.text.splitlines(keepends=True) or [""]
+        for part in parts:
+            has_line_break = part.endswith("\n") or part.endswith("\r")
+            text = part.rstrip("\r\n")
+            if text or not line_runs[-1]:
+                line_runs[-1].append(run.model_copy(update={"text": text}))
+            if has_line_break:
+                line_runs.append([])
+    return line_runs or [[TextRun(text="")]]
+
+
+def _merge_adjacent_runs(runs: list[TextRun]) -> list[TextRun]:
+    merged: list[TextRun] = []
+    for run in runs:
+        if run.text == "":
+            continue
+        if not merged:
+            merged.append(run)
+            continue
+        previous = merged[-1]
+        same_style = (
+            previous.bold == run.bold
+            and previous.italic == run.italic
+            and previous.color == run.color
+            and previous.font_size == run.font_size
+            and previous.underline == run.underline
+            and previous.strikethrough == run.strikethrough
+        )
+        if same_style:
+            merged[-1] = previous.model_copy(update={"text": previous.text + run.text})
+            continue
+        merged.append(run)
+    return merged
 
 
 class ChartSeries(AgentSlidesModel):

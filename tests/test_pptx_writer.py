@@ -33,6 +33,7 @@ from agent_slides.model.types import (
     ScatterSeries,
     Slide,
     TextBlock,
+    TextRun,
 )
 from tests.image_helpers import write_png
 
@@ -489,6 +490,78 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["lvl"] == "1"
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["marL"] == str(Pt(36))
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["indent"] == str(Pt(-18))
+
+
+def test_write_pptx_renders_inline_text_runs(tmp_path: Path) -> None:
+    output_path = tmp_path / "inline-runs.pptx"
+    deck = Deck(
+        deck_id="deck-inline-runs",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(
+                                    type="paragraph",
+                                    runs=[
+                                        TextRun(text="Revenue grew "),
+                                        TextRun(text="23%", bold=True, color="#1A73E8"),
+                                        TextRun(text=" driven by "),
+                                        TextRun(text="premium segment", italic=True, font_size=24, underline=True),
+                                    ],
+                                )
+                            ]
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=400.0,
+                        height=80.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    paragraph = presentation.slides[0].shapes[0].text_frame.paragraphs[0]
+    slide_xml = read_slide_xml(output_path)
+    runs = paragraph.runs
+    xml_runs = slide_xml.findall(".//a:r", DRAWING_NS)
+
+    assert paragraph.text == "Revenue grew 23% driven by premium segment"
+    assert [run.text for run in runs] == [
+        "Revenue grew ",
+        "23%",
+        " driven by ",
+        "premium segment",
+    ]
+    assert runs[0].font.size == Pt(18)
+    assert runs[1].font.bold is True
+    assert runs[1].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert runs[3].font.italic is True
+    assert runs[3].font.size == Pt(24)
+    assert runs[3].font.underline is True
+    assert xml_runs[3].find("./a:rPr", DRAWING_NS).attrib["u"] == "sng"
+
 
 def test_write_pptx_renders_image_nodes_with_contain_fit(tmp_path: Path) -> None:
     image_path = write_png(tmp_path / "photo.png", width=200, height=100)
