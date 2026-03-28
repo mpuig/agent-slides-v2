@@ -5,7 +5,7 @@ from __future__ import annotations
 from math import isclose
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 
@@ -38,11 +38,57 @@ class ComputedNode(AgentSlidesModel):
     revision: int
 
 
+class TextBlock(AgentSlidesModel):
+    type: Literal["paragraph", "bullet", "heading"]
+    text: str
+    level: int = 0
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("level must be greater than or equal to 0")
+        return value
+
+
+class NodeContent(AgentSlidesModel):
+    blocks: list[TextBlock] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_legacy_content(cls, value: object) -> object:
+        if value is None:
+            return {"blocks": []}
+        if isinstance(value, str):
+            return cls.from_text(value).model_dump(mode="json")
+        if isinstance(value, list):
+            return {"blocks": value}
+        return value
+
+    @classmethod
+    def from_text(cls, text: str, *, block_type: Literal["paragraph", "bullet", "heading"] = "paragraph") -> NodeContent:
+        if text == "":
+            return cls()
+        return cls(blocks=[TextBlock(type=block_type, text=text)])
+
+    def to_plain_text(self) -> str:
+        return "\n".join(block.text for block in self.blocks)
+
+    def word_count(self) -> int:
+        return sum(len(block.text.split()) for block in self.blocks)
+
+    def bullet_count(self) -> int:
+        return sum(1 for block in self.blocks if block.type == "bullet")
+
+    def is_empty(self) -> bool:
+        return not self.blocks or all(block.text == "" for block in self.blocks)
+
+
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
     type: Literal["text"]
-    content: str = ""
+    content: NodeContent = Field(default_factory=NodeContent)
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -141,7 +187,7 @@ class Deck(AgentSlidesModel):
         serialize_by_alias=True,
     )
 
-    version: int = 1
+    version: int = 2
     deck_id: str
     revision: int = 0
     theme: str = "default"
@@ -179,7 +225,7 @@ class ComputedSlide(AgentSlidesModel):
 
 
 class ComputedDeck(AgentSlidesModel):
-    version: int = 1
+    version: int = 2
     deck_id: str
     revision: int = 0
     slides: list[ComputedSlide] = Field(default_factory=list)

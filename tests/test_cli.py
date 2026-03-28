@@ -35,6 +35,16 @@ def test_cli_help_runs() -> None:
     assert "Agent Slides command line interface." in result.output
 
 
+def test_slot_help_lists_all_edit_subcommands() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["slot", "--help"])
+
+    assert result.exit_code == 0
+    assert "bind" in result.output
+    assert "clear" in result.output
+    assert "set" in result.output
+
+
 def test_cli_version_runs() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
