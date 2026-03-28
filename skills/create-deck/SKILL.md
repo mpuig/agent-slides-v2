@@ -8,6 +8,7 @@ description: Build consulting-grade presentations from a natural-language brief 
 Use this skill when the user asks for a new presentation, deck, or slide narrative from scratch.
 
 In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
+Use `uv run agent-slides contract` as the canonical source for command semantics, mutation names, JSON outputs, and error codes.
 Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
 Story structure rules live in `${CLAUDE_SKILL_DIR}/references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
 

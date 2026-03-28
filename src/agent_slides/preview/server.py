@@ -139,10 +139,6 @@ class PreviewServer:
 
         broadcast(self._preview_clients, json.dumps(payload))
 
-    @property
-    def _png_preview_enabled(self) -> bool:
-        return bool(self._renderer is not None and self._renderer.is_available and self._preview_backend == "png")
-
     async def _prime_preview_state(self) -> None:
         try:
             _, payload = load_deck_payload(self.sidecar_path)
@@ -307,7 +303,14 @@ class PreviewServer:
         previous_payload = self._preview_payload
         self._preview_payload = payload
 
-        if not self._png_preview_enabled:
+        if self._renderer is None:
+            await self.broadcast_payload(self._build_update_message(payload))
+            return
+
+        if not self._renderer.is_available:
+            self._preview_backend = "svg"
+            self._slide_previews = []
+            self._log_png_fallback_warning()
             await self.broadcast_payload(self._build_update_message(payload))
             return
 
@@ -320,6 +323,7 @@ class PreviewServer:
             self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
             self._preview_backend = "svg"
             self._rendering_payload = None
+            self._slide_previews = []
             await self.broadcast_payload(self._build_update_message(payload))
             return
 
@@ -334,10 +338,13 @@ class PreviewServer:
         self._logger.info("Preview client connected: %s", websocket.remote_address)
 
         try:
-            if self._preview_payload is not None:
-                await websocket.send(json.dumps(self._build_update_message(self._preview_payload)))
-            if self._rendering_payload is not None:
-                await websocket.send(json.dumps(self._rendering_payload))
+            payload = self._preview_payload
+            if payload is None:
+                await websocket.send(json.dumps(self._build_waiting_update_message()))
+            else:
+                await websocket.send(json.dumps(self._build_update_message(payload)))
+                if self._rendering_payload is not None:
+                    await websocket.send(json.dumps(self._rendering_payload))
             await websocket.wait_closed()
         finally:
             self._preview_clients.discard(websocket)
@@ -451,13 +458,42 @@ class PreviewServer:
         return self._not_found_response(connection)
 
     def _read_deck_json(self) -> str:
+        payload = self._client_payload()
+        return json.dumps(payload)
+
+    def _client_payload(self) -> dict[str, Any]:
         if self._preview_payload is None:
-            _, self._preview_payload = load_deck_payload(self.sidecar_path)
+            try:
+                _, self._preview_payload = load_deck_payload(self.sidecar_path)
+            except AgentSlidesError as exc:
+                if exc.code == FILE_NOT_FOUND:
+                    return self._build_waiting_payload()
+                raise
+
         payload = dict(self._preview_payload)
         payload["preview_backend"] = self._preview_backend
         if self._preview_backend == "png":
             payload["slide_previews"] = list(self._slide_previews)
-        return json.dumps(payload)
+        return payload
+
+    def _build_waiting_payload(self) -> dict[str, Any]:
+        return {
+            "status": "waiting",
+            "message": "Waiting for deck...",
+            "path": str(self.sidecar_path),
+            "revision": 0,
+            "slides": [],
+            "preview_backend": "svg",
+        }
+
+    def _build_waiting_update_message(self) -> dict[str, Any]:
+        payload = self._build_waiting_payload()
+        return {
+            "event": "deck.updated",
+            "path": str(self.sidecar_path),
+            "revision": 0,
+            "deck": payload,
+        }
 
     def _read_image_bytes(self, image_path: str) -> tuple[bytes, str]:
         resolved = resolve_image_path(image_path, base_dir=self.sidecar_path.parent)

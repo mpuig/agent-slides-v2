@@ -226,6 +226,11 @@
         fill: #7b6b56;
         font-size: 20px;
       }
+
+      .empty-detail {
+        fill: #9a8b78;
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
@@ -701,15 +706,38 @@
         stage.appendChild(background);
       };
 
-      const renderEmptyState = () => {
+      const renderMessageState = (headline, detail = "") => {
         renderStageBackground();
         const label = createSvgElement("text");
         label.setAttribute("x", "360");
-        label.setAttribute("y", "270");
+        label.setAttribute("y", detail ? "252" : "270");
         label.setAttribute("text-anchor", "middle");
         label.setAttribute("class", "empty");
-        label.textContent = "No slides yet";
+        label.textContent = headline;
         stage.appendChild(label);
+
+        if (!detail) {
+          return;
+        }
+
+        const sublabel = createSvgElement("text");
+        sublabel.setAttribute("x", "360");
+        sublabel.setAttribute("y", "284");
+        sublabel.setAttribute("text-anchor", "middle");
+        sublabel.setAttribute("class", "empty-detail");
+        sublabel.textContent = detail;
+        stage.appendChild(sublabel);
+      };
+
+      const renderEmptyState = () => {
+        renderMessageState("No slides yet");
+      };
+
+      const renderWaitingState = (message) => {
+        renderMessageState(
+          message || "Waiting for deck...",
+          "Create the deck file to start the live preview.",
+        );
       };
 
       const renderTextNode = (node, computed) => {
@@ -878,6 +906,13 @@
         currentSlideIndex = clampSlideIndex(currentSlideIndex, slides.length);
         stage.replaceChildren();
         updateNavigation(slides);
+
+        if (currentDeck.status === "waiting") {
+          setPreviewBackend("svg");
+          stageImage.removeAttribute("src");
+          renderWaitingState(currentDeck.message);
+          return;
+        }
 
         if (slides.length === 0) {
           setPreviewBackend("svg");
