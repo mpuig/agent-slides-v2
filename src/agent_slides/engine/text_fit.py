@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from math import ceil
 
 from PIL import ImageFont
 
@@ -653,13 +652,21 @@ def _refresh_block_fit(
 ) -> None:
     font_size = state.font_size_pt
     block_width = _block_width(width, state.block, font_size, font_family=font_family)
-    if use_precise:
-        font = _load_precise_font(font_family, font_size)
-        line_count, _ = _estimate_lines_precise(state.block.text, block_width, font)
-    else:
-        line_count = _estimate_lines(state.block.text, block_width, font_size, font_family=font_family)
+    font_cache: dict[float, ImageFont.ImageFont] = {}
+    line_count = 0
+    for line_runs in split_text_runs_by_line(state.block):
+        wrapped_lines = _wrap_line_runs(
+            line_runs,
+            block_width,
+            font_size=font_size,
+            block=state.block,
+            font_family=font_family,
+            use_precise=use_precise,
+            font_cache=font_cache,
+        )
+        line_count += len(wrapped_lines)
 
-    state.line_count = line_count
+    state.line_count = max(line_count, 1)
     state.rendered_height = _measured_text_height(
         NodeContent(blocks=[state.block]),
         width,
