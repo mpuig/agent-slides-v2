@@ -77,10 +77,22 @@ def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
     image_path = tmp_path / "hero.png"
     image_path.write_bytes(b"png")
 
-    fit_calls: list[tuple[float, float, float, float]] = []
+    fit_calls: list[tuple[float, float, float, float, str, str, list[float] | None]] = []
 
-    def fake_fit_text(*, text, width: float, height: float, default_size: float, min_size: float):
-        fit_calls.append((width, height, default_size, min_size))
+    def fake_fit_text(
+        *,
+        text,
+        width: float,
+        height: float,
+        default_size: float,
+        min_size: float,
+        role: str,
+        font_family: str | None = None,
+        ladder: list[float] | None = None,
+        use_precise: bool = False,
+    ):
+        assert use_precise is False
+        fit_calls.append((width, height, default_size, min_size, role, font_family or "", ladder))
         return (26.0, False) if default_size == 32.0 else (14.0, True)
 
     monkeypatch.setattr(template_reflow_module, "fit_text", fake_fit_text)
@@ -138,8 +150,8 @@ def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
     assert image.color == "#101010"
 
     assert fit_calls == [
-        (280.0, 48.0, 32.0, 24.0),
-        (260.0, 160.0, 18.0, 10.0),
+        (280.0, 48.0, 32.0, 24.0, "heading", "Aptos Display", [32.0, 28.0, 24.0]),
+        (260.0, 160.0, 18.0, 10.0, "body", "Aptos", [18.0, 16.0, 14.0, 12.0, 10.0]),
     ]
 
 

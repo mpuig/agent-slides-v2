@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from math import isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.engine.text_fit import fit_text
 from agent_slides.model import Deck, LayoutDef, Slide
+from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
 from agent_slides.model.layouts import (
     SLIDE_HEIGHT_PT,
@@ -79,7 +81,78 @@ def _text_fit_rules(layout_def: LayoutDef, node: Node) -> TextFitting:
     return layout_def.text_fitting[slot.role]
 
 
-def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision: int) -> None:
+def _resolve_text_ladder(
+    fit_rules: TextFitting,
+    role: str,
+    design_rules: DesignRules | None,
+) -> list[float] | None:
+    if fit_rules.ladder:
+        return list(fit_rules.ladder)
+    if design_rules is None:
+        return None
+    configured = design_rules.type_ladders.get(role, [])
+    ladder = [size for size in configured if fit_rules.min_size <= size <= fit_rules.default_size]
+    return ladder or None
+
+
+def _normalize_deck_font_sizes(deck: Deck, provider: LayoutProvider, design_rules: DesignRules) -> None:
+    if not design_rules.normalize_font_sizes:
+        return
+
+    role_minimums: dict[str, float] = {}
+    entries: list[tuple[Node, ComputedNode, str, TextFitting, list[float] | None]] = []
+
+    for slide in deck.slides:
+        layout_def = provider.get_layout(slide.layout)
+        for node in slide.nodes:
+            if node.type != "text" or node.slot_binding is None:
+                continue
+            if node.node_id not in slide.computed:
+                continue
+
+            slot = layout_def.slots[node.slot_binding]
+            if slot.role == "image":
+                continue
+
+            computed = slide.computed[node.node_id]
+            fit_rules = provider.get_text_fitting(slide.layout, slot.role)
+            ladder = _resolve_text_ladder(fit_rules, slot.role, design_rules)
+            entries.append((node, computed, slot.role, fit_rules, ladder))
+            current = role_minimums.get(slot.role)
+            if current is None or computed.font_size_pt < current:
+                role_minimums[slot.role] = computed.font_size_pt
+
+    for node, computed, role, fit_rules, ladder in entries:
+        target_size = role_minimums[role]
+        if computed.font_size_pt <= target_size:
+            continue
+        if ladder is not None and not any(isclose(size, target_size, rel_tol=0.0, abs_tol=1e-6) for size in ladder):
+            continue
+
+        normalized_size, overflow = fit_text(
+            text=node.content,
+            width=computed.width,
+            height=computed.height,
+            default_size=fit_rules.default_size,
+            min_size=fit_rules.min_size,
+            role=role,
+            font_family=computed.font_family,
+            ladder=[target_size],
+        )
+        if overflow or not isclose(normalized_size, target_size, rel_tol=0.0, abs_tol=1e-6):
+            continue
+        computed.font_size_pt = normalized_size
+        computed.text_overflow = False
+
+
+def _reflow_slide(
+    slide: Slide,
+    layout_def: LayoutDef,
+    theme: Theme,
+    *,
+    revision: int,
+    design_rules: DesignRules | None = None,
+) -> None:
     computed: dict[str, ComputedNode] = {}
     slide.revision = revision
 
@@ -134,12 +207,16 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
 
         style = resolve_style(theme, slot.role)
         fit_rules = _text_fit_rules(layout_def, node)
+        ladder = _resolve_text_ladder(fit_rules, slot.role, design_rules)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
             width=width,
             height=height,
             default_size=fit_rules.default_size,
             min_size=fit_rules.min_size,
+            role=slot.role,
+            font_family=str(style["font_family"]),
+            ladder=ladder,
         )
 
         computed[node.node_id] = ComputedNode(
@@ -178,6 +255,7 @@ def reflow_deck(
 
     active_provider = provider or BuiltinLayoutProvider()
     theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
+    design_rules = load_design_rules(deck.design_rules)
     for slide in deck.slides:
         layout_getter = active_provider.get_layout
         slide_revision = resolve_slide_revision(
@@ -185,7 +263,14 @@ def reflow_deck(
             deck_revision=deck.revision,
             previous_slide_signatures=previous_slide_signatures,
         )
-        _reflow_slide(slide, layout_getter(slide.layout), theme, revision=slide_revision)
+        _reflow_slide(
+            slide,
+            layout_getter(slide.layout),
+            theme,
+            revision=slide_revision,
+            design_rules=design_rules,
+        )
+    _normalize_deck_font_sizes(deck, active_provider, design_rules)
 
 
 def rebind_slots(

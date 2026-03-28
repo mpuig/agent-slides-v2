@@ -391,6 +391,7 @@ class GridDef(AgentSlidesModel):
 class TextFitting(AgentSlidesModel):
     default_size: float
     min_size: float = 10.0
+    ladder: list[float] | None = None
 
 
 class LayoutDef(AgentSlidesModel):
