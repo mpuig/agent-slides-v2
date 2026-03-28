@@ -9,10 +9,13 @@ from agent_slides import __version__
 from agent_slides.cli import AgentSlidesGroup, cli
 from agent_slides.errors import (
     AgentSlidesError,
+    CHART_DATA_ERROR,
     FILE_EXISTS,
     FILE_NOT_FOUND,
     IMAGE_NOT_SUPPORTED,
+    INVALID_CHART_TYPE,
     INVALID_LAYOUT,
+    INVALID_NODE_TYPE,
     INVALID_SLIDE,
     INVALID_SLOT,
     OVERFLOW,
@@ -44,6 +47,15 @@ def test_slot_help_lists_all_edit_subcommands() -> None:
     assert "bind" in result.output
     assert "clear" in result.output
     assert "set" in result.output
+
+
+def test_chart_help_lists_all_edit_subcommands() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["chart", "--help"])
+
+    assert result.exit_code == 0
+    assert "add" in result.output
+    assert "update" in result.output
 
 
 def test_cli_version_runs() -> None:
@@ -82,10 +94,13 @@ def test_all_error_codes_are_defined() -> None:
         OVERFLOW,
         UNBOUND_NODES,
         IMAGE_NOT_SUPPORTED,
+        INVALID_CHART_TYPE,
+        INVALID_NODE_TYPE,
         REVISION_CONFLICT,
         SLOT_OCCUPIED,
         FILE_EXISTS,
         TEMPLATE_CHANGED,
+        CHART_DATA_ERROR,
     } == {
         "INVALID_SLIDE",
         "INVALID_SLOT",
@@ -95,8 +110,11 @@ def test_all_error_codes_are_defined() -> None:
         "OVERFLOW",
         "UNBOUND_NODES",
         "IMAGE_NOT_SUPPORTED",
+        "INVALID_CHART_TYPE",
+        "INVALID_NODE_TYPE",
         "REVISION_CONFLICT",
         "SLOT_OCCUPIED",
         "FILE_EXISTS",
         "TEMPLATE_CHANGED",
+        "CHART_DATA_ERROR",
     }
