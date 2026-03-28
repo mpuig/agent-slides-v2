@@ -7,18 +7,21 @@ import json
 import click
 
 from agent_slides import __version__
+from agent_slides.commands.batch import batch
 from agent_slides.commands.init import init_command
 from agent_slides.commands.slide import slide
 from agent_slides.errors import AgentSlidesError
 
 
 def _emit_error(exc: AgentSlidesError) -> None:
+    error = {
+        "code": exc.code,
+        "message": exc.message,
+    }
+    error.update(exc.details)
     payload = {
         "ok": False,
-        "error": {
-            "code": exc.code,
-            "message": exc.message,
-        },
+        "error": error,
     }
     click.echo(json.dumps(payload), err=True)
 
@@ -40,5 +43,6 @@ def cli() -> None:
     """Agent Slides command line interface."""
 
 
+cli.add_command(batch)
 cli.add_command(init_command)
 cli.add_command(slide)
