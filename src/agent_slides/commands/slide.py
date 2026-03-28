@@ -6,17 +6,10 @@ import json
 
 import click
 
-from agent_slides.engine.reflow import rebind_slots
+from agent_slides.commands.mutations import apply_mutation
 from agent_slides.errors import UNBOUND_NODES
 from agent_slides.io import mutate_deck
-from agent_slides.model import Deck, Node, Slide, get_layout
-
-
-def _parse_slide_ref(value: str) -> str | int:
-    try:
-        return int(value)
-    except ValueError:
-        return value
+from agent_slides.model import Deck
 
 
 def _emit_json(payload: dict[str, object], *, err: bool = False) -> None:
@@ -43,22 +36,6 @@ def _emit_warning(slide_id: str, unbound_nodes: list[str]) -> None:
     )
 
 
-def _create_slot_nodes(deck: Deck, layout_name: str) -> Slide:
-    layout = get_layout(layout_name)
-    return Slide(
-        slide_id=deck.next_slide_id(),
-        layout=layout.name,
-        nodes=[
-            Node(
-                node_id=deck.next_node_id(),
-                slot_binding=slot_name,
-                type="text",
-            )
-            for slot_name in layout.slots
-        ],
-    )
-
-
 @click.group()
 def slide() -> None:
     """Manage deck slides."""
@@ -70,16 +47,8 @@ def slide() -> None:
 def add_slide(path: str, layout_name: str) -> None:
     """Append a slide using a named layout."""
 
-    layout = get_layout(layout_name)
-
     def mutate(deck: Deck) -> dict[str, object]:
-        slide = _create_slot_nodes(deck, layout.name)
-        deck.slides.append(slide)
-        return {
-            "slide_index": len(deck.slides) - 1,
-            "slide_id": slide.slide_id,
-            "layout": slide.layout,
-        }
+        return apply_mutation(deck, "slide_add", {"layout": layout_name})
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})
@@ -91,15 +60,8 @@ def add_slide(path: str, layout_name: str) -> None:
 def remove_slide(path: str, slide_ref: str) -> None:
     """Remove a slide by index or slide_id."""
 
-    ref = _parse_slide_ref(slide_ref)
-
     def mutate(deck: Deck) -> dict[str, object]:
-        target = deck.get_slide(ref)
-        deck.slides.remove(target)
-        return {
-            "removed": target.slide_id,
-            "slide_count": len(deck.slides),
-        }
+        return apply_mutation(deck, "slide_remove", {"slide": slide_ref})
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})
@@ -112,19 +74,16 @@ def remove_slide(path: str, slide_ref: str) -> None:
 def set_slide_layout(path: str, slide_ref: str, layout_name: str) -> None:
     """Change a slide layout and rebind its slot-bound nodes."""
 
-    ref = _parse_slide_ref(slide_ref)
-    layout = get_layout(layout_name)
-
     def mutate(deck: Deck) -> dict[str, object]:
-        target = deck.get_slide(ref)
-        unbound_nodes = rebind_slots(deck, target, layout)
-        return {
-            "slide_id": target.slide_id,
-            "layout": target.layout,
-            "unbound_nodes": unbound_nodes,
-        }
+        return apply_mutation(
+            deck,
+            "slide_set_layout",
+            {
+                "slide": slide_ref,
+                "layout": layout_name,
+            },
+        )
 
     _, result = mutate_deck(path, mutate)
     _emit_warning(result["slide_id"], result["unbound_nodes"])
     _emit_json({"ok": True, "data": result})
-
