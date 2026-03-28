@@ -21,8 +21,6 @@ from agent_slides.model.types import (
     Deck,
     Node,
     NodeContent,
-    ScatterPoint,
-    ScatterSeries,
     Slide,
     TextBlock,
 )
