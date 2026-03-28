@@ -146,7 +146,6 @@ If you extend `slot set`, preserve the existing mutual-exclusion and validation 
 ## Documentation and history
 
 - `docs/decisions/0001-structured-text-model.md`: structured text rationale
-- `CLAUDE.md`: why computed layout lives in `deck.computed.json`
 
 Recent history shows the current shape of the project:
 
@@ -160,6 +159,31 @@ Recent history shows the current shape of the project:
 - packaging and CI
 
 When unsure how something is supposed to work, inspect the tests for that area first, then the commit history.
+
+## Architecture decisions
+
+### Computed layout persistence
+
+Persist derived layout data in `deck.computed.json`, not in `deck.json`.
+
+Why this is the current contract:
+
+- it keeps `deck.json` as the authoring source of truth instead of mixing source data with derived geometry and resolved styles
+- it reduces diff noise and revision churn in the source deck file
+- it gives the preview pipeline a clean watch boundary: preview can treat `deck.computed.json` as the signal that reflow finished
+- it keeps preview as a thin consumer of computed state instead of forcing it to run the reflow engine on demand
+
+Tradeoffs and mitigations:
+
+- writing two files is not transactionally atomic across the filesystem
+- the write order matters: write `deck.json` first, then `deck.computed.json`
+- preview should watch the computed sidecar, because that update means the source deck write already completed
+- `read_deck()` must ignore computed sidecars whose `deck_id` or `revision` does not match the source deck, so stale cache never becomes source of truth
+
+Rejected alternatives:
+
+- keeping computed layout inside `deck.json` makes diffs noisy and muddies ownership between authoring state and derived state
+- computing layout only on demand would couple preview to engine execution and add latency to the preview path
 
 ## Pull request guidance
 
