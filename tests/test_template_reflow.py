@@ -21,37 +21,27 @@ def write_raw_deck(path: Path, deck: Deck) -> None:
 
 def make_manifest() -> dict[str, object]:
     return {
+        "name": "template",
         "source": "template.pptx",
         "source_hash": "abc123",
-        "slide_masters": [
+        "layouts": [
             {
-                "layouts": [
-                    {
-                        "name": "Photo Story",
-                        "slug": "photo_story",
-                        "placeholders": [
-                            {
-                                "idx": 0,
-                                "type": "TITLE",
-                                "name": "Title Placeholder 1",
-                                "bounds": {"x": 12.0, "y": 18.0, "w": 280.0, "h": 48.0},
-                            },
-                            {
-                                "idx": 1,
-                                "type": "PICTURE",
-                                "name": "Picture Placeholder 2",
-                                "bounds": {"x": 312.0, "y": 24.0, "w": 180.0, "h": 200.0},
-                            },
-                            {
-                                "idx": 2,
-                                "type": "BODY",
-                                "name": "Content Placeholder 3",
-                                "bounds": {"x": 18.0, "y": 96.0, "w": 260.0, "h": 160.0},
-                            },
-                        ],
-                        "slot_mapping": {"heading": 0, "image": 1, "body": 2},
-                    }
-                ]
+                "slug": "photo_story",
+                "usable": True,
+                "slot_mapping": {
+                    "heading": {
+                        "role": "heading",
+                        "bounds": {"x": 12.0, "y": 18.0, "width": 280.0, "height": 48.0},
+                    },
+                    "image": {
+                        "role": "image",
+                        "bounds": {"x": 312.0, "y": 24.0, "width": 180.0, "height": 200.0},
+                    },
+                    "body": {
+                        "role": "body",
+                        "bounds": {"x": 18.0, "y": 96.0, "width": 260.0, "height": 160.0},
+                    },
+                },
             }
         ],
         "theme": {
@@ -82,6 +72,7 @@ def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
 ) -> None:
     template_reflow_module = importlib.import_module("agent_slides.engine.template_reflow")
     manifest_path = tmp_path / "template.manifest.json"
+    (tmp_path / "template.pptx").write_bytes(b"pptx")
     write_json(manifest_path, make_manifest())
     image_path = tmp_path / "hero.png"
     image_path.write_bytes(b"png")
@@ -158,6 +149,7 @@ def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
     reflow_module = importlib.import_module("agent_slides.engine.reflow")
     template_reflow_module = importlib.import_module("agent_slides.engine.template_reflow")
     manifest_path = tmp_path / "template.manifest.json"
+    (tmp_path / "template.pptx").write_bytes(b"pptx")
     write_json(manifest_path, make_manifest())
     deck_path = tmp_path / "deck.json"
     write_raw_deck(
@@ -187,7 +179,7 @@ def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
 
     def fake_template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
         template_calls.append(deck.revision)
-        assert registry.manifest_path == str(manifest_path.resolve())
+        assert registry.source_path == str((tmp_path / "template.pptx").resolve())
 
     monkeypatch.setattr(reflow_module, "reflow_deck", fake_reflow)
     monkeypatch.setattr(template_reflow_module, "template_reflow", fake_template_reflow)
