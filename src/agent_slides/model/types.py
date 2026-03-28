@@ -189,6 +189,10 @@ class SlotDef(AgentSlidesModel):
     grid_col: int | list[int]
     role: SlotRole
     full_bleed: bool = False
+    x: float | None = None
+    y: float | None = None
+    width: float | None = None
+    height: float | None = None
     bg_color: str | None = None
     bg_transparency: float = 0.0
 
