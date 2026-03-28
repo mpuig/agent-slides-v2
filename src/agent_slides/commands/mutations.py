@@ -6,7 +6,7 @@ from typing import Any
 
 from agent_slides.engine.reflow import rebind_slots
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
-from agent_slides.model import Deck, Node, Slide, get_layout
+from agent_slides.model import Deck, Node, NodeContent, Slide, get_layout
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -104,6 +104,19 @@ def _find_node(deck: Deck, node_id: str) -> tuple[Slide, Node]:
     raise AgentSlidesError(SCHEMA_ERROR, f"Node {node_id!r} does not exist")
 
 
+def _coerce_content(args: dict[str, Any]) -> NodeContent:
+    if "content" in args:
+        try:
+            return NodeContent.model_validate(args["content"])
+        except Exception as exc:
+            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must be valid structured text") from exc
+
+    text = args.get("text")
+    if not isinstance(text, str):
+        raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
+    return NodeContent.from_text(text)
+
+
 def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, Any]:
     """Apply one supported mutation and return its structured result."""
 
@@ -137,9 +150,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
     if command == "slot_set":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
-        text = args.get("text")
-        if not isinstance(text, str):
-            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
+        content = _coerce_content(args)
 
         slot_nodes = _find_slot_nodes(slide, slot_name)
         if slot_nodes:
@@ -154,7 +165,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
             slide.nodes.append(node)
 
         node.slot_binding = slot_name
-        node.content = text
+        node.content = content
 
         if "font_size" in args:
             font_size = args["font_size"]
@@ -169,7 +180,8 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
             "slide_id": slide.slide_id,
             "slot": slot_name,
             "node_id": node.node_id,
-            "text": node.content,
+            "text": node.content.to_plain_text(),
+            "content": node.content.model_dump(mode="json"),
             "font_size": node.style_overrides.get("font_size"),
         }
 
