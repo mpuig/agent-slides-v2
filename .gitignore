@@ -3,4 +3,5 @@
 .uv-cache/
 .venv/
 __pycache__/
+*.egg-info/
 *.pyc
