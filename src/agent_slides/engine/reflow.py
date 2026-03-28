@@ -6,7 +6,8 @@ from collections.abc import Callable
 from math import isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
-from agent_slides.engine.constraints import constraints_from_layout, solve
+from agent_slides.engine.constraints import Rect, constraints_from_layout, solve
+from agent_slides.engine.layout_validator import LayoutViolation, validate_layout
 from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.engine.text_fit import fit_text, measure_text_height
 from agent_slides.model import Deck, LayoutDef, Slide
@@ -21,7 +22,10 @@ def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider 
     slot_name = node.slot_binding or ""
     slot = layout_def.slots[slot_name]
     if provider is not None:
-        return provider.get_text_fitting(layout_def.name, slot.role)
+        try:
+            return provider.get_text_fitting(layout_def.name, slot.role)
+        except AgentSlidesError:
+            pass
     if slot.role in layout_def.text_fitting:
         return layout_def.text_fitting[slot.role]
     if slot.role == "heading":
@@ -50,6 +54,17 @@ def _measure_slot_height_factory(layout_def: LayoutDef, provider: LayoutProvider
         return measure_text_height(node.content, width, fit_rules.default_size)
 
     return measure
+
+
+def _computed_by_slot(slide: Slide) -> dict[str, ComputedNode]:
+    computed_by_slot: dict[str, ComputedNode] = {}
+    for node in slide.nodes:
+        if node.slot_binding is None:
+            continue
+        computed = slide.computed.get(node.node_id)
+        if computed is not None:
+            computed_by_slot[node.slot_binding] = computed
+    return computed_by_slot
 
 
 def _resolve_text_ladder(
@@ -124,7 +139,7 @@ def _reflow_slide(
     revision: int,
     provider: LayoutProvider | None = None,
     design_rules: DesignRules | None = None,
-) -> None:
+) -> dict[str, Rect]:
     computed: dict[str, ComputedNode] = {}
     slide.revision = revision
     active_provider = provider or BuiltinLayoutProvider()
@@ -218,12 +233,14 @@ def _reflow_slide(
         )
 
     slide.computed = computed
+    return rects
 
 
-def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
+def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> list[LayoutViolation]:
     """Compute concrete geometry and styling for a single slide."""
 
-    _reflow_slide(slide, layout_def, theme, revision=0)
+    rects = _reflow_slide(slide, layout_def, theme, revision=0)
+    return validate_layout(layout_def, rects, computed_by_slot=_computed_by_slot(slide))
 
 
 def reflow_deck(
@@ -231,27 +248,40 @@ def reflow_deck(
     provider: LayoutProvider | None = None,
     *,
     previous_slide_signatures: dict[str, object] | None = None,
-) -> None:
+) -> dict[str, list[LayoutViolation]]:
     """Reflow every slide in the deck using the deck theme."""
 
     active_provider = provider or BuiltinLayoutProvider()
     theme = _resolve_theme(deck, active_provider)
     design_rules = load_design_rules(deck.design_rules)
+    rects_by_slide: dict[str, dict[str, Rect]] = {}
     for slide in deck.slides:
+        layout_def = active_provider.get_layout(slide.layout)
         slide_revision = resolve_slide_revision(
             slide,
             deck_revision=deck.revision,
             previous_slide_signatures=previous_slide_signatures,
         )
-        _reflow_slide(
+        rects_by_slide[slide.slide_id] = _reflow_slide(
             slide,
-            active_provider.get_layout(slide.layout),
+            layout_def,
             theme,
             revision=slide_revision,
             provider=active_provider,
             design_rules=design_rules,
         )
     _normalize_deck_font_sizes(deck, active_provider, design_rules)
+    violations_by_slide: dict[str, list[LayoutViolation]] = {}
+    for slide in deck.slides:
+        layout_def = active_provider.get_layout(slide.layout)
+        violations = validate_layout(
+            layout_def,
+            rects_by_slide[slide.slide_id],
+            computed_by_slot=_computed_by_slot(slide),
+        )
+        if violations:
+            violations_by_slide[slide.slide_id] = violations
+    return violations_by_slide
 
 
 def rebind_slots(
