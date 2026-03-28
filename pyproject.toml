@@ -36,6 +36,11 @@ dependencies = [
   "websockets>=16.0",
 ]
 
+[project.optional-dependencies]
+preview = [
+  "anthropic>=0.52.0",
+]
+
 [project.scripts]
 agent-slides = "agent_slides.cli:cli"
 
