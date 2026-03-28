@@ -17,6 +17,13 @@ This skill is not just CLI orchestration. It is responsible for presentation qua
 
 Load these references at the point they matter:
 
+Repo-relative reference paths:
+
+- `references/storytelling.md`
+- `references/layout-selection.md`
+- `references/chart-guide.md`
+- `references/common-mistakes.md`
+
 - Phase 0: no extra references required beyond asking the questions cleanly
 - Before Phase 1, read `${CLAUDE_SKILL_DIR}/references/storytelling.md`
 - Before locking or overriding layouts in Phase 1 or Phase 2, read `${CLAUDE_SKILL_DIR}/references/layout-selection.md`
