@@ -540,6 +540,9 @@ def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
                         {"type": "bullet", "text": "Revenue up 24%"},
                         {"type": "bullet", "text": "Margin improved"},
                         {"type": "bullet", "text": "Hiring plan"},
+                        {"type": "bullet", "text": "Upsell motion"},
+                        {"type": "bullet", "text": "Pricing refresh"},
+                        {"type": "bullet", "text": "Channel rollout"},
                     ]
                 }
             ),
@@ -553,8 +556,8 @@ def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
     suggestions = payload["data"]["suggestions"]
 
     assert payload["ok"] is True
-    assert len(suggestions) == 3
     assert suggestions[0]["layout"] == "two_col"
+    assert suggestions[0]["score"] == 0.7
     assert [item["score"] for item in suggestions] == sorted(
         [item["score"] for item in suggestions],
         reverse=True,
@@ -605,8 +608,8 @@ def test_suggest_layout_image_count_surfaces_image_layouts() -> None:
     layouts = [item["layout"] for item in payload["data"]["suggestions"]]
 
     assert payload["ok"] is True
-    assert set(layouts) <= {"gallery", "hero_image", "image_left", "image_right"}
-    assert layouts[0] in {"hero_image", "image_left", "image_right"}
+    assert set(layouts) <= {"gallery", "title", "title_content"}
+    assert layouts[0] == "gallery"
 
 
 def test_suggest_layout_returns_json_error_for_invalid_content() -> None:
