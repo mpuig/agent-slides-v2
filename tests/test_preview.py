@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from websockets.asyncio.client import connect
@@ -264,6 +265,20 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_one,
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_two,
             ):
+                initial_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
+                initial_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
+
+                assert initial_one["type"] == "slides_updated"
+                assert initial_two["type"] == "slides_updated"
+                assert initial_one["revision"] == 1
+                assert initial_two["revision"] == 1
+                assert initial_one["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+                assert initial_two["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+
                 write_deck(deck_path, make_deck(revision=2, content="Updated"))
 
                 updated_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
@@ -307,6 +322,36 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
             assert payload["slides"][0]["nodes"][0]["type"] == "image"
             assert payload["slides"][0]["computed"]["n-1"]["image_fit"] == "contain"
             assert image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_rejects_image_path_traversal(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_dir = tmp_path / "deck"
+        deck_dir.mkdir()
+        image_path = write_png(deck_dir / "photo.png", width=24, height=12)
+        secret_path = tmp_path / "secret.txt"
+        secret_path.write_text("top-secret\n", encoding="utf-8")
+        deck_path = deck_dir / "deck.json"
+        write_deck(deck_path, make_image_deck(image_path.name, revision=1))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            encoded_requests = [
+                quote("../secret.txt", safe=""),
+                quote(str(secret_path), safe=""),
+            ]
+
+            for encoded_path in encoded_requests:
+                with pytest.raises(urllib.error.HTTPError) as exc_info:
+                    await asyncio.to_thread(_fetch_bytes, f"{server.origin}/api/images/{encoded_path}")
+
+                assert exc_info.value.code == 404
+                assert "Path traversal not allowed" in exc_info.value.read().decode("utf-8")
         finally:
             await server.stop()
 

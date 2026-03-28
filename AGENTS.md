@@ -11,6 +11,20 @@ The architectural contract is:
 - reflow derives computed geometry and resolved styles
 - `deck.computed.json`, the preview server, and `.pptx` output are downstream consumers of computed state
 
+The interface contract:
+
+- The CLI is the stable machine interface for agents. All commands return JSON on stdout, errors on stderr.
+- Skills (`create-deck`, `edit-slide`, `review-deck`) are the orchestration layer. They teach agents how to use the CLI for complex workflows.
+- LLM-specific logic belongs in skills, not in library code. The embedded orchestrators (`orchestrator.py`, `preview/orchestrator.py`) are deprecated and pending removal (#165).
+- The preview server is a slide viewer, not a chat host.
+
+## Known issues
+
+- `preview/server.py` image endpoint allows path traversal (#159, high, pending fix)
+- Preview WebSocket does not send initial snapshot to new clients (#161)
+- `slot set` lacks `--content` flag for structured TextBlock JSON (#170, use `batch` as workaround)
+- Template decks do not apply text fitting to placeholder content (#152)
+
 ## Setup commands
 
 - Install dependencies: `uv sync --group dev`
@@ -178,6 +192,7 @@ Current live commands:
 
 - All mutations go through `src/agent_slides/commands/mutations.py` via `apply_mutation()`.
 - `ops.py` has been deleted. Do not recreate it.
+- `src/agent_slides/orchestrator.py` and `src/agent_slides/preview/orchestrator.py` are deprecated. Do not extend them. They will be removed (#165). New orchestration logic goes in skills.
 - Keep sidecar writes atomic through the helpers in `src/agent_slides/io/sidecar.py`.
 - Do not parallelize mutations against the same deck file; temp-file writes will race.
 - Preserve relative image-path behavior from the CLI; build resolves image assets relative to the deck path.
@@ -185,6 +200,7 @@ Current live commands:
 - Native PowerPoint bullets use paragraph-level XML formatting (`buChar`), not prepended bullet characters.
 - Chart nodes render as native editable PowerPoint chart objects via python-pptx's chart API.
 - The preview server renders slides as PNGs via LibreOffice headless when available, falls back to SVG.
+- Do not add LLM-specific dependencies (anthropic, openai) to the core package. Agent integration happens through the CLI + skills, not through library imports.
 
 ## Architecture decisions
 
