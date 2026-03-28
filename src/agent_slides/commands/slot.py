@@ -6,7 +6,9 @@ import json
 
 import click
 
-from agent_slides.commands.ops import parse_slide_ref, set_slot_text
+from agent_slides.commands.mutations import apply_mutation
+from agent_slides.io import mutate_deck
+from agent_slides.model import Deck
 
 
 @click.group()
@@ -22,5 +24,16 @@ def slot() -> None:
 def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str) -> None:
     """Set text content for a slot on a slide."""
 
-    result = set_slot_text(path, parse_slide_ref(slide_ref), slot_name, text)
+    def mutate(deck: Deck) -> dict[str, object]:
+        return apply_mutation(
+            deck,
+            "slot_set",
+            {
+                "slide": slide_ref,
+                "slot": slot_name,
+                "text": text,
+            },
+        )
+
+    _, result = mutate_deck(path, mutate)
     click.echo(json.dumps({"ok": True, "data": result}))

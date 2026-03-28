@@ -1,18 +1,36 @@
-"""Build a PPTX from a deck sidecar."""
+"""Build command for rendering a deck sidecar into a PPTX file."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import click
 
-from agent_slides.commands.ops import build_deck_pptx
+from agent_slides.engine.reflow import reflow_deck
+from agent_slides.io import read_deck, write_pptx
 
 
 @click.command("build")
-@click.argument("path", type=click.Path(dir_okay=False, path_type=str))
-@click.option("-o", "--output", "output_path", required=True, type=click.Path(dir_okay=False, path_type=str))
-def build_command(path: str, output_path: str) -> None:
-    """Render the deck to a PowerPoint file."""
+@click.argument("path", type=click.Path(dir_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+)
+def build_command(path: Path, output_path: Path) -> None:
+    """Build a PPTX file from a deck sidecar."""
 
-    click.echo(json.dumps({"ok": True, "data": build_deck_pptx(path, output_path)}))
+    deck = read_deck(str(path))
+    reflow_deck(deck)
+    write_pptx(deck, str(output_path))
+    payload = {
+        "ok": True,
+        "data": {
+            "output": str(output_path),
+            "slides": len(deck.slides),
+        },
+    }
+    click.echo(json.dumps(payload))

@@ -1,17 +1,18 @@
-"""Info command for inspecting the sidecar deck."""
+"""Info command for dumping the full deck JSON."""
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
 import click
 
-from agent_slides.commands.ops import get_deck_info
+from agent_slides.io import read_deck
 
 
 @click.command("info")
-@click.argument("path", type=click.Path(dir_okay=False, path_type=str))
-def info_command(path: str) -> None:
-    """Print the current deck JSON."""
+@click.argument("path", type=click.Path(dir_okay=False, path_type=Path))
+def info_command(path: Path) -> None:
+    """Dump the full deck sidecar JSON with indentation."""
 
-    click.echo(json.dumps(get_deck_info(path)))
+    deck = read_deck(str(path))
+    click.echo(deck.model_dump_json(by_alias=True, indent=2))
