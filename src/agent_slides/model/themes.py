@@ -74,6 +74,12 @@ def resolve_style(theme: Theme, role: str) -> dict[str, str | bool]:
             "color": theme.colors.subtle_text,
             "font_bold": False,
         }
+    if role == "image":
+        return {
+            "font_family": theme.fonts.body,
+            "color": theme.colors.text,
+            "font_bold": False,
+        }
     raise AgentSlidesError(
         code=THEME_ROLE_NOT_FOUND,
         message=f"Role '{role}' is not defined by the theme system.",

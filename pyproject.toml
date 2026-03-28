@@ -5,9 +5,28 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-slides"
 version = "0.1.0"
-description = "CLI for semantic slide operations and PPTX generation."
+description = "Semantic slide operations with deterministic reflow and PPTX output."
 readme = "README.md"
+license = { text = "Proprietary" }
+authors = [
+  { name = "Marc Puig" },
+]
 requires-python = ">=3.11"
+keywords = ["cli", "powerpoint", "pptx", "presentations", "slides"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "License :: Other/Proprietary License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Graphics :: Presentation",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
   "click>=8.1",
   "python-pptx>=1.0.2",
@@ -20,10 +39,23 @@ dependencies = [
 [project.scripts]
 agent-slides = "agent_slides.cli:cli"
 
+[project.urls]
+Homepage = "https://github.com/mpuig/agent-slides-v2"
+Repository = "https://github.com/mpuig/agent-slides-v2"
+Issues = "https://github.com/mpuig/agent-slides-v2/issues"
+
 [dependency-groups]
 dev = [
   "pytest>=8.0",
   "ruff>=0.11",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/agent_slides",
+  "/tests",
+  "/README.md",
+  "/pyproject.toml",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -36,3 +68,7 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
