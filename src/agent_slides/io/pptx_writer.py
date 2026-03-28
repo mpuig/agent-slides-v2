@@ -13,6 +13,8 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
+from pptx.enum.shapes import MSO_CONNECTOR_TYPE, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
@@ -31,8 +33,8 @@ from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, Te
 from agent_slides.model.themes import load_theme
 
 BLANK_LAYOUT_INDEX = 6
-HEADING_SIZE_FACTOR = 1.35
 BULLET_MARGIN_STEP_PT = 18.0
+HEADING_SIZE_FACTOR = 1.35
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -40,6 +42,18 @@ CHART_TYPE_MAP = {
     "pie": XL_CHART_TYPE.PIE,
     "area": XL_CHART_TYPE.AREA,
     "doughnut": XL_CHART_TYPE.DOUGHNUT,
+}
+SHAPE_TYPE_MAP = {
+    "rectangle": MSO_SHAPE.RECTANGLE,
+    "rounded_rectangle": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "oval": MSO_SHAPE.OVAL,
+    "arrow": MSO_SHAPE.RIGHT_ARROW,
+    "chevron": MSO_SHAPE.CHEVRON,
+}
+DASH_STYLE_MAP = {
+    "dash": MSO_LINE_DASH_STYLE.DASH,
+    "dot": MSO_LINE_DASH_STYLE.ROUND_DOT,
+    "dashDot": MSO_LINE_DASH_STYLE.DASH_DOT,
 }
 
 
@@ -92,7 +106,9 @@ def hex_to_rgb(value: str) -> RGBColor:
     return RGBColor.from_string(normalized)
 
 
-def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
+def _block_font_size(computed: ComputedNode, block: TextBlock, *, default_font_size: float | None = None) -> float:
+    if default_font_size is not None:
+        return default_font_size
     if block.type == "heading":
         return computed.font_size_pt * HEADING_SIZE_FACTOR
     return computed.font_size_pt
@@ -106,10 +122,16 @@ def _block_line_runs(
     return split_text_runs_by_line(formatted_block)
 
 
-def _run_font_size(computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> float:
+def _run_font_size(
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> float:
     if run_spec.font_size is not None:
         return run_spec.font_size
-    return _block_font_size(computed, block)
+    return _block_font_size(computed, block, default_font_size=default_font_size)
 
 
 def _set_run_strikethrough(run, enabled: bool) -> None:
@@ -135,9 +157,16 @@ def _apply_template_run_styles(run, run_spec: TextRun) -> None:
         _set_run_strikethrough(run, True)
 
 
-def _apply_text_run_defaults(run, computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> None:
+def _apply_text_run_defaults(
+    run,
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> None:
     run.font.name = computed.font_family
-    run.font.size = Pt(_run_font_size(computed, block, run_spec))
+    run.font.size = Pt(_run_font_size(computed, block, run_spec, default_font_size=default_font_size))
     run.font.bold = computed.font_bold if run_spec.bold is None else run_spec.bold
     if block.type == "heading" and run_spec.bold is None:
         run.font.bold = True
@@ -305,6 +334,24 @@ def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
     pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
 
 
+def _configure_text_frame(text_frame) -> None:
+    text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
+    text_frame.vertical_anchor = MSO_ANCHOR.TOP
+    text_frame.margin_left = 0
+    text_frame.margin_right = 0
+    text_frame.margin_top = 0
+    text_frame.margin_bottom = 0
+
+
+def _apply_run_style(run, *, font_family: str, font_size_pt: float, bold: bool, color: str) -> None:
+    run.font.name = font_family
+    run.font.size = Pt(font_size_pt)
+    run.font.bold = bold
+    run.font.color.rgb = hex_to_rgb(color)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -331,6 +378,118 @@ def _warn_if_template_changed(template_path: Path, expected_hash: str) -> None:
             },
         }
     )
+
+
+def _node_z_index(node: Node) -> int:
+    z_index = node.style_overrides.get("z_index")
+    if isinstance(z_index, int):
+        return z_index
+    if node.type == "shape":
+        return -1
+    return 0
+
+
+def _iter_rendered_nodes(nodes: list[Node]) -> list[Node]:
+    return [
+        node
+        for _, node in sorted(
+            enumerate(nodes),
+            key=lambda item: (_node_z_index(item[1]), item[0]),
+        )
+    ]
+
+
+def _shape_fill_color(node: Node) -> str | None:
+    spec = node.shape_spec
+    if spec is None:
+        return None
+    if spec.fill_color is not None:
+        return spec.fill_color
+    if spec.shape_type in {"arrow", "chevron"}:
+        return spec.line_color
+    return None
+
+
+def _apply_shape_shadow(shape) -> None:
+    shape.shadow.inherit = False
+    effect_list = shape._element.spPr.get_or_add_effectLst()
+    effect_list.clear()
+    shadow = OxmlElement("a:outerShdw")
+    shadow.set("blurRad", str(points_to_emu(3.0)))
+    shadow.set("dist", str(points_to_emu(2.0)))
+    shadow.set("dir", "5400000")
+    shadow.set("algn", "ctr")
+    shadow.set("rotWithShape", "0")
+    color = OxmlElement("a:srgbClr")
+    color.set("val", "000000")
+    alpha = OxmlElement("a:alpha")
+    alpha.set("val", "18000")
+    color.append(alpha)
+    shadow.append(color)
+    effect_list.append(shadow)
+
+
+def _apply_shape_line(shape, node: Node) -> None:
+    spec = node.shape_spec
+    if spec is None:
+        return
+
+    color = spec.line_color
+    if spec.shape_type == "line":
+        color = color or spec.fill_color or "#333333"
+
+    if color is None or spec.line_width == 0:
+        shape.line.fill.background()
+        return
+
+    shape.line.color.rgb = hex_to_rgb(color)
+    shape.line.width = Pt(spec.line_width)
+    shape.line.fill.transparency = max(0.0, min(1.0, 1.0 - spec.opacity))
+    if spec.dash is not None:
+        shape.line.dash_style = DASH_STYLE_MAP[spec.dash]
+
+
+def _render_shape_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    spec = node.shape_spec
+    if spec is None:
+        return
+
+    if spec.shape_type == "line":
+        shape = slide_shape_collection.add_connector(
+            MSO_CONNECTOR_TYPE.STRAIGHT,
+            points_to_emu(computed.x),
+            points_to_emu(computed.y),
+            points_to_emu(computed.x + computed.width),
+            points_to_emu(computed.y + computed.height),
+        )
+        _apply_shape_line(shape, node)
+        if spec.shadow:
+            _apply_shape_shadow(shape)
+        return
+
+    shape = slide_shape_collection.add_shape(
+        SHAPE_TYPE_MAP[spec.shape_type],
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+    )
+
+    fill_color = _shape_fill_color(node)
+    if fill_color is None:
+        shape.fill.background()
+    else:
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = hex_to_rgb(fill_color)
+        shape.fill.transparency = max(0.0, min(1.0, 1.0 - spec.opacity))
+
+    _apply_shape_line(shape, node)
+
+    if spec.shape_type == "rounded_rectangle" and len(shape.adjustments) > 0 and computed.height > 0 and computed.width > 0:
+        shape.adjustments[0] = min(1.0, max(0.0, (spec.corner_radius * 2.0) / min(computed.width, computed.height)))
+
+    if spec.shadow:
+        _apply_shape_shadow(shape)
 
 
 def _delete_all_slides(prs: Presentation) -> None:
@@ -419,6 +578,11 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
     for slide in deck.slides:
         binding = registry.binding_for(slide.layout)
         pptx_slide = presentation.slides.add_slide(_resolve_layout(presentation, slide.layout, binding))
+        for node in _iter_rendered_nodes(slide.nodes):
+            if node.type == "shape":
+                computed = slide.computed.get(node.node_id)
+                if computed is not None:
+                    _render_shape_node(pptx_slide.shapes, node, computed)
         for node in slide.nodes:
             _fill_placeholder(
                 node,
@@ -455,20 +619,55 @@ def _render_text_node(
         shape.fill.background()
 
     text_frame = shape.text_frame
-    text_frame.clear()
-    text_frame.word_wrap = True
-    text_frame.auto_size = MSO_AUTO_SIZE.NONE
-    text_frame.margin_left = 0
-    text_frame.margin_right = 0
-    text_frame.margin_top = 0
-    text_frame.margin_bottom = 0
-
+    _configure_text_frame(text_frame)
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
+    if computed.block_positions:
+        positions_by_index = {position.block_index: position for position in computed.block_positions}
+        first_position = computed.block_positions[0]
+        last_position = computed.block_positions[-1]
+        left_margin = max(first_position.x - computed.x, 0.0)
+        top_margin = max(first_position.y - computed.y, 0.0)
+        right_margin = max((computed.x + computed.width) - (first_position.x + first_position.width), 0.0)
+        bottom_margin = max((computed.y + computed.height) - (last_position.y + last_position.height), 0.0)
+
+        text_frame.margin_left = points_to_emu(left_margin)
+        text_frame.margin_right = points_to_emu(right_margin)
+        text_frame.margin_top = points_to_emu(top_margin)
+        text_frame.margin_bottom = points_to_emu(bottom_margin)
+
+        paragraph_index = 0
+        for index, block in enumerate(blocks):
+            position = positions_by_index.get(index)
+            if position is None:
+                continue
+
+            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+            _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            next_position = positions_by_index.get(index + 1)
+            gap_after = 0.0 if next_position is None else max(next_position.y - (position.y + position.height), 0.0)
+            paragraph.space_after = Pt(gap_after)
+
+            for run_spec in block.resolved_runs():
+                run = paragraph.add_run()
+                run.text = run_spec.text
+                _apply_text_run_defaults(
+                    run,
+                    computed,
+                    block,
+                    run_spec,
+                    default_font_size=position.font_size_pt,
+                )
+            paragraph_index += 1
+        return
+
     paragraph_index = 0
     for block in blocks:
         for line_runs in _block_line_runs(block, conditional_formatting):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            paragraph.space_after = Pt(0)
             for run_spec in line_runs:
                 run = paragraph.add_run()
                 run.text = run_spec.text
@@ -699,15 +898,14 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
         if not slide.computed:
             continue
 
-        for node in slide.nodes:
-            if node.slot_binding is None:
-                continue
-
+        for node in _iter_rendered_nodes(slide.nodes):
             computed = slide.computed.get(node.node_id)
             if computed is None:
                 continue
 
-            if node.type == "chart":
+            if node.type == "shape":
+                _render_shape_node(pptx_slide.shapes, node, computed)
+            elif node.type == "chart":
                 _render_chart_node(
                     pptx_slide.shapes,
                     node,
@@ -729,7 +927,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
                     computed,
                     asset_base_dir=asset_base_dir,
                 )
-            else:
+            elif node.slot_binding is not None:
                 _render_text_node(
                     pptx_slide.shapes,
                     node,
