@@ -269,6 +269,20 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_one,
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_two,
             ):
+                initial_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
+                initial_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
+
+                assert initial_one["type"] == "slides_updated"
+                assert initial_two["type"] == "slides_updated"
+                assert initial_one["revision"] == 1
+                assert initial_two["revision"] == 1
+                assert initial_one["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+                assert initial_two["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+
                 write_deck(deck_path, make_deck(revision=2, content="Updated"))
 
                 updated_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
