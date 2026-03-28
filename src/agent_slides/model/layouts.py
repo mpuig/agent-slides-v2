@@ -42,6 +42,37 @@ def _layout(
     )
 
 
+def _text_slot(
+    *,
+    grid_row: int | list[int],
+    grid_col: int | list[int],
+    role: str,
+    bg_color: str | None = None,
+    bg_transparency: float = 0.0,
+) -> SlotDef:
+    return SlotDef(
+        grid_row=grid_row,
+        grid_col=grid_col,
+        role=role,
+        bg_color=bg_color,
+        bg_transparency=bg_transparency,
+    )
+
+
+def _image_slot(
+    *,
+    grid_row: int | list[int],
+    grid_col: int | list[int],
+    full_bleed: bool = False,
+) -> SlotDef:
+    return SlotDef(
+        grid_row=grid_row,
+        grid_col=grid_col,
+        role="image",
+        full_bleed=full_bleed,
+    )
+
+
 LAYOUTS: dict[str, LayoutDef] = {
     "blank": _layout(
         name="blank",
@@ -120,9 +151,63 @@ LAYOUTS: dict[str, LayoutDef] = {
     "closing": _layout(
         name="closing",
         slots={
-            "body": SlotDef(grid_row=1, grid_col=1, role="body"),
+            "body": _text_slot(grid_row=1, grid_col=1, role="body"),
         },
         grid=_grid(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
+    "image_left": _layout(
+        name="image_left",
+        slots={
+            "image": _image_slot(grid_row=[1, 2], grid_col=1),
+            "heading": _text_slot(grid_row=1, grid_col=2, role="heading"),
+            "body": _text_slot(grid_row=2, grid_col=2, role="body"),
+        },
+        grid=_grid(columns=2, rows=2, row_heights=[0.28, 0.72], col_widths=[0.5, 0.5]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
+    "image_right": _layout(
+        name="image_right",
+        slots={
+            "heading": _text_slot(grid_row=1, grid_col=1, role="heading"),
+            "body": _text_slot(grid_row=2, grid_col=1, role="body"),
+            "image": _image_slot(grid_row=[1, 2], grid_col=2),
+        },
+        grid=_grid(columns=2, rows=2, row_heights=[0.28, 0.72], col_widths=[0.5, 0.5]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
+    "hero_image": _layout(
+        name="hero_image",
+        slots={
+            "image": _image_slot(grid_row=[1, 2, 3], grid_col=1, full_bleed=True),
+            "heading": _text_slot(
+                grid_row=2,
+                grid_col=1,
+                role="heading",
+                bg_color="#FFFFFF",
+                bg_transparency=0.25,
+            ),
+            "subheading": _text_slot(
+                grid_row=3,
+                grid_col=1,
+                role="body",
+                bg_color="#FFFFFF",
+                bg_transparency=0.25,
+            ),
+        },
+        grid=_grid(columns=1, rows=3, row_heights=[0.20, 0.36, 0.44], col_widths=[1.0]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
+    "gallery": _layout(
+        name="gallery",
+        slots={
+            "heading": _text_slot(grid_row=1, grid_col=[1, 2], role="heading"),
+            "img1": _image_slot(grid_row=2, grid_col=1),
+            "img2": _image_slot(grid_row=2, grid_col=2),
+            "img3": _image_slot(grid_row=3, grid_col=1),
+            "img4": _image_slot(grid_row=3, grid_col=2),
+        },
+        grid=_grid(columns=2, rows=3, row_heights=[0.16, 0.42, 0.42], col_widths=[0.5, 0.5]),
         text_fitting=DEFAULT_TEXT_FITTING,
     ),
 }
