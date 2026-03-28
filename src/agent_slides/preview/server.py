@@ -300,6 +300,8 @@ class PreviewServer:
         self._logger.info("Preview client connected: %s", websocket.remote_address)
 
         try:
+            if self._preview_payload is not None:
+                await websocket.send(json.dumps(self._build_update_message(self._preview_payload)))
             await websocket.wait_closed()
         finally:
             self._preview_clients.discard(websocket)

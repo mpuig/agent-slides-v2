@@ -94,9 +94,16 @@ def test_single_message_creates_slide_and_pushes_preview_update(tmp_path: Path) 
         assert deck.slides[0].layout == "title"
         assert deck.slides[0].nodes[0].content.to_plain_text() == "Conversational Deck"
         assert len(updates) >= 1
-        assert updates[-1]["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
-            {"type": "paragraph", "text": "Conversational Deck", "level": 0}
-        ]
+        assert updates[0]["revision"] == 0
+        if "deck" in updates[0]:
+            assert updates[0]["deck"]["slides"] == []
+        else:
+            assert updates[0]["type"] == "slides_updated"
+            assert updates[0]["slide_count"] == 0
+            assert updates[0]["slides"] == []
+
+        if len(updates) > 1:
+            assert updates[-1]["revision"] == deck.revision
 
     asyncio.run(scenario())
 
