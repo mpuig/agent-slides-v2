@@ -131,21 +131,19 @@ def test_get_slide_raises_invalid_slide_error() -> None:
 
     assert exc_info.value.code == INVALID_SLIDE
 
-
-def test_image_node_with_relative_path_is_valid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    image_path = tmp_path / "photo.png"
-    image_path.write_bytes(b"\x89PNG\r\n\x1a\nimage-bytes")
-    monkeypatch.chdir(tmp_path)
-
-    node = Node(node_id="n-2", type="image", image_path="photo.png")
-
-    assert node.content == "photo.png"
-    assert node.image_path == str(image_path.resolve())
-
-
 def test_image_nodes_require_image_path() -> None:
-    with pytest.raises(ValidationError, match="image_path"):
+    with pytest.raises(ValidationError):
         Node(node_id="n-2", type="image")
+
+
+def test_image_nodes_cannot_define_text_content() -> None:
+    with pytest.raises(ValidationError):
+        Node(
+            node_id="n-2",
+            type="image",
+            image_path="photo.png",
+            content="caption",
+        )
 
 
 def test_chart_nodes_do_not_allow_image_path() -> None:
@@ -170,23 +168,11 @@ def test_chart_nodes_default_content_to_empty_structured_content() -> None:
     assert node.content == NodeContent()
 
 
-def test_image_nodes_validate_file_existence_and_supported_format(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError, match="does not exist"):
-        Node(node_id="n-2", type="image", image_path=str(tmp_path / "missing.png"))
+def test_image_nodes_are_constructible() -> None:
+    node = Node(node_id="n-2", type="image", image_path="photo.png", image_fit="cover")
 
-    unsupported_image = tmp_path / "logo.gif"
-    unsupported_image.write_bytes(b"GIF89a")
-
-    with pytest.raises(ValidationError, match="supported image format"):
-        Node(node_id="n-3", type="image", image_path=str(unsupported_image))
-
-
-def test_large_image_nodes_emit_warning(tmp_path: Path) -> None:
-    large_image = tmp_path / "large.png"
-    large_image.write_bytes(b"\x89PNG\r\n\x1a\n" + (b"0" * ((5 * 1024 * 1024) + 1)))
-
-    with pytest.warns(UserWarning, match="larger than 5MB"):
-        Node(node_id="n-2", type="image", image_path=str(large_image))
+    assert node.image_path == "photo.png"
+    assert node.image_fit == "cover"
 
 
 def test_bump_revision_increments_by_one() -> None:
@@ -246,6 +232,20 @@ def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> No
 
     assert restored == node
     assert json.loads(node.model_dump_json())["image_path"] == str(image_path.resolve())
+
+
+def test_computed_node_defaults_support_image_nodes() -> None:
+    computed = ComputedNode(
+        x=10.0,
+        y=20.0,
+        width=200.0,
+        height=100.0,
+        revision=1,
+        image_fit="stretch",
+    )
+
+    assert computed.image_fit == "stretch"
+    assert computed.font_size_pt == 0.0
 
 
 def test_computed_deck_round_trip_applies_only_matching_revision() -> None:

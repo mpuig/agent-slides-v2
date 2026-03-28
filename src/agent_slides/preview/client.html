@@ -49,6 +49,98 @@
       }
 
       .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: #6a5841;
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #c7b18f;
+        box-shadow: 0 0 0 3px rgba(190, 161, 120, 0.16);
+      }
+
+      .status-dot[data-state="connected"],
+      .status-dot[data-state="live"] {
+        background: #2f8f4e;
+        box-shadow: 0 0 0 3px rgba(47, 143, 78, 0.16);
+      }
+
+      .status-dot[data-state="disconnected"],
+      .status-dot[data-state="reconnecting"] {
+        background: #b44933;
+        box-shadow: 0 0 0 3px rgba(180, 73, 51, 0.16);
+      }
+
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 20px;
+        border-bottom: 1px solid rgba(70, 50, 25, 0.08);
+        background: rgba(255, 252, 247, 0.78);
+      }
+
+      .nav {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid rgba(90, 65, 33, 0.18);
+        background: rgba(255, 255, 255, 0.88);
+        color: #453420;
+        border-radius: 999px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0 14px;
+        font: inherit;
+        cursor: pointer;
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      }
+
+      button:hover:enabled {
+        transform: translateY(-1px);
+        background: rgba(255, 255, 255, 1);
+        border-color: rgba(90, 65, 33, 0.28);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+      }
+
+      .dot {
+        min-width: 12px;
+        min-height: 12px;
+        width: 12px;
+        height: 12px;
+        padding: 0;
+        border-radius: 999px;
+        border: 0;
+        background: rgba(112, 88, 54, 0.22);
+      }
+
+      .dot[aria-current="true"] {
+        background: #8e5a23;
+        box-shadow: 0 0 0 4px rgba(142, 90, 35, 0.14);
+      }
+
+      .meta {
         font-size: 14px;
         color: #6a5841;
       }
@@ -71,69 +163,372 @@
       <div class="frame">
         <header>
           <strong>agent-slides live preview</strong>
-          <span class="status" id="status">Connecting…</span>
+          <span class="status" id="status">
+            <span class="status-dot" id="status-dot" data-state="connecting"></span>
+            <span id="status-text">Connecting...</span>
+          </span>
         </header>
+        <div class="toolbar">
+          <div class="nav" aria-label="Slide navigation">
+            <button id="prev-slide" type="button" aria-label="Previous slide">&larr;</button>
+            <div class="dots" id="slide-dots" aria-label="Slide list"></div>
+            <button id="next-slide" type="button" aria-label="Next slide">&rarr;</button>
+          </div>
+          <div class="meta" id="slide-count">Slide 0 of 0</div>
+        </div>
         <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
       </div>
     </main>
     <script>
+      const SVG_NS = "http://www.w3.org/2000/svg";
       const stage = document.getElementById("stage");
-      const status = document.getElementById("status");
+      const statusDot = document.getElementById("status-dot");
+      const statusText = document.getElementById("status-text");
+      const prevButton = document.getElementById("prev-slide");
+      const nextButton = document.getElementById("next-slide");
+      const dots = document.getElementById("slide-dots");
+      const slideCount = document.getElementById("slide-count");
+      const measureContext = document.createElement("canvas").getContext("2d");
 
-      const setStatus = (text) => {
-        status.textContent = text;
+      let currentDeck = null;
+      let currentSlideIndex = 0;
+      let reconnectDelayMs = 250;
+      let reconnectTimer = null;
+
+      const setConnectionState = (state, text) => {
+        statusDot.dataset.state = state;
+        statusText.textContent = text;
+      };
+
+      const imageHref = (imagePath) => {
+        const encoded = String(imagePath)
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
+        return `/api/images/${encoded}`;
+      };
+
+      const nodeLines = (node) => {
+        const blocks = node?.content?.blocks;
+        if (!Array.isArray(blocks)) {
+          const plain = typeof node?.content === "string" ? node.content : "";
+          return String(plain)
+            .split(/\r?\n/)
+            .map((text) => ({ text, level: 0 }));
+        }
+
+        const lines = [];
+        for (const block of blocks) {
+          const parts = String(block?.text ?? "").split(/\r?\n/);
+          const level = Number(block?.level ?? 0);
+          const prefix = block?.type === "bullet" ? "\u2022 " : "";
+          for (const part of parts) {
+            lines.push({ text: `${prefix}${part}`, level });
+          }
+        }
+        return lines.length > 0 ? lines : [{ text: "", level: 0 }];
+      };
+
+      const measureWidth = (text, fontFamily, fontSize, fontWeight) => {
+        if (!measureContext) {
+          return text.length * fontSize * 0.55;
+        }
+        measureContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        return measureContext.measureText(text).width;
+      };
+
+      const breakLongWord = (word, maxWidth, fontFamily, fontSize, fontWeight) => {
+        const parts = [];
+        let current = "";
+
+        for (const character of word) {
+          const candidate = `${current}${character}`;
+          if (current && measureWidth(candidate, fontFamily, fontSize, fontWeight) > maxWidth) {
+            parts.push(current);
+            current = character;
+          } else {
+            current = candidate;
+          }
+        }
+
+        if (current) {
+          parts.push(current);
+        }
+
+        return parts;
+      };
+
+      const wrapText = (text, maxWidth, fontFamily, fontSize, fontWeight) => {
+        if (!text) {
+          return [""];
+        }
+
+        if (maxWidth <= 0 || measureWidth(text, fontFamily, fontSize, fontWeight) <= maxWidth) {
+          return [text];
+        }
+
+        const words = text.split(/\s+/).filter(Boolean);
+        if (words.length === 0) {
+          return [text];
+        }
+
+        const lines = [];
+        let current = "";
+
+        for (const word of words) {
+          if (measureWidth(word, fontFamily, fontSize, fontWeight) > maxWidth) {
+            if (current) {
+              lines.push(current);
+              current = "";
+            }
+            lines.push(...breakLongWord(word, maxWidth, fontFamily, fontSize, fontWeight));
+            continue;
+          }
+
+          const candidate = current ? `${current} ${word}` : word;
+          if (measureWidth(candidate, fontFamily, fontSize, fontWeight) <= maxWidth) {
+            current = candidate;
+          } else {
+            lines.push(current);
+            current = word;
+          }
+        }
+
+        if (current) {
+          lines.push(current);
+        }
+
+        return lines;
+      };
+
+      const createSvgElement = (name) => document.createElementNS(SVG_NS, name);
+
+      const renderStageBackground = () => {
+        const background = createSvgElement("rect");
+        background.setAttribute("x", "0");
+        background.setAttribute("y", "0");
+        background.setAttribute("width", "720");
+        background.setAttribute("height", "540");
+        background.setAttribute("fill", "#ffffff");
+        stage.appendChild(background);
+      };
+
+      const renderEmptyState = () => {
+        renderStageBackground();
+        const label = createSvgElement("text");
+        label.setAttribute("x", "360");
+        label.setAttribute("y", "270");
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "empty");
+        label.textContent = "No slides yet";
+        stage.appendChild(label);
+      };
+
+      const renderTextNode = (node, computed) => {
+        if (computed.bg_color) {
+          const box = createSvgElement("rect");
+          box.setAttribute("x", `${computed.x}`);
+          box.setAttribute("y", `${computed.y}`);
+          box.setAttribute("width", `${computed.width}`);
+          box.setAttribute("height", `${computed.height}`);
+          box.setAttribute("fill", computed.bg_color);
+          box.setAttribute("fill-opacity", `${1 - Number(computed.bg_transparency ?? 0)}`);
+          stage.appendChild(box);
+        }
+
+        const text = createSvgElement("text");
+        const fontSize = Number(computed.font_size_pt ?? 18);
+        const fontFamily = computed.font_family || "Aptos";
+        const fontWeight = computed.font_bold ? 700 : 400;
+        const lineHeight = fontSize * 1.25;
+        const indentSize = fontSize * 1.2;
+        const maxLines = Math.max(1, Math.floor(Number(computed.height ?? lineHeight) / lineHeight));
+
+        text.setAttribute("x", `${computed.x}`);
+        text.setAttribute("y", `${computed.y + fontSize}`);
+        text.setAttribute("font-size", `${fontSize}`);
+        text.setAttribute("font-family", fontFamily);
+        text.setAttribute("font-weight", `${fontWeight}`);
+        text.setAttribute("fill", computed.color || "#1f1e1a");
+
+        let lineIndex = 0;
+        for (const line of nodeLines(node)) {
+          const level = Math.max(0, Number(line.level ?? 0));
+          const startX = Number(computed.x) + (level * indentSize);
+          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize));
+          const wrapped = wrapText(line.text, availableWidth, fontFamily, fontSize, fontWeight);
+
+          for (const segment of wrapped) {
+            if (lineIndex >= maxLines) {
+              break;
+            }
+
+            const tspan = createSvgElement("tspan");
+            tspan.setAttribute("x", `${startX}`);
+            tspan.setAttribute("dy", lineIndex === 0 ? "0" : `${lineHeight}`);
+            tspan.textContent = segment || " ";
+            text.appendChild(tspan);
+            lineIndex += 1;
+          }
+
+          if (lineIndex >= maxLines) {
+            break;
+          }
+        }
+
+        stage.appendChild(text);
+      };
+
+      const renderImageNode = (node, computed) => {
+        const image = createSvgElement("image");
+        image.setAttribute("x", `${computed.x}`);
+        image.setAttribute("y", `${computed.y}`);
+        image.setAttribute("width", `${computed.width}`);
+        image.setAttribute("height", `${computed.height}`);
+        image.setAttribute("href", imageHref(node.image_path));
+        image.setAttribute(
+          "preserveAspectRatio",
+          computed.image_fit === "stretch"
+            ? "none"
+            : computed.image_fit === "cover"
+              ? "xMidYMid slice"
+              : "xMidYMid meet"
+        );
+        stage.appendChild(image);
+      };
+
+      const clampSlideIndex = (index, total) => {
+        if (total <= 0) {
+          return 0;
+        }
+        return Math.min(Math.max(index, 0), total - 1);
+      };
+
+      const updateNavigation = (slides) => {
+        const total = slides.length;
+        const humanIndex = total === 0 ? 0 : currentSlideIndex + 1;
+        slideCount.textContent = `Slide ${humanIndex} of ${total}`;
+        prevButton.disabled = currentSlideIndex <= 0;
+        nextButton.disabled = currentSlideIndex >= total - 1;
+
+        dots.replaceChildren();
+        slides.forEach((slide, index) => {
+          const dot = document.createElement("button");
+          dot.type = "button";
+          dot.className = "dot";
+          dot.ariaLabel = `Go to slide ${index + 1}`;
+          dot.setAttribute("aria-current", index === currentSlideIndex ? "true" : "false");
+          dot.addEventListener("click", () => {
+            currentSlideIndex = index;
+            renderDeck(currentDeck);
+          });
+          dots.appendChild(dot);
+        });
       };
 
       const renderDeck = (deck) => {
-        const slide = deck?.slides?.[0];
+        currentDeck = deck && typeof deck === "object" ? deck : { slides: [] };
+        const slides = Array.isArray(currentDeck.slides) ? currentDeck.slides : [];
+        currentSlideIndex = clampSlideIndex(currentSlideIndex, slides.length);
         stage.replaceChildren();
+        updateNavigation(slides);
 
-        if (!slide) {
-          const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          label.setAttribute("x", "360");
-          label.setAttribute("y", "270");
-          label.setAttribute("text-anchor", "middle");
-          label.setAttribute("class", "empty");
-          label.textContent = "No slides yet";
-          stage.appendChild(label);
+        if (slides.length === 0) {
+          renderEmptyState();
           return;
         }
 
+        renderStageBackground();
+
+        const slide = slides[currentSlideIndex];
         for (const node of slide.nodes ?? []) {
           const computed = slide.computed?.[node.node_id];
-          if (!computed) continue;
+          if (!computed) {
+            continue;
+          }
 
-          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          text.setAttribute("x", `${computed.x}`);
-          text.setAttribute("y", `${computed.y + computed.font_size_pt}`);
-          text.setAttribute("font-size", `${computed.font_size_pt}`);
-          text.setAttribute("font-family", computed.font_family ?? "Aptos");
-          text.setAttribute("font-weight", computed.font_bold ? "700" : "400");
-          text.setAttribute("fill", computed.color ?? "#1f1e1a");
-          text.textContent = node.content ?? "";
-          stage.appendChild(text);
+          if (node.type === "image" && node.image_path) {
+            renderImageNode(node, computed);
+            continue;
+          }
+
+          renderTextNode(node, computed);
         }
+      };
+
+      const showRelativeSlide = (delta) => {
+        const total = Array.isArray(currentDeck?.slides) ? currentDeck.slides.length : 0;
+        const nextIndex = clampSlideIndex(currentSlideIndex + delta, total);
+        if (nextIndex === currentSlideIndex) {
+          return;
+        }
+        currentSlideIndex = nextIndex;
+        renderDeck(currentDeck);
+      };
+
+      const scheduleReconnect = () => {
+        if (reconnectTimer !== null) {
+          return;
+        }
+
+        const delay = reconnectDelayMs;
+        setConnectionState("reconnecting", `Reconnecting in ${Math.round(delay / 100) / 10}s`);
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, delay);
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, 4000);
       };
 
       const connect = () => {
         const protocol = window.location.protocol === "https:" ? "wss" : "ws";
         const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
 
-        socket.addEventListener("open", () => setStatus("Connected"));
+        setConnectionState("connecting", "Connecting...");
+
+        socket.addEventListener("open", () => {
+          reconnectDelayMs = 250;
+          setConnectionState("connected", "Connected");
+        });
+
         socket.addEventListener("message", (event) => {
           const payload = JSON.parse(event.data);
           renderDeck(payload.deck ?? payload);
-          setStatus("Live");
+          setConnectionState("live", "Live");
         });
+
         socket.addEventListener("close", () => {
-          setStatus("Reconnecting…");
-          window.setTimeout(connect, 250);
+          setConnectionState("disconnected", "Disconnected");
+          scheduleReconnect();
+        });
+
+        socket.addEventListener("error", () => {
+          socket.close();
         });
       };
 
+      prevButton.addEventListener("click", () => showRelativeSlide(-1));
+      nextButton.addEventListener("click", () => showRelativeSlide(1));
+
+      window.addEventListener("keydown", (event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+          return;
+        }
+
+        if (event.key === "ArrowLeft") {
+          showRelativeSlide(-1);
+        } else if (event.key === "ArrowRight") {
+          showRelativeSlide(1);
+        }
+      });
+
       fetch("/api/deck")
         .then((response) => response.json())
-        .then(renderDeck)
+        .then((deck) => renderDeck(deck))
+        .catch(() => {
+          renderDeck({ slides: [] });
+          setConnectionState("disconnected", "Unable to load deck");
+        })
         .finally(connect);
     </script>
   </body>

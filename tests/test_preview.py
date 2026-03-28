@@ -3,13 +3,38 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 from websockets.asyncio.client import connect
 
 from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
+from tests.image_helpers import write_png
+
+
+class InlineAssetParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.script_srcs: list[str] = []
+        self.stylesheet_hrefs: list[str] = []
+        self.inline_script_count = 0
+        self.inline_style_count = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        if tag == "script":
+            src = attr_map.get("src")
+            if src:
+                self.script_srcs.append(src)
+            else:
+                self.inline_script_count += 1
+        if tag == "style":
+            self.inline_style_count += 1
+        if tag == "link" and attr_map.get("rel") == "stylesheet" and attr_map.get("href"):
+            self.stylesheet_hrefs.append(str(attr_map["href"]))
 
 
 def make_deck(*, revision: int, content: str = "Hello preview") -> Deck:
@@ -54,6 +79,40 @@ def write_deck(path: Path, deck: Deck) -> None:
     path.write_text(f"{deck.model_dump_json(indent=2)}\n", encoding="utf-8")
 
 
+def make_image_deck(image_path: str, *, revision: int) -> Deck:
+    return Deck(
+        deck_id="deck-preview-image",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="image",
+                        image_path=image_path,
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=60.0,
+                        y=132.0,
+                        width=600.0,
+                        height=348.0,
+                        revision=revision,
+                        image_fit="contain",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+
 def test_sidecar_watcher_detects_revision_change_and_debounces(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
@@ -92,6 +151,13 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
             assert "<svg" in html
+            assert 'id="prev-slide"' in html
+            assert 'id="next-slide"' in html
+            assert 'id="slide-dots"' in html
+            assert 'id="slide-count"' in html
+            assert 'id="status-dot"' in html
+            assert "wrapText" in html
+            assert "preserveAspectRatio" in html
             assert payload["revision"] == 1
 
             async with (
@@ -105,8 +171,12 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
                 assert updated_one["revision"] == 2
                 assert updated_two["revision"] == 2
-                assert updated_one["deck"]["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Updated"
-                assert updated_two["deck"]["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Updated"
+                assert updated_one["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
+                    {"type": "paragraph", "text": "Updated", "level": 0}
+                ]
+                assert updated_two["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
+                    {"type": "paragraph", "text": "Updated", "level": 0}
+                ]
 
         finally:
             await server.stop()
@@ -119,6 +189,72 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
     assert any("Preview client disconnected" in message for message in messages)
 
 
+def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        image_path = write_png(tmp_path / "photo.png", width=24, height=12)
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_image_deck(image_path.name, revision=1))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            image_bytes = await asyncio.to_thread(_fetch_bytes, f"{server.origin}/api/images/photo.png")
+
+            assert payload["slides"][0]["nodes"][0]["type"] == "image"
+            assert payload["slides"][0]["computed"]["n-1"]["image_fit"] == "contain"
+            assert image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_client_html_is_packaged_and_self_contained() -> None:
+    html_path = client_html_path()
+    parser = InlineAssetParser()
+    payload = read_client_html()
+    parser.feed(payload)
+
+    assert html_path.name == "client.html"
+    assert html_path.exists()
+    assert parser.script_srcs == []
+    assert parser.stylesheet_hrefs == []
+    assert parser.inline_script_count >= 1
+    assert parser.inline_style_count >= 1
+
+
+def test_client_html_contains_required_preview_surface() -> None:
+    payload = read_client_html()
+
+    assert 'viewBox="0 0 720 540"' in payload
+    assert 'id="stage"' in payload
+    assert 'id="prev-slide"' in payload
+    assert 'id="next-slide"' in payload
+    assert 'id="slide-dots"' in payload
+    assert 'id="slide-count"' in payload
+    assert 'id="status-dot"' in payload
+    assert "new WebSocket" in payload
+    assert "Reconnecting in" in payload
+    assert "ArrowLeft" in payload
+    assert "ArrowRight" in payload
+    assert "preserveAspectRatio" in payload
+
+
+def test_client_html_wraps_text_and_renders_structured_content() -> None:
+    payload = read_client_html()
+
+    assert "wrapText" in payload
+    assert "breakLongWord" in payload
+    assert "nodeLines" in payload
+    assert 'split(/\\r?\\n/)' in payload
+    assert 'block?.type === "bullet"' in payload
+    assert "createElementNS" in payload
+    assert 'createSvgElement("tspan")' in payload
+    assert 'createSvgElement("rect")' in payload
+    assert "currentSlideIndex" in payload
+
+
 async def _wait_for(predicate, *, interval: float = 0.01) -> None:
     while not predicate():
         await asyncio.sleep(interval)
@@ -127,3 +263,8 @@ async def _wait_for(predicate, *, interval: float = 0.01) -> None:
 def _fetch_text(url: str) -> str:
     with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
         return response.read().decode("utf-8")
+
+
+def _fetch_bytes(url: str) -> bytes:
+    with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
+        return response.read()

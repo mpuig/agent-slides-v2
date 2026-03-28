@@ -6,15 +6,20 @@ import argparse
 import asyncio
 import json
 import logging
+import mimetypes
 import signal
 from http import HTTPStatus
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
+from websockets.datastructures import Headers
+from websockets.http11 import Response
 from websockets.asyncio.server import Server, ServerConnection, broadcast, serve
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
+from agent_slides.io.assets import resolve_image_path
 from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 
 LOGGER = logging.getLogger(__name__)
@@ -160,6 +165,29 @@ class PreviewServer:
             response.headers["Content-Type"] = "application/json; charset=utf-8"
             return response
 
+        if request.path.startswith("/api/images/"):
+            relative_path = unquote(request.path.removeprefix("/api/images/"))
+
+            try:
+                payload, content_type = self._read_image_bytes(relative_path)
+            except AgentSlidesError as exc:
+                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                response = connection.respond(status, f"{exc.message}\n")
+                response.headers["Content-Type"] = "text/plain; charset=utf-8"
+                return response
+
+            return Response(
+                HTTPStatus.OK.value,
+                HTTPStatus.OK.phrase,
+                Headers(
+                    {
+                        "Content-Type": content_type,
+                        "Content-Length": str(len(payload)),
+                    }
+                ),
+                payload,
+            )
+
         response = connection.respond(HTTPStatus.NOT_FOUND, "Not found\n")
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
@@ -167,6 +195,11 @@ class PreviewServer:
     def _read_deck_json(self) -> str:
         _, payload = load_deck_payload(self.sidecar_path)
         return json.dumps(payload)
+
+    def _read_image_bytes(self, image_path: str) -> tuple[bytes, str]:
+        resolved = resolve_image_path(image_path, base_dir=self.sidecar_path.parent)
+        content_type, _ = mimetypes.guess_type(resolved.name)
+        return resolved.read_bytes(), content_type or "application/octet-stream"
 
     def _build_update_message(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {

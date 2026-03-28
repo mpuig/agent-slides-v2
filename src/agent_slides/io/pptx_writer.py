@@ -7,17 +7,19 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
+from agent_slides.io.assets import resolve_image_path
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
@@ -96,6 +98,30 @@ def _block_text(block: TextBlock, line: str) -> str:
     if block.type == "bullet":
         return f"• {line}" if line else "•"
     return line
+
+
+def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
+    slot_x = computed.x
+    slot_y = computed.y
+    slot_width = computed.width
+    slot_height = computed.height
+
+    if computed.image_fit == "stretch":
+        return slot_x, slot_y, slot_width, slot_height
+
+    image_width_px, image_height_px = image_size_px
+    if computed.image_fit == "cover":
+        scale = max(slot_width / image_width_px, slot_height / image_height_px)
+    else:
+        scale = min(slot_width / image_width_px, slot_height / image_height_px)
+    width = image_width_px * scale
+    height = image_height_px * scale
+    return (
+        slot_x + ((slot_width - width) / 2),
+        slot_y + ((slot_height - height) / 2),
+        width,
+        height,
+    )
 
 
 def _read_manifest_payload(path: Path) -> dict[str, Any]:
@@ -323,11 +349,7 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
     paragraph_index = 0
     for block in blocks:
         for line in _block_lines(block):
-            paragraph = (
-                text_frame.paragraphs[0]
-                if paragraph_index == 0
-                else text_frame.add_paragraph()
-            )
+            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             paragraph.level = block.level if block.type == "bullet" else 0
 
             run = paragraph.add_run()
@@ -339,21 +361,28 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
             paragraph_index += 1
 
 
-def _render_image_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
-    """Render a single image node into its computed frame."""
+def _render_image_node(
+    slide_shape_collection: SlideShapes,
+    node: Node,
+    computed: ComputedNode,
+    *,
+    asset_base_dir: str | Path | None = None,
+) -> None:
+    """Render a single image node as a positioned picture."""
 
-    if not node.image_path:
+    if node.image_path is None:
         return
 
+    image_path = resolve_image_path(node.image_path, base_dir=asset_base_dir)
+    image = Image.from_file(str(image_path))
+    left, top, width, height = _fit_image_to_slot(computed, cast(tuple[int, int], image.size))
     slide_shape_collection.add_picture(
-        node.image_path,
-        points_to_emu(computed.x),
-        points_to_emu(computed.y),
-        width=points_to_emu(computed.width),
-        height=points_to_emu(computed.height),
+        str(image_path),
+        points_to_emu(left),
+        points_to_emu(top),
+        width=points_to_emu(width),
+        height=points_to_emu(height),
     )
-
-
 def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
     """Render a single chart node as a native editable PowerPoint chart."""
 
@@ -403,7 +432,7 @@ render_text_node = _render_text_node
 render_image_node = _render_image_node
 
 
-def _write_v0_pptx(deck: Deck, output_path: str) -> None:
+def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
     presentation = Presentation()
     presentation.slide_width = Inches(10)
     presentation.slide_height = Inches(7.5)
@@ -425,18 +454,23 @@ def _write_v0_pptx(deck: Deck, output_path: str) -> None:
             if node.type == "chart":
                 _render_chart_node(pptx_slide.shapes, node, computed)
             elif node.type == "image":
-                _render_image_node(pptx_slide.shapes, node, computed)
+                _render_image_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    asset_base_dir=asset_base_dir,
+                )
             else:
                 _render_text_node(pptx_slide.shapes, node, computed)
 
     presentation.save(Path(output_path))
 
 
-def write_pptx(deck: Deck, output_path: str) -> None:
+def write_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
     """Write a deck to PowerPoint using either the v0 or template-backed writer."""
 
     if deck.template_manifest:
         _write_template_pptx(deck, output_path)
         return
 
-    _write_v0_pptx(deck, output_path)
+    _write_v0_pptx(deck, output_path, asset_base_dir=asset_base_dir)
