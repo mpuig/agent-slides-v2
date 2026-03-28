@@ -8,7 +8,16 @@ from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
 from agent_slides.io.pptx_writer import write_pptx
-from agent_slides.model.types import ComputedNode, Counters, Deck, EMU_PER_POINT, Node, Slide
+from agent_slides.model.types import (
+    ComputedNode,
+    Counters,
+    Deck,
+    EMU_PER_POINT,
+    Node,
+    NodeContent,
+    Slide,
+    TextBlock,
+)
 
 
 def build_deck() -> Deck:
@@ -157,3 +166,59 @@ def test_write_pptx_creates_valid_empty_presentation(tmp_path: Path) -> None:
 
     assert output_path.exists()
     assert len(presentation.slides) == 0
+
+
+def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> None:
+    output_path = tmp_path / "structured.pptx"
+    deck = Deck(
+        deck_id="deck-structured",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(type="heading", text="Highlights"),
+                                TextBlock(type="bullet", text="First takeaway"),
+                                TextBlock(type="bullet", text="Nested takeaway", level=1),
+                            ]
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=400.0,
+                        height=140.0,
+                        font_size_pt=20.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    text_frame = presentation.slides[0].shapes[0].text_frame
+
+    assert [paragraph.text for paragraph in text_frame.paragraphs] == [
+        "Highlights",
+        "• First takeaway",
+        "• Nested takeaway",
+    ]
+    assert text_frame.paragraphs[0].runs[0].font.size == Pt(27)
+    assert text_frame.paragraphs[1].level == 0
+    assert text_frame.paragraphs[2].level == 1

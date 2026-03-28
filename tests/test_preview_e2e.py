@@ -25,7 +25,9 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
         assert payload["event"] == "deck.updated"
         assert payload["revision"] == updated_deck.revision
         assert payload["deck"]["revision"] == updated_deck.revision
-        assert payload["deck"]["slides"][0]["nodes"][0]["content"] == "watcher"
+        assert payload["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
+            {"type": "paragraph", "text": "watcher", "level": 0}
+        ]
 
     asyncio.run(scenario())
 
@@ -42,7 +44,9 @@ def test_multiple_rapid_mutations_debounce(tmp_path: Path) -> None:
                 updates = await collect_updates(websocket, timeout=0.25)
 
         assert 1 <= len(updates) <= 2
-        assert updates[-1]["deck"]["slides"][0]["nodes"][0]["content"] == "rapid-4"
+        assert updates[-1]["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
+            {"type": "paragraph", "text": "rapid-4", "level": 0}
+        ]
         assert updates[-1]["revision"] >= 7
 
     asyncio.run(scenario())
@@ -81,7 +85,11 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
                 )
 
         assert all(update["revision"] == updated_deck.revision for update in updates)
-        assert all(update["deck"]["slides"][0]["nodes"][0]["content"] == "fanout" for update in updates)
+        assert all(
+            update["deck"]["slides"][0]["nodes"][0]["content"]["blocks"]
+            == [{"type": "paragraph", "text": "fanout", "level": 0}]
+            for update in updates
+        )
 
     asyncio.run(scenario())
 
