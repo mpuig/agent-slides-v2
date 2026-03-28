@@ -7,7 +7,7 @@ from math import isclose
 from agent_slides.errors import OVERFLOW, UNBOUND_NODES
 from agent_slides.model.constraints import Constraint
 from agent_slides.model.design_rules import DesignRules, FontSizeRange
-from agent_slides.model.types import Deck, Node, Slide
+from agent_slides.model.types import Deck, Node, NodeContent, Slide
 
 MAX_SLIDES_EXCEEDED = "MAX_SLIDES_EXCEEDED"
 MAX_WORDS_PER_COLUMN_EXCEEDED = "MAX_WORDS_PER_COLUMN_EXCEEDED"
@@ -17,12 +17,12 @@ MISSING_TITLE_SLIDE = "MISSING_TITLE_SLIDE"
 MISSING_CLOSING_SLIDE = "MISSING_CLOSING_SLIDE"
 
 
-def _count_words(text: str) -> int:
-    return len(text.split())
+def _count_words(content: NodeContent) -> int:
+    return content.word_count()
 
 
-def _count_bullets(text: str) -> int:
-    return sum(1 for line in text.splitlines() if line.strip())
+def _count_bullets(content: NodeContent) -> int:
+    return content.bullet_count()
 
 
 def _node_role(node: Node) -> str:

@@ -138,7 +138,10 @@ def test_layout_switch_content_migration(tmp_path: Path) -> None:
 
     unbound = [node for node in slide["nodes"] if node["slot_binding"] is None]
     assert len(unbound) >= 1
-    assert any(node["content"] == "Column 3" for node in unbound)
+    assert any(
+        node["content"]["blocks"] == [{"type": "paragraph", "text": "Column 3", "level": 0}]
+        for node in unbound
+    )
 
 
 def test_batch_creates_full_deck(tmp_path: Path) -> None:
