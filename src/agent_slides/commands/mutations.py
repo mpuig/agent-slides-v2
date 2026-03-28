@@ -229,7 +229,7 @@ def apply_mutation(
                 raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must include at least one text block")
 
             image_count = _require_non_negative_int(args, "image_count", default=0)
-            suggestions = suggest_layouts(content, image_count, provider)
+            suggestions = suggest_layouts(content, image_count=image_count, limit=1)
             if not suggestions:
                 raise AgentSlidesError(SCHEMA_ERROR, "No suitable layout found for the provided content")
 

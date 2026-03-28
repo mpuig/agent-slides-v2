@@ -1,105 +1,162 @@
-"""Heuristics for choosing a slide layout from structured content."""
+"""Heuristics for recommending built-in layouts from structured content."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
-from agent_slides.model import NodeContent
-from agent_slides.model.layout_provider import LayoutProvider
+from agent_slides.model.types import NodeContent
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LayoutSuggestion:
     layout: str
+    score: float
     reason: str
 
 
-def _priority(layout_name: str, *, body_blocks: int, image_count: int) -> int:
+def _non_empty_blocks(content: NodeContent) -> list[object]:
+    return [block for block in content.blocks if block.text.strip()]
+
+
+def _supporting_block_count(content: NodeContent) -> int:
+    blocks = _non_empty_blocks(content)
+    heading_count = sum(1 for block in blocks if getattr(block, "type", None) == "heading")
+    return max(len(blocks) - min(heading_count, 1), 0)
+
+
+def _add_suggestion(
+    suggestions: dict[str, LayoutSuggestion],
+    *,
+    layout: str,
+    score: float,
+    reason: str,
+) -> None:
+    candidate = LayoutSuggestion(layout=layout, score=round(score, 2), reason=reason)
+    current = suggestions.get(layout)
+    if current is None or candidate.score > current.score:
+        suggestions[layout] = candidate
+
+
+def suggest_layouts(content: NodeContent, *, image_count: int = 0, limit: int = 3) -> list[LayoutSuggestion]:
+    """Return ranked built-in layout suggestions for the provided content."""
+
+    blocks = _non_empty_blocks(content)
+    block_count = len(blocks)
+    heading_count = sum(1 for block in blocks if getattr(block, "type", None) == "heading")
+    supporting_blocks = _supporting_block_count(content)
+    bullet_count = content.bullet_count()
+    word_count = content.word_count()
+    has_heading = heading_count > 0
+
+    suggestions: dict[str, LayoutSuggestion] = {}
+
     if image_count > 0:
-        preferred = ["image_right", "image_left", "hero_image", "gallery"]
-    elif body_blocks == 0:
-        preferred = ["title", "closing", "title_content", "quote"]
-    elif body_blocks == 1:
-        preferred = ["title_content", "title", "closing", "quote"]
-    elif body_blocks == 2:
-        preferred = ["two_col", "comparison", "title_content", "three_col"]
-    elif body_blocks == 3:
-        preferred = ["three_col", "comparison", "two_col", "title_content"]
-    else:
-        preferred = ["comparison", "three_col", "two_col", "title_content"]
-
-    try:
-        return preferred.index(layout_name)
-    except ValueError:
-        return len(preferred) + 10
-
-
-def _reason(*, body_blocks: int, image_count: int, image_slots: int) -> str:
-    if image_count > 0 and image_slots > 0:
-        return "Image-led layout with supporting content"
-    if body_blocks == 0:
-        return "Heading-focused content"
-    if body_blocks == 1:
-        return "Single supporting content block"
-    if body_blocks == 2:
-        return "Two balanced content blocks"
-    if body_blocks == 3:
-        return "Three supporting content blocks"
-    return f"{body_blocks} supporting content blocks"
-
-
-def suggest_layouts(
-    content: NodeContent,
-    image_count: int,
-    provider: LayoutProvider,
-) -> list[LayoutSuggestion]:
-    """Rank available layouts for the provided structured content."""
-
-    blocks = [block for block in content.blocks if block.text.strip()]
-    if not blocks:
-        return []
-
-    heading_index = next((index for index, block in enumerate(blocks) if block.type == "heading"), None)
-    has_heading = heading_index is not None
-    remaining_blocks = len(blocks) - (1 if has_heading else 0)
-
-    suggestions: list[tuple[tuple[int, int, int, str], LayoutSuggestion]] = []
-    for layout_name in provider.list_layouts():
-        layout = provider.get_layout(layout_name)
-        if layout_name == "blank" and blocks:
-            continue
-
-        roles = [slot.role for slot in layout.slots.values()]
-        image_slots = sum(1 for role in roles if role == "image")
-        text_slots = len(roles) - image_slots
-        heading_slots = sum(1 for role in roles if role == "heading")
-        remaining_text_slots = max(text_slots - (1 if heading_slots else 0), 0)
-
-        heading_penalty = 0 if not has_heading or heading_slots > 0 else 6
-        image_penalty = abs(image_slots - image_count)
-        if image_count == 0 and image_slots > 0:
-            image_penalty += image_slots
-        body_penalty = abs(remaining_text_slots - remaining_blocks)
-        waste_penalty = max(remaining_text_slots - remaining_blocks, 0)
-        score = (
-            heading_penalty + image_penalty + (body_penalty * 2),
-            waste_penalty,
-            _priority(layout_name, body_blocks=remaining_blocks, image_count=image_count),
-            layout_name,
+        _add_suggestion(
+            suggestions,
+            layout="image_left",
+            score=0.97 if block_count >= 2 or bullet_count >= 2 else 0.89,
+            reason="Image-led layout with supporting content",
         )
-        suggestions.append(
-            (
-                score,
-                LayoutSuggestion(
-                    layout=layout_name,
-                    reason=_reason(
-                        body_blocks=remaining_blocks,
-                        image_count=image_count,
-                        image_slots=image_slots,
-                    ),
-                ),
+        _add_suggestion(
+            suggestions,
+            layout="image_right",
+            score=0.96 if block_count >= 2 or bullet_count >= 2 else 0.88,
+            reason="Image-led layout with supporting content",
+        )
+        _add_suggestion(
+            suggestions,
+            layout="hero_image",
+            score=0.94 if has_heading and block_count <= 2 else 0.84,
+            reason="Image-led layout with supporting content",
+        )
+        if image_count >= 2:
+            _add_suggestion(
+                suggestions,
+                layout="gallery",
+                score=0.95 if image_count >= 4 else 0.93,
+                reason="Image-led layout with supporting content",
             )
+
+    if has_heading and block_count <= 2 and word_count <= 18:
+        _add_suggestion(
+            suggestions,
+            layout="title",
+            score=0.92,
+            reason="Heading-focused content",
         )
 
-    suggestions.sort(key=lambda item: item[0])
-    return [suggestion for _, suggestion in suggestions]
+    if block_count >= 2 or bullet_count >= 3:
+        _add_suggestion(
+            suggestions,
+            layout="two_col",
+            score=0.94 if bullet_count >= 3 else 0.89,
+            reason=(
+                "Two balanced content blocks"
+                if supporting_blocks == 2
+                else "Content splits naturally into two balanced groups."
+            ),
+        )
+
+    if block_count >= 4 or bullet_count >= 5:
+        _add_suggestion(
+            suggestions,
+            layout="comparison",
+            score=0.79,
+            reason=f"{supporting_blocks or block_count} supporting content blocks",
+        )
+
+    if block_count >= 5 or bullet_count >= 6:
+        _add_suggestion(
+            suggestions,
+            layout="three_col",
+            score=0.76,
+            reason=(
+                "Three supporting content blocks"
+                if supporting_blocks == 3
+                else f"{supporting_blocks or block_count} supporting content blocks"
+            ),
+        )
+
+    if block_count == 2 and heading_count == 0 and word_count <= 45:
+        _add_suggestion(
+            suggestions,
+            layout="quote",
+            score=0.75,
+            reason="Single supporting content block",
+        )
+
+    if block_count <= 1 and word_count <= 6:
+        _add_suggestion(
+            suggestions,
+            layout="closing",
+            score=0.7,
+            reason="Heading-focused content",
+        )
+
+    _add_suggestion(
+        suggestions,
+        layout="title_content",
+        score=0.88 if has_heading else 0.72,
+        reason=(
+            "Single supporting content block"
+            if supporting_blocks <= 1
+            else f"{supporting_blocks} supporting content blocks"
+        ),
+    )
+
+    if not suggestions:
+        _add_suggestion(
+            suggestions,
+            layout="title_content",
+            score=0.7,
+            reason="Single supporting content block",
+        )
+
+    ranked = sorted(suggestions.values(), key=lambda item: (-item.score, item.layout))
+    return ranked[:limit]
+
+
+def serialize_suggestions(suggestions: list[LayoutSuggestion]) -> list[dict[str, object]]:
+    """Convert suggestions to JSON-safe dictionaries."""
+
+    return [asdict(suggestion) for suggestion in suggestions]
