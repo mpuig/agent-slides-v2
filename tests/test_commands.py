@@ -18,7 +18,7 @@ from agent_slides.errors import (
     THEME_NOT_FOUND,
     UNBOUND_NODES,
 )
-from agent_slides.io import init_deck, read_deck
+from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck, read_deck, write_computed_deck
 from agent_slides.model import Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import ComputedNode
@@ -29,7 +29,11 @@ def read_payload(path: Path) -> dict[str, object]:
 
 
 def write_deck(path: Path, deck: Deck) -> None:
-    path.write_text(f"{deck.model_dump_json(indent=2)}\n", encoding="utf-8")
+    payload = json.loads(deck.model_dump_json(by_alias=True))
+    for slide in payload["slides"]:
+        slide.pop("computed", None)
+    path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+    write_computed_deck(str(path), deck)
 
 
 def build_slide(slide_id: str, layout: str, slots: list[str], *, start_node: int = 1) -> Slide:
@@ -156,6 +160,7 @@ def make_overflow_deck() -> Deck:
 
 def test_init_creates_valid_deck_file_and_reports_success_json(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
+    computed_path = computed_sidecar_path(deck_path)
 
     result = invoke_cli(["init", str(deck_path)])
 
@@ -176,6 +181,8 @@ def test_init_creates_valid_deck_file_and_reports_success_json(tmp_path: Path) -
     assert payload["design_rules"] == "default"
     assert payload["version"] == 1
     assert payload["_counters"] == {"slides": 0, "nodes": 0}
+    assert computed_path.exists()
+    assert read_computed_deck(str(deck_path)).slides == []
 
 
 def test_init_applies_explicit_theme_and_rules_options(tmp_path: Path) -> None:
@@ -188,6 +195,7 @@ def test_init_applies_explicit_theme_and_rules_options(tmp_path: Path) -> None:
 
     assert payload["theme"] == "default"
     assert payload["design_rules"] == "default"
+    assert computed_sidecar_path(deck_path).exists()
 
 
 def test_init_returns_file_exists_error_when_target_exists(tmp_path: Path) -> None:
@@ -223,6 +231,7 @@ def test_init_force_overwrites_existing_file(tmp_path: Path) -> None:
     assert payload["theme"] == "default"
     assert payload["design_rules"] == "default"
     assert payload["deck_id"] != "old"
+    assert computed_sidecar_path(deck_path).exists()
 
 
 def test_init_returns_theme_validation_error_for_invalid_theme(tmp_path: Path) -> None:
@@ -664,6 +673,7 @@ def test_build_command_creates_valid_pptx_and_reports_slide_count(tmp_path: Path
     }
     presentation = Presentation(output_path)
     assert len(presentation.slides) == 2
+    assert read_computed_deck(str(deck_path)).revision == make_clean_deck().revision
 
 
 def test_build_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
@@ -724,6 +734,7 @@ def test_info_command_dumps_indented_deck_json(tmp_path: Path) -> None:
     assert result.stderr == ""
     assert result.output == f"{deck.model_dump_json(by_alias=True, indent=2)}\n"
     assert result.output.startswith("{\n  ")
+    assert "computed" not in read_payload(deck_path)["slides"][0]
 
 
 def test_info_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:

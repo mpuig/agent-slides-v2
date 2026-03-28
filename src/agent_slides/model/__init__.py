@@ -2,6 +2,8 @@
 
 from .types import (
     ComputedNode,
+    ComputedDeck,
+    ComputedSlide,
     Counters,
     Deck,
     GridDef,
@@ -21,6 +23,8 @@ from agent_slides.model.layouts import get_layout, list_layouts
 
 __all__ = [
     "ComputedNode",
+    "ComputedDeck",
+    "ComputedSlide",
     "Constraint",
     "Counters",
     "Deck",
