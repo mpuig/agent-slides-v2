@@ -16,6 +16,12 @@ overflow_policy:
 deck_structure:
   recommend_title_slide: true
   recommend_closing_slide: true
+normalize_font_sizes: true
+type_ladders:
+  heading: [36, 32, 28, 24]
+  body: [18, 16, 14, 12, 10]
+  quote: [28, 24, 20, 18]
+  attribution: [16, 14, 12, 10]
 layout_hints:
   max_bullets_for_single_column: 5
   equal_length_threshold: 0.4
