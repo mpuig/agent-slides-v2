@@ -189,6 +189,16 @@
       const dots = document.getElementById("slide-dots");
       const slideCount = document.getElementById("slide-count");
       const measureContext = document.createElement("canvas").getContext("2d");
+      const chartPalette = ["#c98e48", "#6e8ca7", "#8f9b5f", "#c56f5e", "#8672b8"];
+      const chartTypeLabels = {
+        area: "Area Chart",
+        bar: "Bar Chart",
+        column: "Column Chart",
+        doughnut: "Doughnut Chart",
+        line: "Line Chart",
+        pie: "Pie Chart",
+        scatter: "Scatter Plot",
+      };
 
       let currentDeck = null;
       let currentSlideIndex = 0;
@@ -206,6 +216,20 @@
           .map((segment) => encodeURIComponent(segment))
           .join("/");
         return `/api/images/${encoded}`;
+      };
+
+      const extractContentText = (content) => {
+        if (typeof content === "string") {
+          return content.trim();
+        }
+        if (!Array.isArray(content?.blocks)) {
+          return "";
+        }
+        return content.blocks
+          .map((block) => String(block?.text ?? "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim();
       };
 
       const nodeLines = (node) => {
@@ -301,7 +325,262 @@
         return lines;
       };
 
-      const createSvgElement = (name) => document.createElementNS(SVG_NS, name);
+      const createSvgElement = (name, attributes = {}) => {
+        const element = document.createElementNS(SVG_NS, name);
+        for (const [key, value] of Object.entries(attributes)) {
+          element.setAttribute(key, `${value}`);
+        }
+        return element;
+      };
+
+      const appendSvgText = (parent, text, attributes = {}) => {
+        const element = createSvgElement("text", attributes);
+        element.textContent = text;
+        parent.appendChild(element);
+        return element;
+      };
+
+      const formatCount = (count, singular, plural = `${singular}s`) =>
+        `${count} ${count === 1 ? singular : plural}`;
+
+      const chartTypeLabel = (chartType) => chartTypeLabels[chartType] ?? "Chart";
+
+      const summarizeChart = (chartSpec) => {
+        if (!chartSpec || typeof chartSpec !== "object") {
+          return "Chart: no data";
+        }
+
+        const label = chartTypeLabel(chartSpec.chart_type);
+        if (chartSpec.chart_type === "scatter") {
+          return `${label}: ${formatCount(chartSpec.scatter_series?.length ?? 0, "series")}`;
+        }
+
+        const categoryCount = chartSpec.categories?.length ?? 0;
+        const seriesCount = chartSpec.series?.length ?? 0;
+        return `${label}: ${formatCount(categoryCount, "category", "categories")}, ${formatCount(seriesCount, "series")}`;
+      };
+
+      const getSeriesColors = (chartSpec, count) => {
+        const configuredColors = Array.isArray(chartSpec?.style?.series_colors)
+          ? chartSpec.style.series_colors.filter(Boolean)
+          : [];
+        return Array.from(
+          { length: count },
+          (_, index) => configuredColors[index] ?? chartPalette[index % chartPalette.length],
+        );
+      };
+
+      const renderFallbackChartPreview = (group, frame) => {
+        group.appendChild(
+          createSvgElement("rect", {
+            x: frame.x,
+            y: frame.y,
+            width: frame.width,
+            height: frame.height,
+            rx: 12,
+            fill: "#f7f2ea",
+            stroke: "#dfd6ca",
+            "stroke-dasharray": "6 5",
+          }),
+        );
+        appendSvgText(group, "Preview approximation", {
+          x: frame.x + frame.width / 2,
+          y: frame.y + frame.height / 2 + 4,
+          "text-anchor": "middle",
+          fill: "#8f806d",
+          "font-size": 12,
+        });
+      };
+
+      const renderBarChartPreview = (group, chartSpec, frame) => {
+        const series = chartSpec?.series?.[0];
+        const values = Array.isArray(series?.values) ? series.values : [];
+        const categories = Array.isArray(chartSpec?.categories) ? chartSpec.categories : [];
+        if (!values.length || !categories.length || frame.width <= 0 || frame.height <= 0) {
+          renderFallbackChartPreview(group, frame);
+          return;
+        }
+
+        const labelWidth = Math.min(56, frame.width * 0.28);
+        const barAreaX = frame.x + labelWidth + 10;
+        const barAreaWidth = Math.max(12, frame.width - labelWidth - 10);
+        const rowGap = 6;
+        const rowHeight = (frame.height - rowGap * (values.length - 1)) / values.length;
+        if (rowHeight <= 0) {
+          renderFallbackChartPreview(group, frame);
+          return;
+        }
+
+        const maxValue = Math.max(1, ...values.map((value) => Math.abs(value)));
+        const fill = getSeriesColors(chartSpec, 1)[0];
+
+        values.forEach((value, index) => {
+          const top = frame.y + index * (rowHeight + rowGap);
+          const width = Math.max(0, (Math.abs(value) / maxValue) * barAreaWidth);
+
+          appendSvgText(group, categories[index] ?? "", {
+            x: frame.x,
+            y: top + rowHeight * 0.7,
+            fill: "#7b6b56",
+            "font-size": 10,
+          });
+          group.appendChild(
+            createSvgElement("rect", {
+              x: barAreaX,
+              y: top,
+              width: barAreaWidth,
+              height: rowHeight,
+              rx: Math.min(6, rowHeight / 2),
+              fill: "#f2ece3",
+            }),
+          );
+          group.appendChild(
+            createSvgElement("rect", {
+              x: barAreaX,
+              y: top,
+              width,
+              height: rowHeight,
+              rx: Math.min(6, rowHeight / 2),
+              fill,
+              opacity: 0.92,
+            }),
+          );
+        });
+      };
+
+      const renderColumnChartPreview = (group, chartSpec, frame) => {
+        const seriesList = Array.isArray(chartSpec?.series) ? chartSpec.series.slice(0, 3) : [];
+        const categories = Array.isArray(chartSpec?.categories) ? chartSpec.categories : [];
+        if (!seriesList.length || !categories.length || frame.width <= 0 || frame.height <= 0) {
+          renderFallbackChartPreview(group, frame);
+          return;
+        }
+
+        const maxValue = Math.max(
+          1,
+          ...seriesList.flatMap((series) => (Array.isArray(series.values) ? series.values : []).map((value) => Math.abs(value))),
+        );
+        const colors = getSeriesColors(chartSpec, seriesList.length);
+        const axisY = frame.y + frame.height;
+        const categoryBand = frame.width / categories.length;
+        const groupGap = Math.max(8, categoryBand * 0.18);
+        const columnAreaWidth = Math.max(10, categoryBand - groupGap);
+        const columnGap = Math.max(2, columnAreaWidth * 0.08);
+        const columnWidth = Math.max(3, (columnAreaWidth - columnGap * (seriesList.length - 1)) / seriesList.length);
+
+        group.appendChild(
+          createSvgElement("line", {
+            x1: frame.x,
+            y1: axisY,
+            x2: frame.x + frame.width,
+            y2: axisY,
+            stroke: "#d6cdc0",
+            "stroke-width": 1,
+          }),
+        );
+
+        categories.forEach((category, categoryIndex) => {
+          const groupStart = frame.x + categoryIndex * categoryBand + groupGap / 2;
+          appendSvgText(group, category, {
+            x: groupStart + columnAreaWidth / 2,
+            y: axisY + 12,
+            "text-anchor": "middle",
+            fill: "#7b6b56",
+            "font-size": 10,
+          });
+
+          seriesList.forEach((series, seriesIndex) => {
+            const value = Math.abs(series.values?.[categoryIndex] ?? 0);
+            const height = (value / maxValue) * Math.max(16, frame.height - 18);
+            const x = groupStart + seriesIndex * (columnWidth + columnGap);
+            const y = axisY - height;
+
+            group.appendChild(
+              createSvgElement("rect", {
+                x,
+                y,
+                width: columnWidth,
+                height,
+                rx: Math.min(5, columnWidth / 2),
+                fill: colors[seriesIndex],
+                opacity: 0.92,
+              }),
+            );
+          });
+        });
+      };
+
+      const renderLineChartPreview = (group, chartSpec, frame) => {
+        const series = chartSpec?.series?.[0];
+        const values = Array.isArray(series?.values) ? series.values : [];
+        const categories = Array.isArray(chartSpec?.categories) ? chartSpec.categories : [];
+        if (values.length < 2 || !categories.length || frame.width <= 0 || frame.height <= 0) {
+          renderFallbackChartPreview(group, frame);
+          return;
+        }
+
+        const maxValue = Math.max(1, ...values.map((value) => Math.abs(value)));
+        const stepX = values.length === 1 ? frame.width : frame.width / (values.length - 1);
+        const points = values.map((value, index) => {
+          const x = frame.x + stepX * index;
+          const y = frame.y + frame.height - (Math.abs(value) / maxValue) * Math.max(16, frame.height - 16);
+          return `${x},${y}`;
+        });
+        const stroke = getSeriesColors(chartSpec, 1)[0];
+
+        group.appendChild(
+          createSvgElement("polyline", {
+            points: points.join(" "),
+            fill: "none",
+            stroke,
+            "stroke-width": 3,
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+          }),
+        );
+
+        points.forEach((point, index) => {
+          const [cx, cy] = point.split(",");
+          group.appendChild(
+            createSvgElement("circle", {
+              cx,
+              cy,
+              r: 4,
+              fill: stroke,
+            }),
+          );
+          appendSvgText(group, categories[index] ?? "", {
+            x: cx,
+            y: frame.y + frame.height + 12,
+            "text-anchor": "middle",
+            fill: "#7b6b56",
+            "font-size": 10,
+          });
+        });
+      };
+
+      const renderChartPreview = (group, chartSpec, frame) => {
+        if (frame.width < 32 || frame.height < 24) {
+          return;
+        }
+
+        if (chartSpec?.chart_type === "bar") {
+          renderBarChartPreview(group, chartSpec, frame);
+          return;
+        }
+
+        if (chartSpec?.chart_type === "column") {
+          renderColumnChartPreview(group, chartSpec, frame);
+          return;
+        }
+
+        if (chartSpec?.chart_type === "line") {
+          renderLineChartPreview(group, chartSpec, frame);
+          return;
+        }
+
+        renderFallbackChartPreview(group, frame);
+      };
 
       const renderStageBackground = () => {
         const background = createSvgElement("rect");
@@ -397,6 +676,56 @@
         stage.appendChild(image);
       };
 
+      const renderChartNode = (node, computed) => {
+        const chartSpec = node.chart_spec ?? {};
+        const group = createSvgElement("g", { "data-node-id": node.node_id });
+        const title = chartSpec.title ?? extractContentText(node.content);
+        const summary = summarizeChart(chartSpec);
+        const titleY = Number(computed.y) + 46;
+        const summaryY = title ? titleY + 26 : Number(computed.y) + 48;
+        const visualTop = summaryY + 18;
+        const visualFrame = {
+          x: Number(computed.x) + 16,
+          y: visualTop,
+          width: Math.max(0, Number(computed.width) - 32),
+          height: Math.max(0, Number(computed.height) - (visualTop - Number(computed.y)) - 16),
+        };
+
+        group.appendChild(
+          createSvgElement("rect", {
+            x: computed.x,
+            y: computed.y,
+            width: computed.width,
+            height: computed.height,
+            rx: 20,
+            fill: computed.bg_color || "#fbfaf7",
+            stroke: "#cdc6bb",
+            "stroke-width": 1.5,
+          }),
+        );
+
+        appendSvgText(group, summary, {
+          x: Number(computed.x) + 16,
+          y: Number(computed.y) + 24,
+          fill: "#7b6b56",
+          "font-size": 12,
+          "font-weight": 600,
+        });
+
+        if (title) {
+          appendSvgText(group, title, {
+            x: Number(computed.x) + 16,
+            y: titleY,
+            fill: "#2a2824",
+            "font-size": 18,
+            "font-weight": 700,
+          });
+        }
+
+        renderChartPreview(group, chartSpec, visualFrame);
+        stage.appendChild(group);
+      };
+
       const clampSlideIndex = (index, total) => {
         if (total <= 0) {
           return 0;
@@ -444,6 +773,11 @@
         for (const node of slide.nodes ?? []) {
           const computed = slide.computed?.[node.node_id];
           if (!computed) {
+            continue;
+          }
+
+          if (node.type === "chart" || computed.content_type === "chart") {
+            renderChartNode(node, computed);
             continue;
           }
 
