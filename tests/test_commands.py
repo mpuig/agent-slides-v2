@@ -192,8 +192,8 @@ def test_slide_remove_by_index_shifts_remaining_slides(tmp_path: Path) -> None:
     deck = Deck(
         deck_id="deck-1",
         slides=[
-            build_slide("s-1", "title", ["heading", "subheading"], start_node=1),
-            build_slide("s-2", "title", ["heading", "subheading"], start_node=3),
+            build_slide("s-1", "title", ["title", "subtitle"], start_node=1),
+            build_slide("s-2", "title", ["title", "subtitle"], start_node=3),
         ],
         counters=Counters(slides=2, nodes=4),
     )
@@ -219,7 +219,7 @@ def test_slide_remove_last_slide_leaves_empty_deck(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
         deck_id="deck-1",
-        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        slides=[build_slide("s-1", "title", ["title", "subtitle"], start_node=1)],
         counters=Counters(slides=1, nodes=2),
     )
     write_deck(deck_path, deck)
@@ -250,8 +250,8 @@ def test_slide_remove_accepts_slide_id_reference(tmp_path: Path) -> None:
     deck = Deck(
         deck_id="deck-1",
         slides=[
-            build_slide("s-1", "title", ["heading", "subheading"], start_node=1),
-            build_slide("s-2", "title", ["heading", "subheading"], start_node=3),
+            build_slide("s-1", "title", ["title", "subtitle"], start_node=1),
+            build_slide("s-2", "title", ["title", "subtitle"], start_node=3),
         ],
         counters=Counters(slides=2, nodes=4),
     )
@@ -268,7 +268,7 @@ def test_slide_remove_accepts_slide_id_reference(tmp_path: Path) -> None:
 
 def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    slide = build_slide("s-1", "three_col", ["heading", "col1", "col2", "col3"], start_node=1)
+    slide = build_slide("s-1", "three_col", ["title", "col1", "col2", "col3"], start_node=1)
     deck = Deck(
         deck_id="deck-1",
         slides=[slide],
@@ -305,7 +305,7 @@ def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: P
     }
     assert updated.slides[0].layout == "two_col"
     assert [node.slot_binding for node in updated.slides[0].nodes] == [
-        "heading",
+        "title",
         "col1",
         "col2",
         None,
@@ -314,7 +314,7 @@ def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: P
 
 def test_slide_set_layout_to_same_layout_has_no_unbound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    slide = build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)
+    slide = build_slide("s-1", "two_col", ["title", "col1", "col2"], start_node=1)
     deck = Deck(
         deck_id="deck-1",
         slides=[slide],
