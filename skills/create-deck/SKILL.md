@@ -32,6 +32,7 @@ Repo-relative reference paths:
 - Before Phase 3, read `${CLAUDE_SKILL_DIR}/references/common-mistakes.md`
 
 Treat those references as part of the operating instructions for both this skill and the conversational deck orchestrator.
+The shorthand reference paths are `references/storytelling.md`, `references/layout-selection.md`, `references/chart-guide.md`, and `references/common-mistakes.md`.
 
 ## Workflow Overview
 
