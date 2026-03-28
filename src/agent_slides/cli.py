@@ -6,7 +6,6 @@ import json
 
 import click
 
-from agent_slides.commands.chart import chart
 from agent_slides import __version__
 from agent_slides.commands.batch import batch
 from agent_slides.commands.build import build_command
