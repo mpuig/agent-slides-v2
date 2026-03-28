@@ -17,6 +17,14 @@ DEFAULT_TYPE_LADDERS = {
     "quote": [28.0, 24.0, 20.0, 18.0],
     "attribution": [16.0, 14.0, 12.0, 10.0],
 }
+HEX_COLOR_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def _normalize_hex_color(value: str, *, field_name: str) -> str:
+    normalized = value.strip().lstrip("#")
+    if len(normalized) != 6 or any(char not in HEX_COLOR_DIGITS for char in normalized):
+        raise ValueError(f"{field_name} must use #RRGGBB or RRGGBB format")
+    return f"#{normalized.upper()}"
 
 
 class ContentLimits(BaseModel):
@@ -63,6 +71,109 @@ class LayoutHints(BaseModel):
     short_text_threshold: int = 10
 
 
+class ConditionalRule(BaseModel):
+    """A rule that decorates matching text spans during rendering."""
+
+    pattern: Literal["positive_number", "negative_number", "keyword"]
+    color: str
+    bold: bool = False
+    match: str | None = None
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str) -> str:
+        return _normalize_hex_color(value, field_name="color")
+
+    @field_validator("match")
+    @classmethod
+    def validate_match(cls, value: str | None, info) -> str | None:
+        if info.data.get("pattern") == "keyword":
+            if value is None or not value.strip():
+                raise ValueError("keyword rules require a non-empty match value")
+            return value.strip()
+        return value
+
+
+class ChartConditionalFormatting(BaseModel):
+    positive_color: str = "#1B8A2D"
+    negative_color: str = "#D32F2F"
+    highlight_color: str = "#C98E48"
+    muted_color: str = "#CFC8BD"
+
+    @field_validator("positive_color", "negative_color", "highlight_color", "muted_color")
+    @classmethod
+    def validate_colors(cls, value: str, info) -> str:
+        return _normalize_hex_color(value, field_name=info.field_name)
+
+
+class TableStatusStyle(BaseModel):
+    fill: str
+    text: str = "#1F1E1A"
+    bold: bool = True
+
+    @field_validator("fill", "text")
+    @classmethod
+    def validate_colors(cls, value: str, info) -> str:
+        return _normalize_hex_color(value, field_name=info.field_name)
+
+
+class TableConditionalFormatting(BaseModel):
+    statuses: dict[str, TableStatusStyle] = Field(
+        default_factory=lambda: {
+            "complete": TableStatusStyle(fill="#DDF4E4", text="#1B5E20", bold=True),
+            "on track": TableStatusStyle(fill="#DDF4E4", text="#1B5E20", bold=True),
+            "at risk": TableStatusStyle(fill="#FDE3E3", text="#8B1E1E", bold=True),
+            "blocked": TableStatusStyle(fill="#FDE3E3", text="#8B1E1E", bold=True),
+            "in progress": TableStatusStyle(fill="#FFF1C7", text="#8A5A00", bold=True),
+        }
+    )
+
+    @field_validator("statuses")
+    @classmethod
+    def validate_status_keys(cls, value: dict[str, TableStatusStyle]) -> dict[str, TableStatusStyle]:
+        normalized: dict[str, TableStatusStyle] = {}
+        for key, style in value.items():
+            normalized_key = key.strip().casefold()
+            if not normalized_key:
+                raise ValueError("table status keys must be non-empty")
+            normalized[normalized_key] = style
+        return normalized
+
+
+class ConditionalFormatting(BaseModel):
+    color_aliases: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": "#1B8A2D",
+            "red": "#D32F2F",
+            "yellow": "#F2C94C",
+            "amber": "#C98E48",
+            "gray": "#8F8A81",
+            "grey": "#8F8A81",
+            "highlight": "#C98E48",
+            "muted": "#CFC8BD",
+        }
+    )
+    text_rules: list[ConditionalRule] = Field(
+        default_factory=lambda: [
+            ConditionalRule(pattern="positive_number", color="#1B8A2D"),
+            ConditionalRule(pattern="negative_number", color="#D32F2F"),
+        ]
+    )
+    chart: ChartConditionalFormatting = Field(default_factory=ChartConditionalFormatting)
+    table: TableConditionalFormatting = Field(default_factory=TableConditionalFormatting)
+
+    @field_validator("color_aliases")
+    @classmethod
+    def validate_color_aliases(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, color in value.items():
+            normalized_key = key.strip().casefold()
+            if not normalized_key:
+                raise ValueError("color aliases must use non-empty names")
+            normalized[normalized_key] = _normalize_hex_color(color, field_name=f"color_aliases.{key}")
+        return normalized
+
+
 class DesignRules(BaseModel):
     """Complete design-rules profile."""
 
@@ -76,6 +187,7 @@ class DesignRules(BaseModel):
     type_ladders: dict[str, list[float]] = Field(
         default_factory=lambda: {role: list(sizes) for role, sizes in DEFAULT_TYPE_LADDERS.items()}
     )
+    conditional_formatting: ConditionalFormatting = Field(default_factory=ConditionalFormatting)
 
     @field_validator("type_ladders")
     @classmethod

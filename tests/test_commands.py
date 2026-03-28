@@ -761,6 +761,47 @@ def test_slot_set_parses_inline_markdown_runs_from_text(tmp_path: Path) -> None:
     ]
 
 
+def test_slot_set_parses_inline_markdown_color_suffixes(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--text",
+            "Revenue: **+23%**{green} vs target **-5%**{red}",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue: +23% vs target -5%"
+    assert payload["data"]["content"]["blocks"][0]["runs"] == [
+        {"text": "Revenue: "},
+        {"text": "+23%", "bold": True, "color": "#1B8A2D"},
+        {"text": " vs target "},
+        {"text": "-5%", "bold": True, "color": "#D32F2F"},
+    ]
+    assert updated.slides[0].nodes[1].content.blocks[0].runs == [
+        TextRun(text="Revenue: "),
+        TextRun(text="+23%", bold=True, color="#1B8A2D"),
+        TextRun(text=" vs target "),
+        TextRun(text="-5%", bold=True, color="#D32F2F"),
+    ]
+
+
 def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(

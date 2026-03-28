@@ -47,6 +47,13 @@ def _normalize_hex_color(value: str) -> str:
     return normalized if normalized.startswith("#") else f"#{normalized}"
 
 
+def _normalize_run_color(value: str) -> str:
+    normalized = value.strip().lstrip("#")
+    if len(normalized) != 6 or any(char not in _HEX_COLOR_DIGITS for char in normalized):
+        raise ValueError("color must use #RRGGBB or RRGGBB format")
+    return f"#{normalized.upper()}"
+
+
 def _looks_numeric_table_value(value: str) -> bool:
     stripped = value.strip()
     return bool(stripped) and bool(_NUMERIC_TABLE_VALUE_PATTERN.match(stripped))
@@ -93,10 +100,7 @@ class TextRun(AgentSlidesModel):
     def validate_color(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        normalized = value.lstrip("#")
-        if len(normalized) != 6 or any(char not in _HEX_COLOR_DIGITS for char in normalized):
-            raise ValueError("color must use #RRGGBB or RRGGBB format")
-        return f"#{normalized.upper()}"
+        return _normalize_run_color(value)
 
     @field_validator("font_size")
     @classmethod
@@ -212,6 +216,52 @@ def parse_inline_markdown_runs(text: str) -> list[TextRun] | None:
     return _merge_adjacent_runs(runs) or [TextRun(text="")]
 
 
+_INLINE_COLOR_PATTERN = re.compile(r"^\{([A-Za-z0-9#_-]+)\}")
+
+
+def apply_inline_color_suffixes(
+    runs: list[TextRun],
+    *,
+    color_aliases: dict[str, str] | None = None,
+) -> list[TextRun]:
+    """Apply `**text**{color}` suffixes to the preceding run."""
+
+    if not runs:
+        return [TextRun(text="")]
+
+    aliases = {key.casefold(): value for key, value in (color_aliases or {}).items()}
+    resolved: list[TextRun] = []
+
+    def resolve_color(token: str) -> str | None:
+        normalized = token.strip()
+        if not normalized:
+            return None
+        alias = aliases.get(normalized.casefold())
+        if alias is not None:
+            return _normalize_run_color(alias)
+        try:
+            return _normalize_run_color(normalized)
+        except ValueError:
+            return None
+
+    for run in runs:
+        current = run
+        while resolved and current.text:
+            match = _INLINE_COLOR_PATTERN.match(current.text)
+            if match is None:
+                break
+            color = resolve_color(match.group(1))
+            if color is None:
+                break
+            previous = resolved[-1]
+            resolved[-1] = previous.model_copy(update={"color": color})
+            current = current.model_copy(update={"text": current.text[match.end() :]})
+        if current.text:
+            resolved.append(current)
+
+    return _merge_adjacent_runs(resolved) or [TextRun(text="")]
+
+
 def split_text_runs_by_line(block: TextBlock) -> list[list[TextRun]]:
     """Split a block into line-oriented runs while preserving inline formatting."""
 
@@ -285,6 +335,10 @@ class ChartStyle(AgentSlidesModel):
     has_legend: bool = True
     has_data_labels: bool = False
     series_colors: list[str] | None = None
+    color_by_value: bool = False
+    highlight_index: int | None = None
+    highlight_color: str | None = None
+    muted_color: str | None = None
 
     @field_validator("series_colors")
     @classmethod
@@ -292,10 +346,27 @@ class ChartStyle(AgentSlidesModel):
         if values is None:
             return values
         for value in values:
-            normalized = value.lstrip("#")
-            if len(normalized) != 6 or any(char not in "0123456789abcdefABCDEF" for char in normalized):
-                raise ValueError("series_colors entries must use #RRGGBB or RRGGBB format")
+            try:
+                _normalize_run_color(value)
+            except ValueError as exc:
+                raise ValueError("series_colors entries must use #RRGGBB or RRGGBB format") from exc
         return values
+
+    @field_validator("highlight_color", "muted_color")
+    @classmethod
+    def validate_optional_colors(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_run_color(value)
+
+    @field_validator("highlight_index")
+    @classmethod
+    def validate_highlight_index(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        if value < 0:
+            raise ValueError("highlight_index must be greater than or equal to 0")
+        return value
 
 
 class ChartSpec(AgentSlidesModel):

@@ -26,3 +26,49 @@ layout_hints:
   max_bullets_for_single_column: 5
   equal_length_threshold: 0.4
   short_text_threshold: 10
+conditional_formatting:
+  color_aliases:
+    green: "#1B8A2D"
+    red: "#D32F2F"
+    yellow: "#F2C94C"
+    amber: "#C98E48"
+    gray: "#8F8A81"
+    grey: "#8F8A81"
+    highlight: "#C98E48"
+    muted: "#CFC8BD"
+  text_rules:
+    - pattern: positive_number
+      color: "#1B8A2D"
+    - pattern: negative_number
+      color: "#D32F2F"
+    - pattern: keyword
+      match: "urgent"
+      color: "#C98E48"
+      bold: true
+  chart:
+    positive_color: "#1B8A2D"
+    negative_color: "#D32F2F"
+    highlight_color: "#C98E48"
+    muted_color: "#CFC8BD"
+  table:
+    statuses:
+      complete:
+        fill: "#DDF4E4"
+        text: "#1B5E20"
+        bold: true
+      on track:
+        fill: "#DDF4E4"
+        text: "#1B5E20"
+        bold: true
+      at risk:
+        fill: "#FDE3E3"
+        text: "#8B1E1E"
+        bold: true
+      blocked:
+        fill: "#FDE3E3"
+        text: "#8B1E1E"
+        bold: true
+      in progress:
+        fill: "#FFF1C7"
+        text: "#8A5A00"
+        bold: true
