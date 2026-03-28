@@ -145,6 +145,28 @@ def test_image_nodes_require_image_path() -> None:
         Node(node_id="n-2", type="image")
 
 
+def test_chart_nodes_do_not_allow_image_path() -> None:
+    with pytest.raises(ValidationError, match="image_path"):
+        Node(
+            node_id="n-chart",
+            type="chart",
+            image_path="chart.png",
+            chart_spec={
+                "chart_type": "bar",
+                "categories": ["Q1"],
+                "series": [{"name": "Revenue", "values": [1.0]}],
+            },
+        )
+
+
+def test_chart_nodes_default_content_to_empty_structured_content() -> None:
+    node = build_chart_node()
+
+    assert node.type == "chart"
+    assert node.image_path is None
+    assert node.content == NodeContent()
+
+
 def test_image_nodes_validate_file_existence_and_supported_format(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="does not exist"):
         Node(node_id="n-2", type="image", image_path=str(tmp_path / "missing.png"))
@@ -193,6 +215,23 @@ def test_computed_node_includes_resolved_style_fields() -> None:
     assert computed.font_bold is False
     assert computed.content_type == "image"
     assert computed.image_fit == "contain"
+
+
+def test_computed_node_accepts_chart_content_type() -> None:
+    computed = ComputedNode(
+        x=0.0,
+        y=0.0,
+        width=320.0,
+        height=180.0,
+        font_size_pt=0.0,
+        font_family="IBM Plex Sans",
+        color="#111111",
+        revision=1,
+        content_type="chart",
+    )
+
+    assert computed.content_type == "chart"
+    assert computed.font_size_pt == 0.0
 
 
 def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
