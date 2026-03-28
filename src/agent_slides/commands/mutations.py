@@ -117,6 +117,42 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
     return NodeContent.from_text(text)
 
 
+def _coerce_image_fit(args: dict[str, Any]) -> str:
+    image_fit = args.get("image_fit", "contain")
+    if image_fit is None:
+        return "contain"
+    if not isinstance(image_fit, str):
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            "Argument 'image_fit' must be one of: contain, cover, stretch",
+        )
+
+    normalized = image_fit.strip().lower()
+    if normalized not in {"contain", "cover", "stretch"}:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            "Argument 'image_fit' must be one of: contain, cover, stretch",
+        )
+    return normalized
+
+
+def _coerce_slot_set_payload(args: dict[str, Any]) -> tuple[str, NodeContent, str | None, str]:
+    has_text = "text" in args or "content" in args
+    image_path = args.get("image")
+    has_image = isinstance(image_path, str) and bool(image_path.strip())
+
+    if has_text == has_image:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            "slot_set requires exactly one of 'text'/'content' or 'image'",
+        )
+
+    if has_image:
+        return "image", NodeContent(), image_path.strip(), _coerce_image_fit(args)
+
+    return "text", _coerce_content(args), None, _coerce_image_fit(args)
+
+
 def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, Any]:
     """Apply one supported mutation and return its structured result."""
 
@@ -150,7 +186,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
     if command == "slot_set":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
-        content = _coerce_content(args)
+        node_type, content, image_path, image_fit = _coerce_slot_set_payload(args)
 
         slot_nodes = _find_slot_nodes(slide, slot_name)
         if slot_nodes:
@@ -160,12 +196,15 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
             node = Node(
                 node_id=deck.next_node_id(),
                 slot_binding=slot_name,
-                type="text",
+                type=node_type,
             )
             slide.nodes.append(node)
 
         node.slot_binding = slot_name
+        node.type = node_type
         node.content = content
+        node.image_path = image_path
+        node.image_fit = image_fit
 
         if "font_size" in args:
             font_size = args["font_size"]
@@ -180,8 +219,11 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
             "slide_id": slide.slide_id,
             "slot": slot_name,
             "node_id": node.node_id,
+            "type": node.type,
             "text": node.content.to_plain_text(),
             "content": node.content.model_dump(mode="json"),
+            "image_path": node.image_path,
+            "image_fit": node.image_fit,
             "font_size": node.style_overrides.get("font_size"),
         }
 

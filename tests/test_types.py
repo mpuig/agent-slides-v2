@@ -109,9 +109,26 @@ def test_get_slide_raises_invalid_slide_error() -> None:
     assert exc_info.value.code == INVALID_SLIDE
 
 
-def test_text_only_nodes_reject_image_type() -> None:
+def test_image_nodes_require_image_path() -> None:
     with pytest.raises(ValidationError):
         Node(node_id="n-2", type="image")
+
+
+def test_image_nodes_cannot_define_text_content() -> None:
+    with pytest.raises(ValidationError):
+        Node(
+            node_id="n-2",
+            type="image",
+            image_path="photo.png",
+            content="caption",
+        )
+
+
+def test_image_nodes_are_constructible() -> None:
+    node = Node(node_id="n-2", type="image", image_path="photo.png", image_fit="cover")
+
+    assert node.image_path == "photo.png"
+    assert node.image_fit == "cover"
 
 
 def test_bump_revision_increments_by_one() -> None:
@@ -140,6 +157,20 @@ def test_computed_node_includes_resolved_style_fields() -> None:
     assert computed.color == "#111111"
     assert computed.bg_color == "#FAFAFA"
     assert computed.font_bold is False
+
+
+def test_computed_node_defaults_support_image_nodes() -> None:
+    computed = ComputedNode(
+        x=10.0,
+        y=20.0,
+        width=200.0,
+        height=100.0,
+        revision=1,
+        image_fit="stretch",
+    )
+
+    assert computed.image_fit == "stretch"
+    assert computed.font_size_pt == 0.0
 
 
 def test_computed_deck_round_trip_applies_only_matching_revision() -> None:

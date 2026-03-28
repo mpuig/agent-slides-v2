@@ -5,6 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches, Pt
 
 from agent_slides.io.pptx_writer import write_pptx
@@ -18,6 +19,7 @@ from agent_slides.model.types import (
     Slide,
     TextBlock,
 )
+from tests.image_helpers import write_png
 
 
 def build_deck() -> Deck:
@@ -175,7 +177,7 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
         slides=[
             Slide(
                 slide_id="s-1",
-                layout="content",
+                layout="title_content",
                 nodes=[
                     Node(
                         node_id="n-1",
@@ -222,3 +224,92 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
     assert text_frame.paragraphs[0].runs[0].font.size == Pt(27)
     assert text_frame.paragraphs[1].level == 0
     assert text_frame.paragraphs[2].level == 1
+
+
+def test_write_pptx_renders_image_nodes_with_contain_fit(tmp_path: Path) -> None:
+    image_path = write_png(tmp_path / "photo.png", width=200, height=100)
+    output_path = tmp_path / "images.pptx"
+    deck = Deck(
+        deck_id="deck-images",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="image",
+                        image_path=str(image_path),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=100.0,
+                        y=120.0,
+                        width=240.0,
+                        height=180.0,
+                        revision=1,
+                        image_fit="contain",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    picture = presentation.slides[0].shapes[0]
+
+    assert picture.shape_type == MSO_SHAPE_TYPE.PICTURE
+    assert picture.left == int(100.0 * EMU_PER_POINT)
+    assert picture.top == int(150.0 * EMU_PER_POINT)
+    assert picture.width == int(240.0 * EMU_PER_POINT)
+    assert picture.height == int(120.0 * EMU_PER_POINT)
+    assert picture.image.size == (200, 100)
+
+
+def test_write_pptx_renders_image_nodes_with_stretch_fit(tmp_path: Path) -> None:
+    image_path = write_png(tmp_path / "photo.png", width=80, height=160)
+    output_path = tmp_path / "stretch.pptx"
+    deck = Deck(
+        deck_id="deck-images-stretch",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="image",
+                        image_path=str(image_path),
+                        image_fit="stretch",
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=80.0,
+                        y=90.0,
+                        width=300.0,
+                        height=140.0,
+                        revision=1,
+                        image_fit="stretch",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    picture = presentation.slides[0].shapes[0]
+
+    assert picture.left == int(80.0 * EMU_PER_POINT)
+    assert picture.top == int(90.0 * EMU_PER_POINT)
+    assert picture.width == int(300.0 * EMU_PER_POINT)
+    assert picture.height == int(140.0 * EMU_PER_POINT)

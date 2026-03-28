@@ -26,7 +26,7 @@ def build_command(path: Path, output_path: Path) -> None:
     deck = read_deck(str(path))
     reflow_deck(deck)
     write_computed_deck(str(path), deck)
-    write_pptx(deck, str(output_path))
+    write_pptx(deck, str(output_path), asset_base_dir=path.parent)
     payload = {
         "ok": True,
         "data": {

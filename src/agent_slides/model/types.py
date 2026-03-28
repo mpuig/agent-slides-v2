@@ -29,12 +29,13 @@ class ComputedNode(AgentSlidesModel):
     y: float
     width: float
     height: float
-    font_size_pt: float
-    font_family: str
-    color: str
+    font_size_pt: float = 0.0
+    font_family: str = ""
+    color: str = "#000000"
     bg_color: str | None = None
     font_bold: bool = False
     text_overflow: bool = False
+    image_fit: Literal["contain", "cover", "stretch"] = "contain"
     revision: int
 
 
@@ -87,9 +88,26 @@ class NodeContent(AgentSlidesModel):
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
-    type: Literal["text"]
+    type: Literal["text", "image"]
     content: NodeContent = Field(default_factory=NodeContent)
+    image_path: str | None = None
+    image_fit: Literal["contain", "cover", "stretch"] = "contain"
     style_overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_node_payload(self) -> Node:
+        if self.type == "image":
+            if self.image_path is None or not self.image_path.strip():
+                raise ValueError("image nodes require image_path")
+            if not self.content.is_empty():
+                raise ValueError("image nodes cannot define text content")
+            self.image_path = self.image_path.strip()
+            return self
+
+        if self.image_path is not None:
+            raise ValueError("text nodes cannot define image_path")
+
+        return self
 
 
 class Slide(AgentSlidesModel):
