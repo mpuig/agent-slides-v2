@@ -44,10 +44,12 @@ What that does:
 | `agent-slides slide remove PATH --slide REF` | Remove a slide by index or stable `slide_id`. |
 | `agent-slides slide set-layout PATH --slide REF --layout LAYOUT` | Change a slide layout and rebind slot-bound nodes. |
 | `agent-slides slot set PATH --slide REF --slot SLOT --text TEXT` | Set text for a slot on a specific slide. |
+| `agent-slides theme list` | List the built-in themes available to the CLI. |
+| `agent-slides theme apply PATH --theme THEME` | Switch an existing deck to a different built-in theme. |
 | `agent-slides build PATH --output FILE` | Reflow the deck, persist computed layout data, and render a `.pptx`. |
 | `agent-slides validate PATH` | Run design-rule validation and emit structured warnings. |
 | `agent-slides info PATH` | Print the full sidecar JSON with indentation. |
-| `agent-slides preview PATH [--host HOST] [--port PORT] [--debounce-ms MS]` | Serve the preview client plus live deck updates over HTTP and WebSockets. |
+| `agent-slides preview PATH [--port PORT] [--no-open]` | Start the live preview server and optionally suppress automatic browser launch. |
 | `agent-slides batch PATH` | Read a JSON array of mutations from stdin and apply them atomically. |
 
 ## Layout Reference
@@ -90,4 +92,4 @@ Five built-in themes are packaged with the CLI today:
 
 ## Development Notes
 
-For deeper architecture and design notes, see [CLAUDE.md](./CLAUDE.md).
+For deeper design and architecture rationale, see [docs/decisions/0001-structured-text-model.md](./docs/decisions/0001-structured-text-model.md).
