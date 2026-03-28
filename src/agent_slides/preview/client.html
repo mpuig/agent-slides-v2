@@ -18,9 +18,11 @@
 
       body {
         margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         background:
           radial-gradient(circle at top, rgba(201, 142, 72, 0.16), transparent 35%),
           linear-gradient(180deg, #f8f4ed 0%, #efe7db 100%);
@@ -28,7 +30,10 @@
 
       main {
         width: min(92vw, 980px);
-        padding: 24px;
+        max-height: 98vh;
+        padding: 12px 24px;
+        display: flex;
+        flex-direction: column;
       }
 
       .frame {
@@ -37,6 +42,10 @@
         border-radius: 24px;
         box-shadow: 0 24px 80px rgba(78, 55, 21, 0.15);
         overflow: hidden;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
       }
 
       header {
@@ -76,13 +85,20 @@
         box-shadow: 0 0 0 3px rgba(180, 73, 51, 0.16);
       }
 
-      .toolbar {
+      .toolbar-top {
+        text-align: center;
+        padding: 8px 20px;
+        border-bottom: 1px solid rgba(70, 50, 25, 0.08);
+        background: rgba(255, 252, 247, 0.78);
+      }
+
+      .toolbar-bottom {
         display: flex;
-        justify-content: space-between;
+        justify-content: center;
         align-items: center;
         gap: 16px;
         padding: 12px 20px;
-        border-bottom: 1px solid rgba(70, 50, 25, 0.08);
+        border-top: 1px solid rgba(70, 50, 25, 0.08);
         background: rgba(255, 252, 247, 0.78);
       }
 
@@ -146,15 +162,23 @@
       }
 
       .stage-shell {
-        background: white;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 20px;
       }
 
       #stage-image,
       svg {
-        width: 100%;
-        aspect-ratio: 4 / 3;
         display: block;
+        max-width: 100%;
+        max-height: calc(100vh - 200px);
+        object-fit: contain;
         background: white;
+        border: 1px solid rgba(70, 50, 25, 0.15);
+        box-shadow: 0 2px 12px rgba(78, 55, 21, 0.1);
       }
 
       #stage-image {
@@ -182,17 +206,19 @@
             <span id="status-text">Connecting...</span>
           </span>
         </header>
-        <div class="toolbar">
-          <div class="nav" aria-label="Slide navigation">
-            <button id="prev-slide" type="button" aria-label="Previous slide">&larr;</button>
-            <div class="dots" id="slide-dots" aria-label="Slide list"></div>
-            <button id="next-slide" type="button" aria-label="Next slide">&rarr;</button>
-          </div>
+        <div class="toolbar-top">
           <div class="meta" id="slide-count">Slide 0 of 0</div>
         </div>
         <div class="stage-shell">
           <img id="stage-image" alt="Slide preview" hidden>
           <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
+        </div>
+        <div class="toolbar-bottom">
+          <div class="nav" aria-label="Slide navigation">
+            <button id="prev-slide" type="button" aria-label="Previous slide">&larr;</button>
+            <div class="dots" id="slide-dots" aria-label="Slide list"></div>
+            <button id="next-slide" type="button" aria-label="Next slide">&rarr;</button>
+          </div>
         </div>
       </div>
     </main>
