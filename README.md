@@ -23,6 +23,7 @@ agent-slides init deck.json
 agent-slides slide add deck.json --layout title
 agent-slides slot set deck.json --slide 0 --slot heading --text "Ship the board deck in minutes"
 agent-slides slot set deck.json --slide 0 --slot subheading --text "Semantic operations, deterministic reflow, PowerPoint output"
+agent-slides icon add deck.json --slide 0 --name flag --x 96 --y 84 --size 18 --color "#1A73E8"
 agent-slides build deck.json -o deck.pptx
 ```
 
@@ -65,6 +66,13 @@ agent-slides build deck.json -o deck.pptx
 | --- | --- |
 | `chart add PATH --slide REF --slot SLOT --type TYPE --data JSON` | Add a native PowerPoint chart. Types: bar, column, line, pie, scatter, area, doughnut. |
 | `chart update PATH --node NODE_ID --data JSON` | Update chart data on an existing chart node. |
+
+### Icon operations
+
+| Command | Description |
+| --- | --- |
+| `icon list` | List built-in vector icons for standalone nodes and bullet markers. |
+| `icon add PATH --slide REF --name NAME --x X --y Y --size SIZE --color HEX` | Add an absolute-positioned vector icon to a slide. |
 
 ### Theme operations
 
