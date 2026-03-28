@@ -756,6 +756,166 @@
         renderFallbackChartPreview(group, frame);
       };
 
+      const isNumericTableValue = (value) => {
+        const normalized = `${value ?? ""}`.trim();
+        if (!normalized) {
+          return false;
+        }
+        return /^[()\-\+]?\s*(?:[$€£¥]\s*)?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\d*\.\d+)\s*(?:[KMBT]|bn|mm)?\s*%?\s*\)?$/i.test(normalized);
+      };
+
+      const tableColumnAlignments = (tableSpec) => {
+        const headers = Array.isArray(tableSpec?.headers) ? tableSpec.headers : [];
+        if (Array.isArray(tableSpec?.col_align) && tableSpec.col_align.length === headers.length) {
+          return tableSpec.col_align.map((value) => {
+            if (value === "center" || value === "right") {
+              return value;
+            }
+            return "left";
+          });
+        }
+
+        return headers.map((_, columnIndex) => {
+          const values = Array.isArray(tableSpec?.rows)
+            ? tableSpec.rows
+                .map((row) => (Array.isArray(row) ? row[columnIndex] : ""))
+                .filter((value) => `${value ?? ""}`.trim())
+            : [];
+          return values.length > 0 && values.every(isNumericTableValue) ? "right" : "left";
+        });
+      };
+
+      const tableColumnWidths = (tableSpec) => {
+        const headers = Array.isArray(tableSpec?.headers) ? tableSpec.headers : [];
+        if (!headers.length) {
+          return [];
+        }
+
+        if (Array.isArray(tableSpec?.col_widths) && tableSpec.col_widths.length === headers.length) {
+          return tableSpec.col_widths.map((value) => (Number(value) > 0 ? Number(value) : 1));
+        }
+
+        return headers.map((header, columnIndex) => {
+          const values = [header, ...(Array.isArray(tableSpec?.rows) ? tableSpec.rows.map((row) => row?.[columnIndex] ?? "") : [])];
+          const maxLength = Math.max(...values.map((value) => `${value ?? ""}`.trim().length || 1));
+          return maxLength + 2;
+        });
+      };
+
+      const tableHeaderTextColor = (fill) => {
+        const normalized = `${fill || "#1F4E79"}`.replace("#", "");
+        if (normalized.length !== 6) {
+          return "#FFFFFF";
+        }
+        const red = Number.parseInt(normalized.slice(0, 2), 16);
+        const green = Number.parseInt(normalized.slice(2, 4), 16);
+        const blue = Number.parseInt(normalized.slice(4, 6), 16);
+        const luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue);
+        return luminance < 160 ? "#FFFFFF" : "#2A2824";
+      };
+
+      const renderTableNode = (node, computed) => {
+        const tableSpec = node.table_spec ?? {};
+        const headers = Array.isArray(tableSpec?.headers) ? tableSpec.headers : [];
+        const rows = Array.isArray(tableSpec?.rows) ? tableSpec.rows : [];
+        if (!headers.length) {
+          renderTextNode(
+            {
+              ...node,
+              content: { blocks: [{ type: "paragraph", text: "Empty table" }] },
+            },
+            computed,
+          );
+          return;
+        }
+
+        const group = createSvgElement("g", { "data-node-id": node.node_id });
+        const columnWeights = tableColumnWidths(tableSpec);
+        const columnWeightTotal = columnWeights.reduce((sum, value) => sum + value, 0) || headers.length;
+        const columnAlignments = tableColumnAlignments(tableSpec);
+        const rowCount = rows.length + 1;
+        const rowHeight = Number(computed.height) / rowCount;
+        const headerFill = tableSpec?.header_color || "#1F4E79";
+        const headerTextColor = tableHeaderTextColor(headerFill);
+        const stripeFill = "#f4efe7";
+        const bodyFill = computed.bg_color || "#ffffff";
+        const textColor = computed.color || "#2A2824";
+
+        let currentX = Number(computed.x);
+        const columnWidths = columnWeights.map((weight, columnIndex) => {
+          if (columnIndex === headers.length - 1) {
+            return Number(computed.x) + Number(computed.width) - currentX;
+          }
+          const width = (Number(computed.width) * weight) / columnWeightTotal;
+          currentX += width;
+          return width;
+        });
+
+        group.appendChild(
+          createSvgElement("rect", {
+            x: computed.x,
+            y: computed.y,
+            width: computed.width,
+            height: computed.height,
+            rx: 8,
+            fill: "#ffffff",
+            stroke: "#d6cdc0",
+            "stroke-width": 1,
+          }),
+        );
+
+        const drawCell = (rowIndex, columnIndex, text, fill, alignment, isHeader = false) => {
+          const x = Number(computed.x) + columnWidths.slice(0, columnIndex).reduce((sum, value) => sum + value, 0);
+          const y = Number(computed.y) + rowIndex * rowHeight;
+          const width = columnWidths[columnIndex];
+
+          group.appendChild(
+            createSvgElement("rect", {
+              x,
+              y,
+              width,
+              height: rowHeight,
+              fill,
+              stroke: "#d6cdc0",
+              "stroke-width": 1,
+            }),
+          );
+
+          const padding = 10;
+          let textX = x + padding;
+          let textAnchor = "start";
+          if (alignment === "center") {
+            textX = x + width / 2;
+            textAnchor = "middle";
+          } else if (alignment === "right") {
+            textX = x + width - padding;
+            textAnchor = "end";
+          }
+
+          appendSvgText(group, `${text ?? ""}`, {
+            x: textX,
+            y: y + rowHeight * 0.62,
+            "text-anchor": textAnchor,
+            fill: isHeader ? headerTextColor : textColor,
+            "font-size": isHeader ? 12 : 11,
+            "font-weight": isHeader ? 700 : 500,
+          });
+        };
+
+        headers.forEach((header, columnIndex) => {
+          drawCell(0, columnIndex, header, headerFill, "center", true);
+        });
+
+        rows.forEach((row, rowIndex) => {
+          const fill = tableSpec?.stripe !== false && rowIndex % 2 === 1 ? stripeFill : bodyFill;
+          headers.forEach((_, columnIndex) => {
+            drawCell(rowIndex + 1, columnIndex, row?.[columnIndex] ?? "", fill, columnAlignments[columnIndex]);
+          });
+        });
+
+        stage.appendChild(group);
+      };
+
       const renderStageBackground = () => {
         const background = createSvgElement("rect");
         background.setAttribute("x", "0");
@@ -1153,6 +1313,11 @@
 
           if (node.type === "shape" || computed.content_type === "shape") {
             renderShapeNode(node, computed);
+            continue;
+          }
+
+          if (node.type === "table" || computed.content_type === "table") {
+            renderTableNode(node, computed);
             continue;
           }
 
