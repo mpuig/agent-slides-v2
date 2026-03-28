@@ -216,7 +216,10 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
-    reflow_deck(deck, provider, manifest_path=manifest_path)
+    if manifest_path is None:
+        reflow_deck(deck, provider)
+    else:
+        reflow_deck(deck, provider, manifest_path=manifest_path)
     write_deck(path, deck, expected_revision)
     return deck, result
 

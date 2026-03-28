@@ -27,7 +27,10 @@ def build_command(path: Path, output_path: Path) -> None:
     deck = read_deck(str(path))
     manifest_path = resolve_manifest_path(str(path), deck)
     provider = resolve_layout_provider(manifest_path)
-    reflow_deck(deck, provider, manifest_path=manifest_path)
+    if manifest_path is None:
+        reflow_deck(deck, provider)
+    else:
+        reflow_deck(deck, provider, manifest_path=manifest_path)
     write_computed_deck(str(path), deck)
     write_pptx(deck, str(output_path))
     payload = {
