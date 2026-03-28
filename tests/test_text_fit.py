@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from PIL import ImageFont
 
-from agent_slides.engine.text_fit import fit_text
-from agent_slides.model.types import NodeContent, TextBlock
+from agent_slides.engine.text_fit import BlockFit, compose_blocks, fit_blocks, fit_text, measure_text_height
+from agent_slides.model.design_rules import BlockSpacingRules
+from agent_slides.model.types import NodeContent, TextBlock, TextFitting, TextRun
 
 
 def test_short_text_fits_at_default_size() -> None:
@@ -90,6 +91,31 @@ def test_structured_blocks_account_for_heading_hierarchy_and_spacing() -> None:
     assert overflowed is False
 
 
+def test_mixed_size_inline_runs_increase_measured_height() -> None:
+    plain = NodeContent(
+        blocks=[
+            TextBlock(
+                type="paragraph",
+                text="Revenue grew 23% driven by premium segment",
+            )
+        ]
+    )
+    mixed = NodeContent(
+        blocks=[
+            TextBlock(
+                type="paragraph",
+                runs=[
+                    TextRun(text="Revenue grew "),
+                    TextRun(text="23%", font_size=32),
+                    TextRun(text=" driven by premium segment"),
+                ],
+            )
+        ]
+    )
+
+    assert measure_text_height(mixed, width=160, font_size=18) > measure_text_height(plain, width=160, font_size=18)
+
+
 def test_precise_measurement_uses_pillow_truetype(monkeypatch) -> None:
     calls: list[tuple[str, int]] = []
 
@@ -125,3 +151,66 @@ def test_precise_measurement_uses_pillow_truetype(monkeypatch) -> None:
     assert font_size == 12
     assert overflowed is False
     assert calls == [("DejaVuSans.ttf", 18), ("DejaVuSans.ttf", 12)]
+
+
+def test_fit_blocks_uses_heading_and_body_ladders_per_block() -> None:
+    fits, overflowed = fit_blocks(
+        [
+            TextBlock(type="heading", text="Overview"),
+            TextBlock(type="bullet", text="First point"),
+            TextBlock(type="bullet", text="Second point"),
+        ],
+        width=240,
+        height=160,
+        role="body",
+        text_fitting={
+            "heading": TextFitting(default_size=32, min_size=24),
+            "body": TextFitting(default_size=18, min_size=10),
+        },
+        spacing_rules=BlockSpacingRules(),
+        type_ladders={
+            "heading": [36.0, 32.0, 28.0, 24.0],
+            "body": [18.0, 16.0, 14.0, 12.0, 10.0],
+        },
+    )
+
+    assert [fit.font_size_pt for fit in fits] == [32.0, 18.0, 18.0]
+    assert [fit.role for fit in fits] == ["heading", "body", "body"]
+    assert overflowed is False
+
+
+def test_compose_blocks_applies_padding_spacing_and_middle_alignment() -> None:
+    block_fits = [
+        BlockFit(
+            block_index=0,
+            block=TextBlock(type="heading", text="Overview"),
+            role="heading",
+            font_size_pt=24.0,
+            rendered_height=26.4,
+            line_count=1,
+        ),
+        BlockFit(
+            block_index=1,
+            block=TextBlock(type="bullet", text="First point"),
+            role="body",
+            font_size_pt=14.0,
+            rendered_height=16.8,
+            line_count=1,
+        ),
+    ]
+
+    positions = compose_blocks(
+        x=40.0,
+        y=60.0,
+        width=200.0,
+        height=120.0,
+        padding=8.0,
+        vertical_align="middle",
+        block_fits=block_fits,
+        spacing_rules=BlockSpacingRules(),
+    )
+
+    assert positions[0].x == 48.0
+    assert positions[0].width == 184.0
+    assert positions[0].y == 93.4
+    assert positions[1].y == 129.8
