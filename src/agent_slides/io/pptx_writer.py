@@ -49,17 +49,20 @@ def _block_text(block: TextBlock, line: str) -> str:
     return line
 
 
-def _fit_image_to_slot(node: Node, computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
+def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
     slot_x = computed.x
     slot_y = computed.y
     slot_width = computed.width
     slot_height = computed.height
 
-    if node.image_fit == "stretch":
+    if computed.image_fit == "stretch":
         return slot_x, slot_y, slot_width, slot_height
 
     image_width_px, image_height_px = image_size_px
-    scale = min(slot_width / image_width_px, slot_height / image_height_px)
+    if computed.image_fit == "cover":
+        scale = max(slot_width / image_width_px, slot_height / image_height_px)
+    else:
+        scale = min(slot_width / image_width_px, slot_height / image_height_px)
     width = image_width_px * scale
     height = image_height_px * scale
     return (
@@ -84,6 +87,7 @@ def render_text_node(slide_shape_collection: SlideShapes, node: Node, computed: 
     if computed.bg_color is not None:
         shape.fill.solid()
         shape.fill.fore_color.rgb = hex_to_rgb(computed.bg_color)
+        shape.fill.transparency = computed.bg_transparency
     else:
         shape.fill.background()
 
@@ -130,7 +134,7 @@ def render_image_node(
 
     image_path = resolve_image_path(node.image_path, base_dir=asset_base_dir)
     image = Image.from_file(str(image_path))
-    left, top, width, height = _fit_image_to_slot(node, computed, cast(tuple[int, int], image.size))
+    left, top, width, height = _fit_image_to_slot(computed, cast(tuple[int, int], image.size))
     slide_shape_collection.add_picture(
         str(image_path),
         points_to_emu(left),
@@ -168,8 +172,7 @@ def write_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | Non
                     computed,
                     asset_base_dir=asset_base_dir,
                 )
-                continue
-
-            render_text_node(pptx_slide.shapes, node, computed)
+            else:
+                render_text_node(pptx_slide.shapes, node, computed)
 
     presentation.save(Path(output_path))

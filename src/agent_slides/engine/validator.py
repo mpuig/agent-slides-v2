@@ -60,26 +60,28 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
 
     total_bullets = 0
     for node in slide.nodes:
-        total_bullets += _count_bullets(node.content)
+        if node.type == "text":
+            content = node.content if isinstance(node.content, NodeContent) else NodeContent.model_validate(node.content)
+            total_bullets += _count_bullets(content)
 
-        if node.slot_binding is not None:
-            word_count = _count_words(node.content)
-            if word_count > rules.content_limits.max_words_per_column:
-                constraints.append(
-                    Constraint(
-                        code=MAX_WORDS_PER_COLUMN_EXCEEDED,
-                        severity="warning",
-                        message=(
-                            f"Slot '{node.slot_binding}' has {word_count} words; "
-                            f"max is {rules.content_limits.max_words_per_column}."
-                        ),
-                        slide_id=slide.slide_id,
-                        node_id=node.node_id,
+            if node.slot_binding is not None:
+                word_count = _count_words(content)
+                if word_count > rules.content_limits.max_words_per_column:
+                    constraints.append(
+                        Constraint(
+                            code=MAX_WORDS_PER_COLUMN_EXCEEDED,
+                            severity="warning",
+                            message=(
+                                f"Slot '{node.slot_binding}' has {word_count} words; "
+                                f"max is {rules.content_limits.max_words_per_column}."
+                            ),
+                            slide_id=slide.slide_id,
+                            node_id=node.node_id,
+                        )
                     )
-                )
 
         computed = slide.computed.get(node.node_id)
-        if computed is None:
+        if computed is None or node.type != "text":
             continue
 
         if computed.text_overflow and isclose(

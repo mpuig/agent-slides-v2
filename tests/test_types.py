@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 from agent_slides.model.types import (
     ComputedDeck,
@@ -108,7 +108,6 @@ def test_get_slide_raises_invalid_slide_error() -> None:
 
     assert exc_info.value.code == INVALID_SLIDE
 
-
 def test_image_nodes_require_image_path() -> None:
     with pytest.raises(ValidationError):
         Node(node_id="n-2", type="image")
@@ -151,12 +150,26 @@ def test_computed_node_includes_resolved_style_fields() -> None:
         bg_color="#FAFAFA",
         font_bold=False,
         revision=1,
+        content_type="image",
     )
 
     assert computed.font_family == "IBM Plex Sans"
     assert computed.color == "#111111"
     assert computed.bg_color == "#FAFAFA"
     assert computed.font_bold is False
+    assert computed.content_type == "image"
+    assert computed.image_fit == "contain"
+
+
+def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
+    image_path = tmp_path / "diagram.svg"
+    image_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+
+    node = Node(node_id="n-9", type="image", image_path=str(image_path))
+    restored = Node.model_validate_json(node.model_dump_json())
+
+    assert restored == node
+    assert json.loads(node.model_dump_json())["image_path"] == str(image_path.resolve())
 
 
 def test_computed_node_defaults_support_image_nodes() -> None:

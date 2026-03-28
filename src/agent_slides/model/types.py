@@ -13,6 +13,10 @@ STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
 
+NodeType = Literal["text", "image"]
+ImageFit = Literal["contain", "cover", "stretch"]
+SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
+
 
 class AgentSlidesModel(BaseModel):
     """Common Pydantic defaults for scene-graph models."""
@@ -33,10 +37,12 @@ class ComputedNode(AgentSlidesModel):
     font_family: str = ""
     color: str = "#000000"
     bg_color: str | None = None
+    bg_transparency: float = 0.0
     font_bold: bool = False
     text_overflow: bool = False
-    image_fit: Literal["contain", "cover", "stretch"] = "contain"
     revision: int
+    content_type: NodeType = "text"
+    image_fit: ImageFit = "contain"
 
 
 class TextBlock(AgentSlidesModel):
@@ -88,25 +94,36 @@ class NodeContent(AgentSlidesModel):
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
-    type: Literal["text", "image"]
+    type: NodeType
     content: NodeContent = Field(default_factory=NodeContent)
     image_path: str | None = None
-    image_fit: Literal["contain", "cover", "stretch"] = "contain"
+    image_fit: ImageFit = "contain"
     style_overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_content_by_type(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        data["content"] = NodeContent.model_validate(data.get("content"))
+        return data
 
     @model_validator(mode="after")
     def validate_node_payload(self) -> Node:
-        if self.type == "image":
-            if self.image_path is None or not self.image_path.strip():
-                raise ValueError("image nodes require image_path")
-            if not self.content.is_empty():
-                raise ValueError("image nodes cannot define text content")
-            self.image_path = self.image_path.strip()
+        if self.type == "text":
+            if self.image_path is not None:
+                raise ValueError("text nodes cannot define image_path")
             return self
 
-        if self.image_path is not None:
-            raise ValueError("text nodes cannot define image_path")
-
+        if self.image_path is None or not self.image_path.strip():
+            if self.style_overrides.get("placeholder"):
+                return self
+            raise ValueError("image nodes require image_path")
+        if not self.content.is_empty():
+            raise ValueError("image nodes cannot define text content")
+        self.image_path = self.image_path.strip()
         return self
 
 
@@ -154,9 +171,19 @@ class Theme(AgentSlidesModel):
 
 
 class SlotDef(AgentSlidesModel):
-    grid_row: int
+    grid_row: int | list[int]
     grid_col: int | list[int]
-    role: str
+    role: SlotRole
+    full_bleed: bool = False
+    bg_color: str | None = None
+    bg_transparency: float = 0.0
+
+    @field_validator("bg_transparency")
+    @classmethod
+    def validate_bg_transparency(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
 
 
 class GridDef(AgentSlidesModel):
