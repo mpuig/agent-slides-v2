@@ -30,7 +30,7 @@ dev = [
 packages = ["src/agent_slides"]
 include = [
   "src/agent_slides/config/design_rules/*.yaml",
-  "src/agent_slides/preview_runtime/*.html",
+  "src/agent_slides/preview/*.html",
   "src/agent_slides/themes/*.json",
 ]
 
