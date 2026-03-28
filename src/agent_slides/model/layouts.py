@@ -52,7 +52,7 @@ LAYOUTS: dict[str, LayoutDef] = {
     "comparison": _layout(
         name="comparison",
         slots={
-            "title": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
+            "heading": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
             "left_header": SlotDef(grid_row=2, grid_col=1, role="heading"),
             "left_body": SlotDef(grid_row=3, grid_col=1, role="body"),
             "right_header": SlotDef(grid_row=2, grid_col=2, role="heading"),
@@ -76,7 +76,7 @@ LAYOUTS: dict[str, LayoutDef] = {
     "three_col": _layout(
         name="three_col",
         slots={
-            "title": SlotDef(grid_row=1, grid_col=[1, 2, 3], role="heading"),
+            "heading": SlotDef(grid_row=1, grid_col=[1, 2, 3], role="heading"),
             "col1": SlotDef(grid_row=2, grid_col=1, role="body"),
             "col2": SlotDef(grid_row=2, grid_col=2, role="body"),
             "col3": SlotDef(grid_row=2, grid_col=3, role="body"),
@@ -92,8 +92,8 @@ LAYOUTS: dict[str, LayoutDef] = {
     "title": _layout(
         name="title",
         slots={
-            "title": SlotDef(grid_row=1, grid_col=1, role="heading"),
-            "subtitle": SlotDef(grid_row=2, grid_col=1, role="body"),
+            "heading": SlotDef(grid_row=1, grid_col=1, role="heading"),
+            "subheading": SlotDef(grid_row=2, grid_col=1, role="body"),
         },
         grid=_grid(columns=1, rows=2, row_heights=[0.40, 0.60], col_widths=[1.0]),
         text_fitting=DEFAULT_TEXT_FITTING,
@@ -101,7 +101,7 @@ LAYOUTS: dict[str, LayoutDef] = {
     "title_content": _layout(
         name="title_content",
         slots={
-            "title": SlotDef(grid_row=1, grid_col=1, role="heading"),
+            "heading": SlotDef(grid_row=1, grid_col=1, role="heading"),
             "body": SlotDef(grid_row=2, grid_col=1, role="body"),
         },
         grid=_grid(columns=1, rows=2, row_heights=[0.12, 0.88], col_widths=[1.0]),
@@ -110,11 +110,19 @@ LAYOUTS: dict[str, LayoutDef] = {
     "two_col": _layout(
         name="two_col",
         slots={
-            "title": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
+            "heading": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
             "col1": SlotDef(grid_row=2, grid_col=1, role="body"),
             "col2": SlotDef(grid_row=2, grid_col=2, role="body"),
         },
         grid=_grid(columns=2, rows=2, row_heights=[0.12, 0.88], col_widths=[0.5, 0.5]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
+    "closing": _layout(
+        name="closing",
+        slots={
+            "body": SlotDef(grid_row=1, grid_col=1, role="body"),
+        },
+        grid=_grid(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0]),
         text_fitting=DEFAULT_TEXT_FITTING,
     ),
 }
