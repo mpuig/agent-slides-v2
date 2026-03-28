@@ -9,6 +9,7 @@ from typing import Any
 import click
 
 from agent_slides.commands.mutations import apply_mutation
+from agent_slides.commands.warnings import attach_layout_fallback_warning
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
 from agent_slides.model import Deck
@@ -91,8 +92,14 @@ def add_chart_command(
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(deck, "chart_add", mutation_args, provider)
 
-    _, result = mutate_deck(path, mutate)
-    _emit_json({"ok": True, "data": result})
+    deck, result = mutate_deck(path, mutate)
+    _emit_json(
+        attach_layout_fallback_warning(
+            {"ok": True, "data": result},
+            deck,
+            slide_ids=[str(result["slide_id"])],
+        )
+    )
 
 
 @chart.command("update")
@@ -113,5 +120,5 @@ def update_chart_command(path: str, node_id: str, data_json: str) -> None:
             provider,
         )
 
-    _, result = mutate_deck(path, mutate)
-    _emit_json({"ok": True, "data": result})
+    deck, result = mutate_deck(path, mutate)
+    _emit_json(attach_layout_fallback_warning({"ok": True, "data": result}, deck))

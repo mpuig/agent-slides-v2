@@ -6,6 +6,7 @@ import pytest
 
 import agent_slides.engine.reflow as reflow_module
 from agent_slides.engine.reflow import reflow_deck, reflow_slide
+from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW
 from agent_slides.model import Counters, Deck, LayoutDef, Node, Slide, SlotDef, TextBlock, TextFitting, get_layout
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import GridDef, NodeContent
@@ -185,6 +186,50 @@ def test_reflow_deck_normalizes_font_sizes_by_role(monkeypatch: pytest.MonkeyPat
     assert deck.slides[0].computed["n-1"].font_size_pt == 24.0
     assert deck.slides[1].computed["n-3"].font_size_pt == 24.0
     assert deck.slides[0].computed["n-2"].font_size_pt == 18.0
+
+def test_reflow_deck_uses_variant_fallback_without_mutating_authoring_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deck = Deck(
+        deck_id="deck-fallback",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="image_left",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
+                    Node(node_id="n-2", slot_binding="body", type="text", content="Body copy"),
+                    Node(node_id="n-3", slot_binding="image", type="image", image_path="image.png"),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=3),
+    )
+
+    def fake_validate_layout(layout, rects, **kwargs):
+        if layout.name == "image_left":
+            return [
+                LayoutViolation(
+                    code=TEXT_OVERFLOW,
+                    severity="error",
+                    message="Forced text overflow",
+                    slot_refs=("body",),
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(reflow_module, "validate_layout", fake_validate_layout)
+
+    reflow_deck(deck)
+    first_dump = deck.model_dump(mode="json")
+    reflow_deck(deck)
+
+    assert deck.slides[0].layout == "image_left"
+    assert deck.slides[0].computed["n-1"].layout_used == "image_right"
+    assert deck.slides[0].computed["n-1"].layout_fallback_reason == "text overflow in body"
+    assert deck.model_dump(mode="json") == first_dump
 
 
 def test_reflow_composes_text_blocks_with_padding_spacing_and_per_block_sizes() -> None:

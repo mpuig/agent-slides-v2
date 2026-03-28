@@ -17,6 +17,8 @@ from click.testing import CliRunner, Result
 from pptx import Presentation
 
 from agent_slides.cli import cli
+import agent_slides.engine.reflow as reflow_module
+from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW
 from agent_slides.errors import (
     CHART_DATA_ERROR,
     FILE_EXISTS,
@@ -1858,6 +1860,68 @@ def test_slide_set_layout_invalid_layout_returns_invalid_layout(tmp_path: Path) 
 
     assert result.exit_code == 1
     assert payload["error"]["code"] == INVALID_LAYOUT
+
+
+def test_slot_set_reports_layout_fallback_warning_without_mutating_authoring_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-fallback",
+        revision=0,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="image_left",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
+                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                    Node(node_id="n-3", slot_binding="image", type="image", image_path="image.png"),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    def fake_validate_layout(layout, rects, **kwargs):
+        if layout.name == "image_left":
+            return [
+                LayoutViolation(
+                    code=TEXT_OVERFLOW,
+                    severity="error",
+                    message="Forced text overflow",
+                    slot_refs=("body",),
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(reflow_module, "validate_layout", fake_validate_layout)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "body", "--text", "Updated body"]
+    )
+
+    payload = json.loads(result.output)
+    updated = read_deck(str(deck_path))
+    computed = read_computed_deck(str(deck_path))
+    deck_payload = read_payload(deck_path)
+
+    assert result.exit_code == 0
+    assert payload["warning"] == {
+        "code": "LAYOUT_FALLBACK",
+        "layout_used": "image_right",
+        "original": "image_left",
+        "reason": "text overflow in body",
+    }
+    assert updated.slides[0].layout == "image_left"
+    assert deck_payload["slides"][0]["layout"] == "image_left"
+    assert "layout_used" not in deck_payload["slides"][0]
+    assert computed.slides[0].computed["n-1"].layout_used == "image_right"
+    assert computed.slides[0].computed["n-1"].layout_fallback_reason == "text overflow in body"
 
 def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"

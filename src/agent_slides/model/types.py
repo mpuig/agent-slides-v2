@@ -86,8 +86,10 @@ class ComputedNode(AgentSlidesModel):
     revision: int
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
+    layout_used: str | None = None
+    layout_fallback_reason: str | None = None
+    layout_overflow_reason: str | None = None
     icon_svg_path: str | None = None
-    block_positions: list[BlockPosition] = Field(default_factory=list)
     block_positions: list[BlockPosition] = Field(default_factory=list)
 
 

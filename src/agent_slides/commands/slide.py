@@ -7,6 +7,7 @@ import json
 import click
 
 from agent_slides.commands.mutations import apply_mutation
+from agent_slides.commands.warnings import attach_layout_fallback_warning
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR, UNBOUND_NODES
 from agent_slides.io import mutate_deck
 from agent_slides.model import Deck, NodeContent
@@ -92,8 +93,8 @@ def add_slide_command(
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(deck, "slide_add", mutation_args, provider)
 
-    _, result = mutate_deck(path, mutate)
-    _emit_json({"ok": True, "data": result})
+    deck, result = mutate_deck(path, mutate)
+    _emit_json(attach_layout_fallback_warning({"ok": True, "data": result}, deck))
 
 
 @slide.command("remove")
@@ -105,8 +106,8 @@ def remove_slide_command(path: str, slide_ref: str) -> None:
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(deck, "slide_remove", {"slide": slide_ref}, provider)
 
-    _, result = mutate_deck(path, mutate)
-    _emit_json({"ok": True, "data": result})
+    deck, result = mutate_deck(path, mutate)
+    _emit_json(attach_layout_fallback_warning({"ok": True, "data": result}, deck))
 
 
 @slide.command("set-layout")
@@ -127,6 +128,12 @@ def set_slide_layout_command(path: str, slide_ref: str, layout_name: str) -> Non
             provider,
         )
 
-    _, result = mutate_deck(path, mutate)
+    deck, result = mutate_deck(path, mutate)
     _emit_warning(result["slide_id"], result["unbound_nodes"])
-    _emit_json({"ok": True, "data": result})
+    _emit_json(
+        attach_layout_fallback_warning(
+            {"ok": True, "data": result},
+            deck,
+            slide_ids=[str(result["slide_id"])],
+        )
+    )
