@@ -33,7 +33,7 @@ from agent_slides.errors import (
 from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck, read_deck, write_computed_deck
 from agent_slides.model import BuiltinLayoutProvider, Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
-from agent_slides.model.types import ComputedNode
+from agent_slides.model.types import ComputedNode, TextRun
 from tests.image_helpers import write_png
 
 
@@ -88,6 +88,16 @@ def make_bar_chart_data(*, values: list[float] | None = None) -> dict[str, objec
                 "name": "Revenue",
                 "values": values or [12.0, 18.0],
             }
+        ],
+    }
+
+
+def make_table_data() -> dict[str, object]:
+    return {
+        "headers": ["Metric", "Q1", "Q2"],
+        "rows": [
+            ["Revenue", "$100K", "$150K"],
+            ["Users", "1000", "1500"],
         ],
     }
 
@@ -787,6 +797,56 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
     assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
 
 
+def test_slot_set_parses_inline_markdown_runs_from_text(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "title",
+            "--text",
+            "Revenue grew **23%** driven by *premium segment*",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue grew 23% driven by premium segment"
+    assert payload["data"]["content"] == {
+        "blocks": [
+            {
+                "type": "paragraph",
+                "text": "Revenue grew 23% driven by premium segment",
+                "level": 0,
+                "runs": [
+                    {"text": "Revenue grew "},
+                    {"text": "23%", "bold": True},
+                    {"text": " driven by "},
+                    {"text": "premium segment", "italic": True},
+                ],
+            }
+        ]
+    }
+    assert updated.slides[0].nodes[0].content.blocks[0].runs == [
+        TextRun(text="Revenue grew "),
+        TextRun(text="23%", bold=True),
+        TextRun(text=" driven by "),
+        TextRun(text="premium segment", italic=True),
+    ]
+
+
 def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
@@ -849,6 +909,65 @@ def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
             {"type": "bullet", "text": "Point two", "level": 1},
         ]
     }
+
+
+def test_slot_set_accepts_structured_runs_json(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {
+                            "type": "paragraph",
+                            "runs": [
+                                {"text": "Revenue grew "},
+                                {"text": "23%", "bold": True, "color": "#1A73E8"},
+                                {"text": " driven by "},
+                                {"text": "premium segment", "italic": True, "font_size": 24},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue grew 23% driven by premium segment"
+    assert payload["data"]["content"] == {
+        "blocks": [
+            {
+                "type": "paragraph",
+                "text": "Revenue grew 23% driven by premium segment",
+                "level": 0,
+                "runs": [
+                    {"text": "Revenue grew "},
+                    {"text": "23%", "bold": True, "color": "#1A73E8"},
+                    {"text": " driven by "},
+                    {"text": "premium segment", "italic": True, "font_size": 24.0},
+                ],
+            }
+        ]
+    }
+    assert updated.slides[0].nodes[1].content.model_dump(mode="json") == payload["data"]["content"]
 
 
 @pytest.mark.parametrize(
@@ -1270,6 +1389,49 @@ def test_chart_add_invalid_chart_data_returns_json_error(tmp_path: Path) -> None
             "type": CHART_DATA_ERROR,
         }
     ]
+
+
+def test_table_add_creates_table_node_with_inline_data(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "table",
+            "add",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "body",
+            "--data",
+            json.dumps(make_table_data()),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    table_node = updated.slides[0].nodes[1]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "body",
+            "node_id": "n-2",
+            "column_count": 3,
+            "row_count": 2,
+        },
+    }
+    assert table_node.type == "table"
+    assert table_node.table_spec is not None
+    assert table_node.table_spec.headers == ["Metric", "Q1", "Q2"]
+    assert table_node.table_spec.rows[1] == ["Users", "1000", "1500"]
 
 
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
@@ -1803,6 +1965,44 @@ def test_batch_supports_chart_add_and_chart_update(tmp_path: Path) -> None:
     assert chart_node.chart_spec.categories == ["Q1", "Q2", "Q3"]
     assert chart_node.chart_spec.series is not None
     assert chart_node.chart_spec.series[0].values == [8.0, 13.0, 21.0]
+
+
+def test_batch_supports_table_add(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title_content"}},
+                {
+                    "command": "table_add",
+                    "args": {
+                        "slide": 0,
+                        "slot": "body",
+                        "data": make_table_data(),
+                    },
+                },
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 2
+    assert payload["data"]["results"][1] == {
+        "slide_id": "s-1",
+        "slot": "body",
+        "node_id": "n-2",
+        "column_count": 3,
+        "row_count": 2,
+    }
+
+    table_node = read_deck(str(deck_path)).slides[0].nodes[1]
+    assert table_node.type == "table"
+    assert table_node.table_spec is not None
+    assert table_node.table_spec.resolved_col_align() == ["left", "right", "right"]
 
 
 def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:

@@ -13,7 +13,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
@@ -22,7 +22,8 @@ from pptx.util import Emu, Inches, Pt
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
 from agent_slides.icons import ICON_VIEWBOX, require_icon, svg_path_subpaths
 from agent_slides.io.assets import resolve_image_path
-from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
+from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock, TextRun, split_text_runs_by_line
+from agent_slides.model.themes import load_theme
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
@@ -96,6 +97,15 @@ def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
     return computed.font_size_pt
 
 
+def _block_line_runs(block: TextBlock) -> list[list[TextRun]]:
+    return split_text_runs_by_line(block)
+
+
+def _block_lines(block: TextBlock) -> list[str]:
+    lines = block.text.splitlines()
+    return lines or [""]
+
+
 def _block_line_height(computed: ComputedNode, block: TextBlock) -> float:
     return _block_font_size(computed, block) * LINE_HEIGHT_FACTOR
 
@@ -107,9 +117,70 @@ def _icon_bullet_indent(block: TextBlock, computed: ComputedNode | None = None) 
     return (block.level * BULLET_MARGIN_STEP_PT) + icon_size + icon_gap
 
 
-def _block_lines(block: TextBlock) -> list[str]:
-    lines = block.text.splitlines()
-    return lines or [""]
+def _run_font_size(computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> float:
+    if run_spec.font_size is not None:
+        return run_spec.font_size
+    return _block_font_size(computed, block)
+
+
+def _set_run_strikethrough(run, enabled: bool) -> None:
+    rPr = run._r.get_or_add_rPr()
+    if enabled:
+        rPr.set("strike", "sngStrike")
+    elif "strike" in rPr.attrib:
+        del rPr.attrib["strike"]
+
+
+def _apply_template_run_styles(run, run_spec: TextRun) -> None:
+    if run_spec.bold is not None:
+        run.font.bold = run_spec.bold
+    if run_spec.italic is not None:
+        run.font.italic = run_spec.italic
+    if run_spec.color:
+        run.font.color.rgb = hex_to_rgb(run_spec.color)
+    if run_spec.font_size is not None:
+        run.font.size = Pt(run_spec.font_size)
+    if run_spec.underline:
+        run.font.underline = True
+    if run_spec.strikethrough:
+        _set_run_strikethrough(run, True)
+
+
+def _apply_text_run_defaults(run, computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> None:
+    run.font.name = computed.font_family
+    run.font.size = Pt(_run_font_size(computed, block, run_spec))
+    run.font.bold = computed.font_bold if run_spec.bold is None else run_spec.bold
+    if block.type == "heading" and run_spec.bold is None:
+        run.font.bold = True
+    run.font.italic = run_spec.italic or False
+    run.font.color.rgb = hex_to_rgb(run_spec.color or computed.color)
+    if run_spec.underline:
+        run.font.underline = True
+    _set_run_strikethrough(run, run_spec.strikethrough)
+
+
+def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
+    base_rgb = [int(base.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    overlay_rgb = [int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    blended = [
+        int(round((1.0 - ratio) * base_channel + ratio * overlay_channel))
+        for base_channel, overlay_channel in zip(base_rgb, overlay_rgb, strict=True)
+    ]
+    return "#" + "".join(f"{channel:02X}" for channel in blended)
+
+
+def _is_dark_color(value: str) -> bool:
+    red, green, blue = [int(value.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+    return luminance < 160.0
+
+
+def _table_alignment(value: str) -> PP_ALIGN:
+    if value == "center":
+        return PP_ALIGN.CENTER
+    if value == "right":
+        return PP_ALIGN.RIGHT
+    return PP_ALIGN.LEFT
 
 
 def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
@@ -210,15 +281,15 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
     return bindings
 
 
-def _node_paragraphs(node: Node) -> list[tuple[TextBlock, str]]:
+def _node_paragraphs(node: Node) -> list[tuple[TextBlock, list[TextRun]]]:
     if isinstance(node.content, str):
         block = TextBlock(type="paragraph", text=node.content)
-        return [(block, line) for line in _block_lines(block)]
+        return [(block, line_runs) for line_runs in _block_line_runs(block)]
 
-    paragraphs: list[tuple[TextBlock, str]] = []
+    paragraphs: list[tuple[TextBlock, list[TextRun]]] = []
     for block in node.content.blocks:
-        paragraphs.extend((block, line) for line in _block_lines(block))
-    return paragraphs or [(TextBlock(type="paragraph", text=""), "")]
+        paragraphs.extend((block, line_runs) for line_runs in _block_line_runs(block))
+    return paragraphs or [(TextBlock(type="paragraph", text=""), [TextRun(text="")])]
 
 
 def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: ComputedNode | None = None) -> None:
@@ -330,10 +401,13 @@ def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
     text_frame.clear()
 
     paragraphs = _node_paragraphs(node)
-    for paragraph_index, (block, line) in enumerate(paragraphs):
+    for paragraph_index, (block, line_runs) in enumerate(paragraphs):
         paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
         _configure_paragraph_bullets(paragraph, block)
-        paragraph.add_run().text = line
+        for run_spec in line_runs:
+            run = paragraph.add_run()
+            run.text = run_spec.text
+            _apply_template_run_styles(run, run_spec)
 
 
 def _write_template_pptx(deck: Deck, output_path: str) -> None:
@@ -391,16 +465,13 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
     paragraph_index = 0
     for block in blocks:
-        for line in _block_lines(block):
+        for line_runs in _block_line_runs(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             _configure_paragraph_bullets(paragraph, block, computed=computed)
-
-            run = paragraph.add_run()
-            run.text = line
-            run.font.name = computed.font_family
-            run.font.size = Pt(_block_font_size(computed, block))
-            run.font.bold = computed.font_bold or block.type == "heading"
-            run.font.color.rgb = hex_to_rgb(computed.color)
+            for run_spec in line_runs:
+                run = paragraph.add_run()
+                run.text = run_spec.text
+                _apply_text_run_defaults(run, computed, block, run_spec)
             paragraph_index += 1
 
     _render_text_block_icons(slide_shape_collection, node, computed)
@@ -442,7 +513,7 @@ def _render_text_block_icons(slide_shape_collection: SlideShapes, node: Node, co
     current_y = computed.y
     for index, block in enumerate(blocks):
         line_height = _block_line_height(computed, block)
-        for line in _block_lines(block):
+        for _line in _block_lines(block):
             if block.type == "bullet" and block.icon:
                 icon_size = computed.font_size_pt * ICON_BULLET_SIZE_FACTOR
                 icon_x = computed.x + (block.level * BULLET_MARGIN_STEP_PT)
@@ -527,6 +598,122 @@ def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed
         fill.fore_color.rgb = hex_to_rgb(color)
 
 
+def _write_table_cell(
+    cell,
+    text: str,
+    *,
+    font_family: str,
+    font_size: float,
+    font_bold: bool,
+    font_color: str,
+    fill_color: str,
+    alignment: str,
+) -> None:
+    cell.fill.solid()
+    cell.fill.fore_color.rgb = hex_to_rgb(fill_color)
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+    text_frame = cell.text_frame
+    text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
+    text_frame.margin_left = points_to_emu(4.0)
+    text_frame.margin_right = points_to_emu(4.0)
+    text_frame.margin_top = points_to_emu(2.0)
+    text_frame.margin_bottom = points_to_emu(2.0)
+
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = _table_alignment(alignment)
+    run = paragraph.add_run()
+    run.text = text
+    run.font.name = font_family
+    run.font.size = Pt(font_size)
+    run.font.bold = font_bold
+    run.font.color.rgb = hex_to_rgb(font_color)
+
+
+def _render_table_node(
+    slide_shape_collection: SlideShapes,
+    node: Node,
+    computed: ComputedNode,
+    *,
+    theme,
+) -> None:
+    """Render a single table node as a native editable PowerPoint table."""
+
+    spec = node.table_spec
+    if spec is None:
+        return
+
+    row_count = len(spec.rows) + 1
+    column_count = len(spec.headers)
+    table = slide_shape_collection.add_table(
+        row_count,
+        column_count,
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+    ).table
+
+    total_width = int(points_to_emu(computed.width))
+    width_weights = spec.resolved_col_widths()
+    weight_total = sum(width_weights) or float(column_count)
+    width_allocated = 0
+    for column_index, weight in enumerate(width_weights):
+        if column_index == column_count - 1:
+            column_width = total_width - width_allocated
+        else:
+            column_width = int(round(total_width * (weight / weight_total)))
+            width_allocated += column_width
+        table.columns[column_index].width = Emu(column_width)
+
+    total_height = int(points_to_emu(computed.height))
+    row_height = total_height // row_count
+    height_allocated = 0
+    for row_index in range(row_count):
+        if row_index == row_count - 1:
+            height = total_height - height_allocated
+        else:
+            height = row_height
+            height_allocated += height
+        table.rows[row_index].height = Emu(height)
+
+    header_fill = spec.header_color or theme.colors.primary
+    header_text_color = "#FFFFFF" if _is_dark_color(header_fill) else theme.colors.text
+    stripe_fill = _mix_hex_colors(theme.colors.background, theme.colors.secondary, 0.08)
+    alignments = spec.resolved_col_align()
+
+    table.first_row = True
+    table.horz_banding = spec.stripe
+
+    for column_index, header in enumerate(spec.headers):
+        _write_table_cell(
+            table.cell(0, column_index),
+            header,
+            font_family=computed.font_family,
+            font_size=spec.header_font_size,
+            font_bold=True,
+            font_color=header_text_color,
+            fill_color=header_fill,
+            alignment="center",
+        )
+
+    for row_index, row in enumerate(spec.rows, start=1):
+        fill_color = stripe_fill if spec.stripe and row_index % 2 == 0 else theme.colors.background
+        for column_index, value in enumerate(row):
+            _write_table_cell(
+                table.cell(row_index, column_index),
+                value,
+                font_family=computed.font_family,
+                font_size=spec.font_size,
+                font_bold=False,
+                font_color=computed.color,
+                fill_color=fill_color,
+                alignment=alignments[column_index],
+            )
+
+
 def _render_icon_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
     path_data = computed.icon_svg_path or require_icon(str(node.icon_name))
     _render_icon_shape(
@@ -549,6 +736,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
     presentation.slide_width = Inches(10)
     presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[BLANK_LAYOUT_INDEX]
+    theme = load_theme(deck.theme)
 
     for slide in deck.slides:
         pptx_slide = presentation.slides.add_slide(blank_layout)
@@ -567,6 +755,8 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
                 _render_chart_node(pptx_slide.shapes, node, computed)
             elif node.type == "icon":
                 _render_icon_node(pptx_slide.shapes, node, computed)
+            elif node.type == "table":
+                _render_table_node(pptx_slide.shapes, node, computed, theme=theme)
             elif node.type == "image":
                 _render_image_node(
                     pptx_slide.shapes,
