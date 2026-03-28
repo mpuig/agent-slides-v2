@@ -167,68 +167,83 @@ Before Phase 2, present:
 
 Ask for approval before building when the workflow is interactive.
 
-Worked example of a completed Phase 1 output:
-
-### Example: "Make a deck about our Q3 product launch"
-
-This example is illustrative, not a template. Real decks will vary.
-
-**Pre-flight exchange:**
-
-- Audience: Leadership team
-- Objective: Get approval for Q3 launch timing
-- Recommendation: Launch in September, not August, due to beta feedback
-
-**Storyline plan:**
-
-```text
-Title: Q3 Product Launch Strategy
-Answer: Launch in September to incorporate beta feedback, capturing 85% of Q3 revenue window
-
-Arguments:
-  1. Beta feedback requires 3 more weeks -> Slides 2-3
-  2. September still captures Q3 revenue -> Slide 4
-  3. Competitive window remains open -> Slide 5
-```
-
-**Slide plan:**
-
-| # | Layout | Action Title |
-|---|--------|-------------|
-| 0 | title | Q3 Product Launch Strategy |
-| 1 | title_content | Beta users flagged three issues that block enterprise adoption |
-| 2 | two_col | Fixing these issues requires 3 weeks, not 3 months |
-| 3 | title_content + chart | September launch still captures 85% of Q3 revenue opportunity |
-| 4 | comparison | Our window stays open: competitors won't ship until November |
-| 5 | closing | Recommendation: approve September launch with expedited fix sprint |
-
-**Coverage diagram:**
-
-```text
-STORYLINE COVERAGE
-===========================
-[+] Deck: "Q3 Product Launch Strategy"
-    |
-    |-- [✓] Answer: "Launch September, captures 85% of Q3"
-    |
-    |-- Argument 1: Beta feedback
-    |   |-- [✓] Slide 1: "Beta users flagged three blocking issues"
-    |   `-- [✓] Slide 2: "Fixing requires 3 weeks, not 3 months"
-    |
-    |-- Argument 2: Revenue capture
-    |   `-- [✓] Slide 3: "September captures 85% of Q3 revenue"
-    |
-    `-- Argument 3: Competitive window
-        `-- [✓] Slide 4: "Competitors won't ship until November"
--------------------------
-COVERAGE: 5/5 messages covered (100%)
-GAPS: 0
-```
-
 ### Step 6: Optional outside voice
 
 After the storyline review, offer a second-opinion pass on the narrative.
 If accepted, send the storyline to another model or agent and fold useful feedback back into the plan.
+
+### Worked example
+
+This is the quality bar for the output at the end of Phase 1.
+
+Real pre-flight exchange:
+
+```text
+User: I need a five-slide CEO deck on why we should simplify SMB pricing next quarter.
+Assistant: I recommend a decision deck that argues for a three-tier packaging reset because conversion friction matters more than preserving every legacy option.
+User: Audience is the CEO and CRO, objective is approval for a Q3 pilot, and keep the scope to US self-serve SMB.
+```
+
+Real storyline plan:
+
+```text
+Title: SMB pricing simplification can raise conversion without sacrificing revenue
+Answer: Approve a Q3 pilot that replaces the current menu with three packaged tiers for US self-serve SMB.
+
+Slide 1 - title
+Action title: SMB pricing simplification can raise conversion without sacrificing revenue
+Purpose: Set the decision and audience context
+Evidence/content: Decision statement, scope, pilot ask
+Layout: title
+
+Slide 2 - friction proof
+Action title: The current pricing menu is suppressing trial-to-paid conversion at the moment of choice
+Purpose: Show why the status quo is failing
+Evidence/content: Funnel drop-off at pricing page, user confusion quotes, plan-count sprawl
+Layout: title_content
+
+Slide 3 - revenue risk reframed
+Action title: Most revenue risk sits in discount leakage, not in removing low-value plan variants
+Purpose: Defuse the main objection
+Evidence/content: Discount depth by cohort, low attach rate of niche add-ons, retained ARPU scenarios
+Layout: comparison
+
+Slide 4 - proposed solution
+Action title: A three-tier package structure matches buyer needs and keeps monetization levers intact
+Purpose: Present the recommendation mechanics
+Evidence/content: Good/better/best tier logic, feature migration rules, pricing fences
+Layout: three_col
+
+Slide 5 - closing
+Action title: We should approve the Q3 pilot now so pricing can stop blocking SMB growth
+Purpose: Land the decision and next steps
+Evidence/content: Pilot scope, owners, success metrics, decision required today
+Layout: closing
+```
+
+Real coverage diagram:
+
+```text
+STORYLINE COVERAGE
+===========================
+[+] Deck: "SMB pricing simplification can raise conversion without sacrificing revenue"
+    |
+    |-- [✓] Answer: "Approve a Q3 pilot that replaces the current menu with three packaged tiers for US self-serve SMB."
+    |
+    |-- Argument 1: Complexity is hurting conversion
+    |   `-- [✓] Slide 2: "The current pricing menu is suppressing trial-to-paid conversion at the moment of choice"
+    |
+    |-- Argument 2: Revenue downside is manageable
+    |   `-- [✓] Slide 3: "Most revenue risk sits in discount leakage, not in removing low-value plan variants"
+    |
+    |-- Argument 3: The new package design is executable
+    |   `-- [✓] Slide 4: "A three-tier package structure matches buyer needs and keeps monetization levers intact"
+    |
+    `-- [GAP] Migration proof: no customer-support or billing-transition evidence yet
+-------------------------
+COVERAGE: 4/5 messages covered (80%)
+GAPS: 1 (migration proof)
+```
 
 ## Phase 2: Build
 
