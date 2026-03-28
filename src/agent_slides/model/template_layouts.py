@@ -197,6 +197,7 @@ def _build_slot(
             or (placeholder_style.vertical_align if placeholder_style is not None else None)
             or "top"
         ),
+        padding=_optional_number(slot_mapping, "padding") if _optional_number(slot_mapping, "padding") is not None else 0.0,
         x=_optional_number(bounds, "x", "left"),
         y=_optional_number(bounds, "y", "top"),
         width=_optional_number(bounds, "width", "w"),
