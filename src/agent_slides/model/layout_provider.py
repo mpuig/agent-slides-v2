@@ -18,6 +18,8 @@ class LayoutProvider(Protocol):
 
     def get_text_fitting(self, slug: str, role: str) -> TextFitting: ...
 
+    def get_variants(self, slug: str) -> list[LayoutDef]: ...
+
 
 class BuiltinLayoutProvider:
     """Wrap the built-in layout registry behind the LayoutProvider protocol."""
@@ -33,6 +35,10 @@ class BuiltinLayoutProvider:
 
     def get_text_fitting(self, slug: str, role: str) -> TextFitting:
         return get_text_fitting(slug, role)
+
+    def get_variants(self, slug: str) -> list[LayoutDef]:
+        self.get_layout(slug)
+        return []
 
 
 def resolve_layout_provider(template_manifest: str | None) -> LayoutProvider:
