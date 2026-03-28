@@ -1368,6 +1368,82 @@
         stage.appendChild(shape);
       };
 
+      const renderPatternTextElement = (element) => {
+        const fontSize = Math.max(1, Number(element.font_size_pt ?? 14));
+        const fontFamily = element.font_family || "Aptos";
+        const fontWeight = element.font_bold ? 700 : 400;
+        const lineHeight = fontSize * 1.18;
+        const x = Number(element.x);
+        const y = Number(element.y);
+        const width = Math.max(8, Number(element.width));
+        const height = Math.max(lineHeight, Number(element.height));
+        const align = element.text_align === "center" || element.text_align === "right" ? element.text_align : "left";
+        const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+        const xPos = align === "center" ? x + width / 2 : align === "right" ? x + width : x;
+        const lines = wrapText(String(element.text ?? ""), width, fontFamily, fontSize, fontWeight);
+        const visibleLines = lines.slice(0, Math.max(1, Math.floor(height / lineHeight)));
+        const contentHeight = visibleLines.length * lineHeight;
+        const verticalAlign = element.vertical_align === "middle" || element.vertical_align === "bottom"
+          ? element.vertical_align
+          : "top";
+        const baseOffset = verticalAlign === "middle"
+          ? Math.max(fontSize, (height - contentHeight) / 2 + fontSize * 0.82)
+          : verticalAlign === "bottom"
+            ? Math.max(fontSize, height - contentHeight + fontSize * 0.82)
+            : fontSize;
+
+        const text = createSvgElement("text", {
+          x: xPos,
+          y: y + baseOffset,
+          "font-size": fontSize,
+          "font-family": fontFamily,
+          "font-weight": fontWeight,
+          fill: element.color || "#1f1e1a",
+          "text-anchor": anchor,
+          "xml:space": "preserve",
+        });
+
+        visibleLines.forEach((line, index) => {
+          const tspan = createSvgElement("tspan", {
+            x: xPos,
+            dy: index === 0 ? "0" : `${lineHeight}`,
+          });
+          tspan.textContent = line || " ";
+          text.appendChild(tspan);
+        });
+        stage.appendChild(text);
+      };
+
+      const renderPatternNode = (_node, computed) => {
+        const elements = Array.isArray(computed.pattern_elements) ? [...computed.pattern_elements] : [];
+        elements
+          .sort((left, right) => {
+            const zDiff = Number(left?.z_index ?? 0) - Number(right?.z_index ?? 0);
+            return zDiff !== 0 ? zDiff : 0;
+          })
+          .forEach((element) => {
+            if (element.kind === "shape") {
+              renderShapeNode(
+                {
+                  shape_spec: {
+                    shape_type: element.shape_type,
+                    fill_color: element.fill_color,
+                    line_color: element.line_color,
+                    line_width: element.line_width,
+                    corner_radius: element.corner_radius,
+                    shadow: element.shadow,
+                    dash: element.dash,
+                    opacity: element.opacity,
+                  },
+                },
+                element,
+              );
+              return;
+            }
+            renderPatternTextElement(element);
+          });
+      };
+
       const renderTextBlock = ({ block, bounds, fontFamily, color, fontBold }) => {
         const text = createSvgElement("text");
         const fontSize = Number(bounds.font_size_pt ?? 18);
@@ -1706,6 +1782,11 @@
 
           if (node.type === "shape" || computed.content_type === "shape") {
             renderShapeNode(node, computed);
+            continue;
+          }
+
+          if (node.type === "pattern" || computed.content_type === "pattern") {
+            renderPatternNode(node, computed);
             continue;
           }
 

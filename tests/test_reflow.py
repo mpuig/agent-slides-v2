@@ -120,6 +120,42 @@ def test_reflow_table_nodes_use_grid_geometry_without_text_fitting() -> None:
     assert table.content_type == "table"
 
 
+def test_reflow_pattern_nodes_generate_slot_bound_pattern_elements() -> None:
+    slide = Slide(
+        slide_id="s-pattern",
+        layout="title_content",
+        nodes=[
+            Node(node_id="n-1", slot_binding="heading", type="text", content="Executive summary"),
+            Node(
+                node_id="n-2",
+                slot_binding="body",
+                type="pattern",
+                pattern_spec={
+                    "pattern_type": "kpi-row",
+                    "data": [
+                        {"value": "87%", "label": "Adoption"},
+                        {"value": "3.2x", "label": "ROI"},
+                        {"value": "+24", "label": "NPS"},
+                    ],
+                },
+            ),
+        ],
+    )
+
+    reflow_slide(slide, get_layout("title_content"), load_theme("default"))
+
+    pattern = slide.computed["n-2"]
+
+    assert pattern.content_type == "pattern"
+    assert pattern.x == pytest.approx(60.0)
+    assert pattern.y == pytest.approx(130.4)
+    assert pattern.width == pytest.approx(600.0)
+    assert pattern.height == pytest.approx(369.6)
+    assert len(pattern.pattern_elements) == 9
+    assert all(pattern.x <= element.x <= pattern.x + pattern.width for element in pattern.pattern_elements)
+    assert all(pattern.y <= element.y <= pattern.y + pattern.height for element in pattern.pattern_elements)
+
+
 def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
     image_path = make_image(tmp_path)
     slide = Slide(

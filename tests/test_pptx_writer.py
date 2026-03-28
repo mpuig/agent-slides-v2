@@ -383,6 +383,49 @@ def test_write_pptx_renders_shapes_before_text_nodes(tmp_path: Path) -> None:
     assert presentation.slides[0].shapes[0].shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
     assert presentation.slides[0].shapes[1].has_text_frame is True
 
+
+def test_write_pptx_renders_pattern_nodes_as_shape_and_text_primitives(tmp_path: Path) -> None:
+    output_path = tmp_path / "pattern.pptx"
+    deck = Deck(
+        deck_id="deck-pattern",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Executive summary"),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="pattern",
+                        pattern_spec={
+                            "pattern_type": "kpi-row",
+                            "data": [
+                                {"value": "87%", "label": "Adoption"},
+                                {"value": "3.2x", "label": "ROI"},
+                            ],
+                        },
+                    ),
+                ],
+                computed={},
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+    reflow_deck(deck)
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    shapes = list(presentation.slides[0].shapes)
+
+    assert len(shapes) >= 5
+    assert any(shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE for shape in shapes)
+    assert any(shape.has_text_frame and shape.text_frame.text == "87%" for shape in shapes)
+    assert any(shape.has_text_frame and shape.text_frame.text == "Adoption" for shape in shapes)
+
     slide_xml = read_slide_xml(output_path)
     assert slide_xml.find(".//a:effectLst/a:outerShdw", DRAWING_NS) is not None
 
