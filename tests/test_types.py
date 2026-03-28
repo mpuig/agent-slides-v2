@@ -14,12 +14,15 @@ from agent_slides.errors import (
 )
 from agent_slides.model.types import (
     ChartSpec,
+    ChartStyle,
     ComputedDeck,
     ComputedNode,
     Counters,
     Deck,
     Node,
     NodeContent,
+    ScatterPoint,
+    ScatterSeries,
     Slide,
     TextBlock,
 )
@@ -338,3 +341,12 @@ def test_chart_specs_warn_when_more_than_ten_series() -> None:
 
     assert spec.chart_type == "line"
     assert any("more than 10 series" in str(warning.message) for warning in caught)
+
+
+def test_chart_style_validates_series_colors() -> None:
+    style = ChartStyle(series_colors=["#FF0000", "00FF00"])
+
+    assert style.series_colors == ["#FF0000", "00FF00"]
+
+    with pytest.raises(ValidationError, match="series_colors entries must use #RRGGBB or RRGGBB format"):
+        ChartStyle(series_colors=["bad-color"])

@@ -137,6 +137,17 @@ class ChartStyle(AgentSlidesModel):
     has_data_labels: bool = False
     series_colors: list[str] | None = None
 
+    @field_validator("series_colors")
+    @classmethod
+    def validate_series_colors(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return values
+        for value in values:
+            normalized = value.lstrip("#")
+            if len(normalized) != 6 or any(char not in "0123456789abcdefABCDEF" for char in normalized):
+                raise ValueError("series_colors entries must use #RRGGBB or RRGGBB format")
+        return values
+
 
 class ChartSpec(AgentSlidesModel):
     chart_type: ChartType
@@ -156,6 +167,8 @@ class ChartSpec(AgentSlidesModel):
     @model_validator(mode="after")
     def validate_chart_data(self) -> ChartSpec:
         if self.chart_type == "scatter":
+            if self.categories or self.series:
+                raise PydanticCustomError(CHART_DATA_ERROR, "scatter charts only support scatter_series")
             if not self.scatter_series:
                 raise PydanticCustomError(CHART_DATA_ERROR, "scatter charts require scatter_series")
             if len(self.scatter_series) > 10:
@@ -166,6 +179,8 @@ class ChartSpec(AgentSlidesModel):
                 )
             return self
 
+        if self.scatter_series:
+            raise PydanticCustomError(CHART_DATA_ERROR, "category charts cannot define scatter_series")
         if not self.categories:
             raise PydanticCustomError(CHART_DATA_ERROR, "category charts require categories")
         if not self.series:
@@ -200,7 +215,6 @@ class ChartSpec(AgentSlidesModel):
                 UserWarning,
                 stacklevel=2,
             )
-
         return self
 
 
@@ -225,12 +239,25 @@ class Node(AgentSlidesModel):
 
         if node_type == "text":
             data["content"] = NodeContent.model_validate(content)
+        elif node_type == "chart":
+            if data.get("chart_spec") is None and content not in (None, "", {"blocks": []}):
+                raw_chart_spec = content
+                if isinstance(raw_chart_spec, str):
+                    raw_chart_spec = ChartSpec.model_validate_json(raw_chart_spec)
+                else:
+                    raw_chart_spec = ChartSpec.model_validate(raw_chart_spec)
+                data["chart_spec"] = (
+                    raw_chart_spec.model_dump(mode="json")
+                    if isinstance(raw_chart_spec, ChartSpec)
+                    else raw_chart_spec
+                )
+                data["content"] = NodeContent().model_dump(mode="json")
+            else:
+                data["content"] = NodeContent.model_validate(content)
+            if data.get("chart_spec") is not None:
+                data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"]).model_dump(mode="json")
         elif node_type == "image" and (content is None or content == "") and data.get("image_path") is not None:
             data["content"] = data["image_path"]
-        elif node_type == "chart":
-            data["content"] = NodeContent.model_validate(content)
-            if data.get("chart_spec") is not None:
-                data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"])
 
         return data
 
