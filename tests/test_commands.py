@@ -25,7 +25,7 @@ from agent_slides.errors import (
     UNBOUND_NODES,
 )
 from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck, read_deck, write_computed_deck
-from agent_slides.model import Counters, Deck, Node, Slide, get_layout, list_layouts
+from agent_slides.model import BuiltinLayoutProvider, Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import ComputedNode
 
@@ -943,7 +943,7 @@ def test_batch_uses_single_mutate_deck_call(monkeypatch) -> None:
 
     def fake_mutate_deck(path: str, fn):
         calls.append(path)
-        results = fn(Deck(deck_id="deck-1"))
+        results = fn(Deck(deck_id="deck-1"), BuiltinLayoutProvider())
         return Deck(deck_id="deck-1"), results
 
     monkeypatch.setattr("agent_slides.commands.batch.mutate_deck", fake_mutate_deck)

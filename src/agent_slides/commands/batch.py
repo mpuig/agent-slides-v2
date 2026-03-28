@@ -10,6 +10,7 @@ import click
 from agent_slides.commands.mutations import SUPPORTED_MUTATION_COMMANDS, apply_mutation
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
+from agent_slides.model.layout_provider import LayoutProvider
 
 
 def _parse_batch_operations(stdin_payload: str) -> list[dict[str, Any]]:
@@ -58,11 +59,11 @@ def batch(path: str) -> None:
         click.echo(json.dumps({"ok": True, "data": {"operations": 0, "results": []}}))
         return
 
-    def mutate(deck: Any) -> list[dict[str, Any]]:
+    def mutate(deck: Any, provider: LayoutProvider) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for index, operation in enumerate(operations):
             try:
-                results.append(apply_mutation(deck, operation["command"], operation["args"]))
+                results.append(apply_mutation(deck, operation["command"], operation["args"], provider))
             except AgentSlidesError as exc:
                 raise AgentSlidesError(
                     exc.code,

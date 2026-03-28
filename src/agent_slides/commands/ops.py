@@ -7,7 +7,8 @@ import json
 from agent_slides.engine.reflow import rebind_slots, reflow_deck
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
 from agent_slides.io import mutate_deck, read_deck, write_pptx
-from agent_slides.model import Deck, Node, NodeContent, Slide, get_layout
+from agent_slides.model import Deck, Node, NodeContent, Slide, resolve_layout_provider
+from agent_slides.model.layout_provider import LayoutProvider
 
 
 def parse_slide_ref(value: str) -> str | int:
@@ -17,26 +18,28 @@ def parse_slide_ref(value: str) -> str | int:
         return value
 
 
-def create_layout_nodes(deck: Deck, layout_name: str) -> list[Node]:
-    layout = get_layout(layout_name)
+def create_layout_nodes(deck: Deck, layout_name: str, provider: LayoutProvider) -> list[Node]:
+    layout_getter = provider.get_layout
+    layout = layout_getter(layout_name)
     return [
         Node(
             node_id=deck.next_node_id(),
             slot_binding=slot_name,
-            type="text",
+            type="image" if layout.slots[slot_name].role == "image" else "text",
+            style_overrides={"placeholder": True} if layout.slots[slot_name].role == "image" else {},
         )
         for slot_name in layout.slots
     ]
 
 
 def add_slide(path: str, layout_name: str) -> dict[str, object]:
-    layout = get_layout(layout_name)
-
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
+        layout_getter = provider.get_layout
+        layout = layout_getter(layout_name)
         slide = Slide(
             slide_id=deck.next_slide_id(),
             layout=layout.name,
-            nodes=create_layout_nodes(deck, layout.name),
+            nodes=create_layout_nodes(deck, layout.name, provider),
         )
         deck.slides.append(slide)
         return {
@@ -50,7 +53,7 @@ def add_slide(path: str, layout_name: str) -> dict[str, object]:
 
 
 def remove_slide(path: str, slide_ref: str | int) -> dict[str, object]:
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, _provider: LayoutProvider) -> dict[str, object]:
         slide = deck.get_slide(slide_ref)
         deck.slides.remove(slide)
         return {
@@ -63,11 +66,9 @@ def remove_slide(path: str, slide_ref: str | int) -> dict[str, object]:
 
 
 def set_slide_layout(path: str, slide_ref: str | int, layout_name: str) -> dict[str, object]:
-    layout = get_layout(layout_name)
-
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         slide = deck.get_slide(slide_ref)
-        unbound_nodes = rebind_slots(deck, slide, layout)
+        unbound_nodes = rebind_slots(deck, slide, layout_name, provider)
         return {
             "slide_id": slide.slide_id,
             "layout": slide.layout,
@@ -86,9 +87,10 @@ def _find_bound_slot_node(slide: Slide, slot_name: str) -> Node | None:
 
 
 def set_slot_text(path: str, slide_ref: str | int, slot_name: str, text: str) -> dict[str, object]:
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         slide = deck.get_slide(slide_ref)
-        layout = get_layout(slide.layout)
+        layout_getter = provider.get_layout
+        layout = layout_getter(slide.layout)
         if slot_name not in layout.slots:
             raise AgentSlidesError(
                 INVALID_SLOT,
@@ -121,7 +123,8 @@ def get_deck_info(path: str) -> dict[str, object]:
 
 def build_deck_pptx(path: str, output_path: str) -> dict[str, object]:
     deck = read_deck(path)
-    reflow_deck(deck)
+    provider = resolve_layout_provider(deck.template_manifest)
+    reflow_deck(deck, provider)
     write_pptx(deck, output_path)
     return {
         "slides": len(deck.slides),

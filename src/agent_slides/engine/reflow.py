@@ -6,8 +6,12 @@ from collections.abc import Iterable
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.text_fit import fit_text
-from agent_slides.model import Deck, LayoutDef, Slide, get_layout
-from agent_slides.model.layouts import SLIDE_HEIGHT_PT, SLIDE_WIDTH_PT
+from agent_slides.model import Deck, LayoutDef, Slide
+from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
+from agent_slides.model.layouts import (
+    SLIDE_HEIGHT_PT,
+    SLIDE_WIDTH_PT,
+)
 from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
 
@@ -139,17 +143,29 @@ def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
     _reflow_slide(slide, layout_def, theme, revision=0)
 
 
-def reflow_deck(deck: Deck) -> None:
+def reflow_deck(deck: Deck, provider: LayoutProvider | None = None) -> None:
     """Reflow every slide in the deck using the deck theme."""
 
+    active_provider = provider or BuiltinLayoutProvider()
     theme = load_theme(deck.theme)
     for slide in deck.slides:
-        _reflow_slide(slide, get_layout(slide.layout), theme, revision=deck.revision)
+        layout_getter = active_provider.get_layout
+        _reflow_slide(slide, layout_getter(slide.layout), theme, revision=deck.revision)
 
 
-def rebind_slots(deck: Deck, slide: Slide, new_layout: LayoutDef) -> list[str]:
+def rebind_slots(
+    deck: Deck,
+    slide: Slide,
+    new_layout: LayoutDef | str,
+    provider: LayoutProvider | None = None,
+) -> list[str]:
     """Keep compatible slot bindings and create missing nodes for a new layout."""
 
+    if isinstance(new_layout, str):
+        if provider is None:
+            raise TypeError("provider is required when rebinding by layout name")
+        layout_getter = provider.get_layout
+        new_layout = layout_getter(new_layout)
     desired_slots = tuple(new_layout.slots)
     claimed_slots: set[str] = set()
     unbound_node_ids: list[str] = []
