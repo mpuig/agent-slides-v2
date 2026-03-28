@@ -21,7 +21,13 @@ from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
+from agent_slides.engine.conditional_formatting import (
+    resolve_chart_point_colors,
+    resolve_table_cell_style,
+    resolved_text_runs,
+)
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
+from agent_slides.icons import ICON_VIEWBOX, require_icon, svg_path_subpaths
 from agent_slides.io.assets import resolve_image_path
 from agent_slides.model.types import (
     ComputedNode,
@@ -33,10 +39,15 @@ from agent_slides.model.types import (
     TextRun,
     split_text_runs_by_line,
 )
+from agent_slides.model.design_rules import ConditionalFormatting, load_design_rules
 from agent_slides.model.themes import load_theme
 
 BLANK_LAYOUT_INDEX = 6
 BULLET_MARGIN_STEP_PT = 18.0
+BLOCK_SPACING_FACTOR = 0.3
+LINE_HEIGHT_FACTOR = 1.2
+ICON_BULLET_SIZE_FACTOR = 0.78
+ICON_BULLET_GAP_FACTOR = 0.4
 HEADING_SIZE_FACTOR = 1.35
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
@@ -117,8 +128,28 @@ def _block_font_size(computed: ComputedNode, block: TextBlock, *, default_font_s
     return computed.font_size_pt
 
 
-def _block_line_runs(block: TextBlock) -> list[list[TextRun]]:
-    return split_text_runs_by_line(block)
+def _block_line_runs(
+    block: TextBlock,
+    conditional_formatting: ConditionalFormatting | None = None,
+) -> list[list[TextRun]]:
+    formatted_block = block.model_copy(update={"runs": resolved_text_runs(block, conditional_formatting)})
+    return split_text_runs_by_line(formatted_block)
+
+
+def _block_lines(block: TextBlock) -> list[str]:
+    lines = block.text.splitlines()
+    return lines or [""]
+
+
+def _block_line_height(computed: ComputedNode, block: TextBlock) -> float:
+    return _block_font_size(computed, block) * LINE_HEIGHT_FACTOR
+
+
+def _icon_bullet_indent(block: TextBlock, computed: ComputedNode | None = None) -> float:
+    font_size = computed.font_size_pt if computed is not None else 14.0
+    icon_size = font_size * ICON_BULLET_SIZE_FACTOR
+    icon_gap = font_size * ICON_BULLET_GAP_FACTOR
+    return (block.level * BULLET_MARGIN_STEP_PT) + icon_size + icon_gap
 
 
 def _run_font_size(
@@ -298,23 +329,32 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
     return bindings
 
 
-def _node_paragraphs(node: Node) -> list[tuple[TextBlock, list[TextRun]]]:
+def _node_paragraphs(
+    node: Node,
+    *,
+    conditional_formatting: ConditionalFormatting | None = None,
+) -> list[tuple[TextBlock, list[TextRun]]]:
     if isinstance(node.content, str):
         block = TextBlock(type="paragraph", text=node.content)
-        return [(block, line_runs) for line_runs in _block_line_runs(block)]
+        return [(block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting)]
 
     paragraphs: list[tuple[TextBlock, list[TextRun]]] = []
     for block in node.content.blocks:
-        paragraphs.extend((block, line_runs) for line_runs in _block_line_runs(block))
+        paragraphs.extend((block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting))
     return paragraphs or [(TextBlock(type="paragraph", text=""), [TextRun(text="")])]
 
 
-def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
+def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: ComputedNode | None = None) -> None:
     pPr = paragraph._p.get_or_add_pPr()
     pPr.remove_all("a:buNone", "a:buAutoNum", "a:buChar", "a:buBlip")
 
     if block.type == "bullet":
         pPr.lvl = block.level
+        if block.icon:
+            pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
+            pPr.set("marL", str(Pt(_icon_bullet_indent(block, computed))))
+            pPr.set("indent", "0")
+            return
         buChar = OxmlElement("a:buChar")
         buChar.set("char", "•")
         pPr.insert_element_before(buChar, "a:tabLst", "a:defRPr", "a:extLst")
@@ -606,7 +646,13 @@ def _resolve_layout(prs: Presentation, slide_layout: str, binding: TemplateLayou
         ) from exc
 
 
-def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
+def _fill_placeholder(
+    node: Node,
+    slot_mapping: dict[str, int],
+    slide,
+    *,
+    conditional_formatting: ConditionalFormatting | None = None,
+) -> None:
     if node.slot_binding is None or node.type != "text":
         return
 
@@ -618,7 +664,7 @@ def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
     text_frame = placeholder.text_frame
     text_frame.clear()
 
-    paragraphs = _node_paragraphs(node)
+    paragraphs = _node_paragraphs(node, conditional_formatting=conditional_formatting)
     for paragraph_index, (block, line_runs) in enumerate(paragraphs):
         paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
         _configure_paragraph_bullets(paragraph, block)
@@ -631,6 +677,7 @@ def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
 def _write_template_pptx(deck: Deck, output_path: str) -> None:
     registry = TemplateLayoutRegistry(deck.template_manifest)
     template_path = registry.source_path
+    conditional_formatting = load_design_rules(deck.design_rules).conditional_formatting
 
     if not template_path.exists():
         raise AgentSlidesError(FILE_NOT_FOUND, f"Template file not found: {template_path}")
@@ -651,12 +698,28 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
                     else:
                         _render_pattern_node(pptx_slide.shapes, computed)
         for node in slide.nodes:
-            _fill_placeholder(node, binding.slot_mapping, pptx_slide)
+            if node.type == "icon":
+                computed = slide.computed.get(node.node_id)
+                if computed is not None:
+                    _render_icon_node(pptx_slide.shapes, node, computed)
+                continue
+            _fill_placeholder(
+                node,
+                binding.slot_mapping,
+                pptx_slide,
+                conditional_formatting=conditional_formatting,
+            )
 
     presentation.save(Path(output_path))
 
 
-def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_text_node(
+    slide_shape_collection: SlideShapes,
+    node: Node,
+    computed: ComputedNode,
+    *,
+    conditional_formatting: ConditionalFormatting | None = None,
+) -> None:
     """Render a single text node as a positioned text box."""
 
     shape = slide_shape_collection.add_textbox(
@@ -719,9 +782,9 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
 
     paragraph_index = 0
     for block in blocks:
-        for line_runs in _block_line_runs(block):
+        for line_runs in _block_line_runs(block, conditional_formatting):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
-            _configure_paragraph_bullets(paragraph, block)
+            _configure_paragraph_bullets(paragraph, block, computed=computed)
             paragraph.space_before = Pt(0)
             paragraph.space_after = Pt(0)
             for run_spec in line_runs:
@@ -729,6 +792,62 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
                 run.text = run_spec.text
                 _apply_text_run_defaults(run, computed, block, run_spec)
             paragraph_index += 1
+
+    _render_text_block_icons(slide_shape_collection, node, computed)
+
+
+def _render_icon_shape(
+    slide_shape_collection: SlideShapes,
+    *,
+    path_data: str,
+    x: float,
+    y: float,
+    size: float,
+    color: str,
+) -> None:
+    scale = size / ICON_VIEWBOX
+    for subpath in svg_path_subpaths(path_data):
+        points = [(x + (px * scale), y + (py * scale)) for px, py in subpath]
+        if len(points) < 2:
+            continue
+        is_closed = points[0] == points[-1]
+        vertices = points[1:-1] if is_closed else points[1:]
+        builder = slide_shape_collection.build_freeform(
+            points_to_emu(points[0][0]),
+            points_to_emu(points[0][1]),
+        )
+        if vertices:
+            builder.add_line_segments(
+                tuple((points_to_emu(px), points_to_emu(py)) for px, py in vertices),
+                close=is_closed,
+            )
+        shape = builder.convert_to_shape()
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = hex_to_rgb(color)
+        shape.line.fill.background()
+
+
+def _render_text_block_icons(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
+    current_y = computed.y
+    for index, block in enumerate(blocks):
+        line_height = _block_line_height(computed, block)
+        for _line in _block_lines(block):
+            if block.type == "bullet" and block.icon:
+                icon_size = computed.font_size_pt * ICON_BULLET_SIZE_FACTOR
+                icon_x = computed.x + (block.level * BULLET_MARGIN_STEP_PT)
+                icon_y = current_y + ((line_height - icon_size) / 2)
+                _render_icon_shape(
+                    slide_shape_collection,
+                    path_data=require_icon(block.icon),
+                    x=icon_x,
+                    y=icon_y,
+                    size=icon_size,
+                    color=computed.color,
+                )
+            current_y += line_height
+        if index < len(blocks) - 1:
+            current_y += computed.font_size_pt * BLOCK_SPACING_FACTOR
 
 
 def _render_image_node(
@@ -753,7 +872,13 @@ def _render_image_node(
         width=points_to_emu(width),
         height=points_to_emu(height),
     )
-def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_chart_node(
+    slide_shape_collection: SlideShapes,
+    node: Node,
+    computed: ComputedNode,
+    *,
+    conditional_formatting: ConditionalFormatting | None = None,
+) -> None:
     """Render a single chart node as a native editable PowerPoint chart."""
 
     spec = node.chart_spec
@@ -797,6 +922,16 @@ def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed
         fill.solid()
         fill.fore_color.rgb = hex_to_rgb(color)
 
+    point_colors = resolve_chart_point_colors(spec, conditional_formatting)
+    if point_colors and chart.series:
+        series = chart.series[0]
+        for index, color in enumerate(point_colors):
+            if index >= len(series.points):
+                break
+            fill = series.points[index].format.fill
+            fill.solid()
+            fill.fore_color.rgb = hex_to_rgb(color)
+
 
 def _write_table_cell(
     cell,
@@ -838,6 +973,7 @@ def _render_table_node(
     computed: ComputedNode,
     *,
     theme,
+    conditional_formatting: ConditionalFormatting | None = None,
 ) -> None:
     """Render a single table node as a native editable PowerPoint table."""
 
@@ -902,20 +1038,39 @@ def _render_table_node(
     for row_index, row in enumerate(spec.rows, start=1):
         fill_color = stripe_fill if spec.stripe and row_index % 2 == 0 else theme.colors.background
         for column_index, value in enumerate(row):
+            cell_fill, cell_text_color, cell_bold = resolve_table_cell_style(
+                value,
+                default_fill=fill_color,
+                default_text=computed.color,
+                conditional_formatting=conditional_formatting,
+            )
             _write_table_cell(
                 table.cell(row_index, column_index),
                 value,
                 font_family=computed.font_family,
                 font_size=spec.font_size,
-                font_bold=False,
-                font_color=computed.color,
-                fill_color=fill_color,
+                font_bold=cell_bold,
+                font_color=cell_text_color,
+                fill_color=cell_fill,
                 alignment=alignments[column_index],
             )
 
 
+def _render_icon_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    path_data = computed.icon_svg_path or require_icon(str(node.icon_name))
+    _render_icon_shape(
+        slide_shape_collection,
+        path_data=path_data,
+        x=computed.x,
+        y=computed.y,
+        size=computed.width,
+        color=computed.color,
+    )
+
+
 render_text_node = _render_text_node
 render_image_node = _render_image_node
+render_icon_node = _render_icon_node
 
 
 def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
@@ -924,6 +1079,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
     presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[BLANK_LAYOUT_INDEX]
     theme = load_theme(deck.theme)
+    conditional_formatting = load_design_rules(deck.design_rules).conditional_formatting
 
     for slide in deck.slides:
         pptx_slide = presentation.slides.add_slide(blank_layout)
@@ -940,9 +1096,22 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
             elif node.type == "pattern":
                 _render_pattern_node(pptx_slide.shapes, computed)
             elif node.type == "chart":
-                _render_chart_node(pptx_slide.shapes, node, computed)
+                _render_chart_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    conditional_formatting=conditional_formatting,
+                )
+            elif node.type == "icon":
+                _render_icon_node(pptx_slide.shapes, node, computed)
             elif node.type == "table":
-                _render_table_node(pptx_slide.shapes, node, computed, theme=theme)
+                _render_table_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    theme=theme,
+                    conditional_formatting=conditional_formatting,
+                )
             elif node.type == "image":
                 _render_image_node(
                     pptx_slide.shapes,
@@ -951,7 +1120,12 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
                     asset_base_dir=asset_base_dir,
                 )
             elif node.slot_binding is not None:
-                _render_text_node(pptx_slide.shapes, node, computed)
+                _render_text_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    conditional_formatting=conditional_formatting,
+                )
 
     presentation.save(Path(output_path))
 

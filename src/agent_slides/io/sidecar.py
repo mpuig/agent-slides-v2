@@ -65,7 +65,7 @@ def _commit_staged_writes(staged_paths: list[tuple[Path, Path]]) -> None:
 
 
 def _serialize_deck_payload(deck: Deck) -> str:
-    payload = deck.model_dump(mode="json", by_alias=True)
+    payload = deck.model_dump(mode="json", by_alias=True, exclude_none=True)
     for slide in payload["slides"]:
         slide.pop("revision", None)
         slide.pop("computed", None)
@@ -73,7 +73,7 @@ def _serialize_deck_payload(deck: Deck) -> str:
 
 
 def _serialize_computed_payload(deck: Deck) -> str:
-    return f"{ComputedDeck.from_deck(deck).model_dump_json(indent=2)}\n"
+    return f"{ComputedDeck.from_deck(deck).model_dump_json(indent=2, exclude_none=True)}\n"
 
 
 def _write_bundle_atomic(path: Path, deck: Deck) -> None:

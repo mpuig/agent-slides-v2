@@ -8,6 +8,18 @@ from agent_slides.model.layouts import get_layout, get_slot_names, get_text_fitt
 from agent_slides.model.template_layouts import TemplateLayoutRegistry
 from agent_slides.model.types import LayoutDef, TextFitting
 
+_LAYOUT_VARIANTS: dict[str, tuple[str, ...]] = {
+    "comparison": ("two_col", "title_content"),
+    "gallery": ("image_left", "title_content"),
+    "hero_image": ("image_left", "image_right"),
+    "image_left": ("image_right", "title_content"),
+    "image_right": ("image_left", "title_content"),
+    "three_col": ("two_col", "title_content"),
+    "title": ("title_content",),
+    "title_content": ("two_col",),
+    "two_col": ("title_content",),
+}
+
 
 class LayoutProvider(Protocol):
     def get_layout(self, slug: str) -> LayoutDef: ...
@@ -37,8 +49,7 @@ class BuiltinLayoutProvider:
         return get_text_fitting(slug, role)
 
     def get_variants(self, slug: str) -> list[LayoutDef]:
-        self.get_layout(slug)
-        return []
+        return [get_layout(name) for name in _LAYOUT_VARIANTS.get(slug, ())]
 
 
 def resolve_layout_provider(template_manifest: str | None) -> LayoutProvider:

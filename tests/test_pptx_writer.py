@@ -659,6 +659,61 @@ def test_write_pptx_renders_native_table_with_alignment_and_striping(tmp_path: P
     assert table.cell(2, 0).fill.fore_color.rgb != table.cell(1, 0).fill.fore_color.rgb
 
 
+def test_write_pptx_applies_status_colors_to_table_cells(tmp_path: Path) -> None:
+    output_path = tmp_path / "table-status.pptx"
+    deck = Deck(
+        deck_id="deck-table-status",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="content",
+                nodes=[
+                    Node(
+                        node_id="n-table",
+                        slot_binding="body",
+                        type="table",
+                        table_spec=TableSpec(
+                            headers=["Item", "Status"],
+                            rows=[
+                                ["Migration", "Blocked"],
+                                ["Launch", "In Progress"],
+                                ["Ops", "Complete"],
+                            ],
+                        ),
+                    )
+                ],
+                computed={
+                    "n-table": ComputedNode(
+                        x=72.0,
+                        y=108.0,
+                        width=576.0,
+                        height=216.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color="#FFFFFF",
+                        font_bold=False,
+                        revision=1,
+                        content_type="table",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    table = first_table_shape(open_presentation(output_path)).table
+
+    assert table.cell(1, 1).fill.fore_color.rgb == RGBColor.from_string("FDE3E3")
+    assert table.cell(2, 1).fill.fore_color.rgb == RGBColor.from_string("FFF1C7")
+    assert table.cell(3, 1).fill.fore_color.rgb == RGBColor.from_string("DDF4E4")
+    assert table.cell(1, 1).text_frame.paragraphs[0].runs[0].font.bold is True
+
+
 def test_write_pptx_renders_expected_slides_and_shapes(tmp_path: Path) -> None:
     output_path = tmp_path / "deck.pptx"
 
@@ -868,6 +923,87 @@ def test_write_pptx_uses_block_positions_for_precise_text_boxes(tmp_path: Path) 
     assert any(paragraph.find("./a:pPr/a:buChar", DRAWING_NS) is not None for paragraph in paragraphs)
 
 
+def test_write_pptx_renders_icon_nodes_and_icon_bullets(tmp_path: Path) -> None:
+    output_path = tmp_path / "icons.pptx"
+    deck = Deck(
+        deck_id="deck-icons",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(type="bullet", text="On track for Q3", icon="checkmark"),
+                            ]
+                        ),
+                    ),
+                    Node(
+                        node_id="n-2",
+                        type="icon",
+                        icon_name="warning",
+                        x=420.0,
+                        y=120.0,
+                        size=18.0,
+                        color="#D93025",
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=100.0,
+                        width=320.0,
+                        height=90.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#1A73E8",
+                        bg_color=None,
+                        revision=1,
+                    ),
+                    "n-2": ComputedNode(
+                        x=420.0,
+                        y=120.0,
+                        width=18.0,
+                        height=18.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#D93025",
+                        bg_color=None,
+                        revision=1,
+                        content_type="icon",
+                        icon_svg_path="M12 2 L22 21 L2 21 Z M11 8 L13 8 L13 15 L11 15 Z M11 17 L13 17 L13 19 L11 19 Z",
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    text_frame = slide.shapes[0].text_frame
+    slide_xml = read_slide_xml(output_path)
+    custom_geometry = slide_xml.findall(".//a:custGeom", DRAWING_NS)
+    paragraphs = slide_xml.findall(".//a:p", DRAWING_NS)
+    fills = [slide.shapes[index].fill.fore_color.rgb for index in range(1, len(slide.shapes))]
+
+    assert len(slide.shapes) >= 3
+    assert len(custom_geometry) >= 2
+    assert text_frame.paragraphs[0].text == "On track for Q3"
+    assert text_frame.paragraphs[0].runs[0].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert RGBColor.from_string("1A73E8") in fills
+    assert RGBColor.from_string("D93025") in fills
+    assert paragraphs[0].find("./a:pPr/a:buNone", DRAWING_NS) is not None
+    assert paragraphs[0].find("./a:pPr/a:buChar", DRAWING_NS) is None
+    assert int(paragraphs[0].find("./a:pPr", DRAWING_NS).attrib["marL"]) > 0
+
+
 def test_write_pptx_renders_inline_text_runs(tmp_path: Path) -> None:
     output_path = tmp_path / "inline-runs.pptx"
     deck = Deck(
@@ -938,6 +1074,125 @@ def test_write_pptx_renders_inline_text_runs(tmp_path: Path) -> None:
     assert runs[3].font.underline is True
     assert xml_runs[3].find("./a:rPr", DRAWING_NS).attrib["u"] == "sng"
 
+def test_write_pptx_applies_conditional_text_colors_from_design_rules(tmp_path: Path) -> None:
+    output_path = tmp_path / "conditional-text.pptx"
+    deck = Deck(
+        deck_id="deck-conditional-text",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[TextBlock(type="paragraph", text="Revenue +23% is urgent but margin -5%")]
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=400.0,
+                        height=80.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    runs = open_presentation(output_path).slides[0].shapes[0].text_frame.paragraphs[0].runs
+
+    assert any(run.text == "+23%" and run.font.color.rgb == RGBColor.from_string("1B8A2D") for run in runs)
+    assert any(run.text == "-5%" and run.font.color.rgb == RGBColor.from_string("D32F2F") for run in runs)
+    assert any(run.text == "urgent" and run.font.bold is True and run.font.color.rgb == RGBColor.from_string("C98E48") for run in runs)
+
+
+def test_write_pptx_applies_conditional_point_colors_to_single_series_charts(tmp_path: Path) -> None:
+    output_path = tmp_path / "conditional-chart.pptx"
+    deck = Deck(
+        deck_id="deck-conditional-chart",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-chart",
+                        slot_binding="body",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type="column",
+                            categories=["Q1", "Q2", "Q3"],
+                            series=[ChartSeries(name="Revenue", values=[12.0, -4.0, 18.0])],
+                            style=ChartStyle(color_by_value=True),
+                        ),
+                    )
+                ],
+                computed={"n-chart": chart_computed()},
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    chart = first_chart_shape(open_presentation(output_path)).chart
+
+    assert chart.series[0].points[0].format.fill.fore_color.rgb == RGBColor.from_string("1B8A2D")
+    assert chart.series[0].points[1].format.fill.fore_color.rgb == RGBColor.from_string("D32F2F")
+
+
+def test_write_pptx_applies_highlight_and_muted_chart_point_colors(tmp_path: Path) -> None:
+    output_path = tmp_path / "highlight-chart.pptx"
+    deck = Deck(
+        deck_id="deck-highlight-chart",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-chart",
+                        slot_binding="body",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type="pie",
+                            categories=["A", "B", "C"],
+                            series=[ChartSeries(name="Share", values=[40.0, 35.0, 25.0])],
+                            style=ChartStyle(highlight_index=1),
+                        ),
+                    )
+                ],
+                computed={"n-chart": chart_computed()},
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    chart = first_chart_shape(open_presentation(output_path)).chart
+
+    assert chart.series[0].points[0].format.fill.fore_color.rgb == RGBColor.from_string("CFC8BD")
+    assert chart.series[0].points[1].format.fill.fore_color.rgb == RGBColor.from_string("C98E48")
 def test_write_pptx_renders_image_nodes_with_contain_fit(tmp_path: Path) -> None:
     image_path = write_png(tmp_path / "photo.png", width=200, height=100)
     output_path = tmp_path / "images.pptx"
