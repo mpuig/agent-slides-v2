@@ -286,6 +286,20 @@ def test_template_layout_registry_skips_variants_when_peer_invariants_fail(tmp_p
     assert registry.get_variants("peer_bodies") == []
 
 
+def test_template_layout_registry_skips_variants_when_solved_widths_differ(tmp_path: Path) -> None:
+    manifest_path = _build_variant_manifest(
+        tmp_path,
+        body_bounds=[
+            {"x": 72, "y": 156, "w": 180, "h": 220},
+            {"x": 270, "y": 156, "w": 210, "h": 220},
+            {"x": 508, "y": 156, "w": 140, "h": 220},
+        ],
+    )
+    registry = TemplateLayoutRegistry(str(manifest_path))
+
+    assert registry.get_variants("peer_bodies") == []
+
+
 def test_layout_providers_expose_get_variants_consistently(tmp_path: Path) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
