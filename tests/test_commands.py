@@ -118,6 +118,60 @@ def make_clean_deck() -> Deck:
     )
 
 
+def make_theme_switch_deck(theme_name: str = "default") -> Deck:
+    return Deck(
+        deck_id="deck-theme-switch",
+        theme=theme_name,
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="two_col",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Theme heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="col1",
+                        type="text",
+                        content="Theme body left",
+                    ),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="col2",
+                        type="text",
+                        content="Theme body right",
+                    ),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=3),
+    )
+
+
+def render_slide_signature(path: Path) -> tuple[tuple[int, int, int, str, str, str], ...]:
+    presentation = Presentation(path)
+    slide = presentation.slides[0]
+    signature: list[tuple[int, int, int, str, str, str]] = []
+    for shape in slide.shapes:
+        paragraph = shape.text_frame.paragraphs[0]
+        run = paragraph.runs[0]
+        signature.append(
+            (
+                shape.left,
+                shape.top,
+                shape.width,
+                run.font.name or "",
+                str(run.font.color.rgb),
+                str(shape.fill.fore_color.rgb),
+            )
+        )
+    return tuple(signature)
+
+
 def make_overflow_deck() -> Deck:
     rules = load_design_rules("default")
     return Deck(
@@ -264,6 +318,88 @@ def test_init_returns_rules_validation_error_for_invalid_rules(tmp_path: Path) -
         },
     }
     assert not deck_path.exists()
+
+
+def test_theme_list_returns_available_themes_as_json() -> None:
+    result = invoke_cli(["theme", "list"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "themes": ["academic", "corporate", "dark", "default", "startup"],
+        },
+    }
+
+
+def test_theme_apply_switches_theme_and_reflows_computed_layout(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_theme_switch_deck())
+
+    result = invoke_cli(["theme", "apply", str(deck_path), "--theme", "startup"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "theme": "startup",
+            "previous": "default",
+        },
+    }
+
+    updated_deck = read_deck(str(deck_path))
+    computed_deck = read_computed_deck(str(deck_path))
+    heading = updated_deck.slides[0].computed["n-1"]
+    left_column = updated_deck.slides[0].computed["n-2"]
+    right_column = updated_deck.slides[0].computed["n-3"]
+
+    assert updated_deck.theme == "startup"
+    assert updated_deck.revision == 1
+    assert computed_deck.revision == 1
+    assert heading.x == 72.0
+    assert heading.y == 72.0
+    assert heading.font_family == "Helvetica"
+    assert heading.color == "#0F172A"
+    assert left_column.font_family == "Arial"
+    assert left_column.bg_color == "#FFFDF8"
+    assert right_column.x > left_column.x
+    assert right_column.x == 388.0
+    assert right_column.width == 288.0
+
+
+def test_theme_apply_returns_error_for_invalid_theme(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_theme_switch_deck())
+
+    result = invoke_cli(["theme", "apply", str(deck_path), "--theme", "missing"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": THEME_NOT_FOUND,
+            "message": "Theme 'missing' was not found.",
+        },
+    }
+    assert read_deck(str(deck_path)).theme == "default"
+
+
+def test_theme_apply_changes_subsequent_build_output(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    default_output = tmp_path / "default.pptx"
+    corporate_output = tmp_path / "corporate.pptx"
+    write_deck(deck_path, make_theme_switch_deck())
+
+    initial_build = invoke_cli(["build", str(deck_path), "-o", str(default_output)])
+    theme_result = invoke_cli(["theme", "apply", str(deck_path), "--theme", "corporate"])
+    updated_build = invoke_cli(["build", str(deck_path), "-o", str(corporate_output)])
+
+    assert initial_build.exit_code == 0
+    assert theme_result.exit_code == 0
+    assert updated_build.exit_code == 0
+    assert render_slide_signature(default_output) != render_slide_signature(corporate_output)
 
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
