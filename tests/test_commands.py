@@ -280,6 +280,98 @@ def test_init_applies_explicit_theme_and_rules_options(tmp_path: Path) -> None:
     assert computed_sidecar_path(deck_path).exists()
 
 
+def test_init_with_template_sets_relative_manifest_and_uses_manifest_layouts(tmp_path: Path) -> None:
+    deck_path = tmp_path / "decks" / "deck.json"
+    manifest_path = tmp_path / "templates" / "client-brand.manifest.json"
+    deck_path.parent.mkdir(parents=True)
+    manifest_path.parent.mkdir(parents=True)
+    write_json(
+        manifest_path,
+        {
+            "source": "client-brand.pptx",
+            "slide_masters": [
+                {
+                    "layouts": [
+                        {
+                            "name": "Title Slide",
+                            "slug": "title_slide",
+                            "slot_mapping": {"heading": 0, "subheading": 1},
+                        },
+                        {
+                            "name": "Two Content",
+                            "slug": "two_content",
+                            "slot_mapping": {"heading": 0, "col1": 1, "col2": 2},
+                        },
+                    ]
+                }
+            ],
+            "theme": {
+                "colors": {"primary": "#112233"},
+                "fonts": {"heading": "Aptos Display", "body": "Aptos"},
+                "spacing": {"base_unit": 10, "margin": 60, "gutter": 20},
+            },
+        },
+    )
+
+    result = invoke_cli(["init", str(deck_path), "--template", str(manifest_path)])
+
+    assert result.exit_code == 0
+    response = json.loads(result.output)
+    payload = read_payload(deck_path)
+
+    assert response["data"]["theme"] == "extracted-client-brand"
+    assert response["data"]["template"] == "../templates/client-brand.manifest.json"
+    assert payload["theme"] == "extracted-client-brand"
+    assert payload["template_manifest"] == "../templates/client-brand.manifest.json"
+
+    slide_add = invoke_cli(["slide", "add", str(deck_path), "--layout", "two_content"])
+
+    assert slide_add.exit_code == 0
+    updated = read_deck(str(deck_path))
+    assert updated.slides[0].layout == "two_content"
+    assert {node.slot_binding for node in updated.slides[0].nodes} == {"heading", "col1", "col2"}
+
+    invalid_layout = invoke_cli(["slide", "add", str(deck_path), "--layout", "two_col"])
+
+    assert invalid_layout.exit_code == 1
+    assert json.loads(invalid_layout.stderr) == {
+        "ok": False,
+        "error": {
+            "code": INVALID_LAYOUT,
+            "message": "Unknown layout 'two_col'. Available layouts: title_slide, two_content",
+        },
+    }
+
+
+def test_init_returns_error_when_theme_and_template_are_both_provided(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    manifest_path = tmp_path / "manifest.json"
+    write_json(
+        manifest_path,
+        {
+            "source": "client-brand.pptx",
+            "slide_masters": [],
+            "theme": {
+                "colors": {"primary": "#112233"},
+                "fonts": {"heading": "Aptos Display", "body": "Aptos"},
+                "spacing": {"base_unit": 10, "margin": 60, "gutter": 20},
+            },
+        },
+    )
+
+    result = invoke_cli(["init", str(deck_path), "--theme", "default", "--template", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "`--theme` and `--template` are mutually exclusive.",
+        },
+    }
+    assert not deck_path.exists()
+
+
 def test_init_returns_file_exists_error_when_target_exists(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck_path.write_text("{}", encoding="utf-8")
