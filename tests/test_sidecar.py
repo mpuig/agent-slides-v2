@@ -221,14 +221,15 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     reflow_revisions: list[int] = []
     provider_types: list[type[object]] = []
 
-    def fake_reflow(deck: Deck, *, layout_provider: object | None = None) -> None:
+    def fake_reflow(deck: Deck, provider) -> None:
         reflow_revisions.append(deck.revision)
-        provider_types.append(type(layout_provider))
+        provider_types.append(type(provider))
 
     monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
-    def mutate(deck: Deck) -> str:
+    def mutate(deck: Deck, provider) -> str:
         deck.theme = "updated"
+        assert isinstance(provider, BuiltinLayoutProvider)
         return "ok"
 
     updated_deck, result = mutate_deck(str(deck_path), mutate)
@@ -248,7 +249,7 @@ def test_mutate_deck_does_not_write_if_mutation_raises(tmp_path: Path) -> None:
     write_raw_deck(deck_path, original)
     original_payload = deck_path.read_text(encoding="utf-8")
 
-    def fail(_: Deck) -> None:
+    def fail(_: Deck, __) -> None:
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):

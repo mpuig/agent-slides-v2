@@ -174,14 +174,18 @@ def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
     seen_provider_types: list[type[object]] = []
     seen_layouts: list[list[str]] = []
 
-    def fake_reflow(updated_deck: Deck, *, layout_provider: object | None = None) -> None:
-        seen_provider_types.append(type(layout_provider))
-        assert isinstance(layout_provider, TemplateLayoutRegistryImpl)
-        seen_layouts.append(layout_provider.list_layouts())
+    def fake_reflow(updated_deck: Deck, provider) -> None:
+        assert updated_deck.revision == 5
+        seen_provider_types.append(type(provider))
+        assert isinstance(provider, TemplateLayoutRegistryImpl)
+        seen_layouts.append(provider.list_layouts())
 
     monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
-    updated_deck, result = mutate_deck(str(deck_path), lambda current_deck: ("ok", current_deck.slides[0].layout))
+    updated_deck, result = mutate_deck(
+        str(deck_path),
+        lambda current_deck, provider: ("ok", provider.get_layout(current_deck.slides[0].layout).name),
+    )
 
     assert updated_deck.revision == 5
     assert result == ("ok", "template_title")

@@ -31,7 +31,7 @@ def apply_theme_command(path: str, theme_name: str) -> None:
 
     load_theme(theme_name)
 
-    def mutate(deck: Deck) -> dict[str, str]:
+    def mutate(deck: Deck, _provider: object) -> dict[str, str]:
         previous = deck.theme
         deck.theme = theme_name
         return {

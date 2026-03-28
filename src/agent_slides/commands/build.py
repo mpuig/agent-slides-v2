@@ -8,7 +8,8 @@ from pathlib import Path
 import click
 
 from agent_slides.engine.reflow import reflow_deck
-from agent_slides.io import read_deck, write_computed_deck, write_pptx
+from agent_slides.io import read_deck, resolve_manifest_path, write_computed_deck, write_pptx
+from agent_slides.model.layout_provider import resolve_layout_provider
 
 
 @click.command("build")
@@ -24,7 +25,8 @@ def build_command(path: Path, output_path: Path) -> None:
     """Build a PPTX file from a deck sidecar."""
 
     deck = read_deck(str(path))
-    reflow_deck(deck)
+    provider = resolve_layout_provider(resolve_manifest_path(str(path), deck))
+    reflow_deck(deck, provider)
     write_computed_deck(str(path), deck)
     write_pptx(deck, str(output_path))
     payload = {

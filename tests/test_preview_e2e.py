@@ -10,6 +10,7 @@ from websockets.asyncio.client import connect
 from agent_slides.commands.mutations import apply_mutation
 from agent_slides.io.sidecar import init_deck, mutate_deck
 from agent_slides.model import Deck
+from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.preview import PreviewServer
 
 
@@ -103,14 +104,14 @@ def prepare_deck(tmp_path: Path) -> Path:
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
     mutate_deck(
         str(deck_path),
-        lambda deck: apply_mutation(deck, "slide_add", {"layout": "title"}),
+        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
     )
     mutate_deck(str(deck_path), apply_slot_mutation("initial"))
     return deck_path
 
 
 def apply_slot_mutation(text: str):
-    def mutate(deck: Deck) -> str:
+    def mutate(deck: Deck, provider: LayoutProvider) -> str:
         apply_mutation(
             deck,
             "slot_set",
@@ -119,6 +120,7 @@ def apply_slot_mutation(text: str):
                 "slot": "title",
                 "text": text,
             },
+            provider,
         )
         return text
 

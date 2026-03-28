@@ -17,9 +17,8 @@ from agent_slides.errors import (
     REVISION_CONFLICT,
     SCHEMA_ERROR,
 )
+from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
 from agent_slides.model import ComputedDeck, Deck
-from agent_slides.model.layouts import BuiltinLayoutProvider, use_layout_provider
-from agent_slides.model.template_layouts import TemplateLayoutRegistry
 
 T = TypeVar("T")
 CURRENT_DECK_VERSION = 2
@@ -206,23 +205,17 @@ def write_deck(path: str, deck: Deck, expected_revision: int) -> None:
     _write_bundle_atomic(deck_path, deck)
 
 
-def mutate_deck(path: str, fn: Callable[[Deck], T]) -> tuple[Deck, T]:
+def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Deck, T]:
     """Run the shared read-mutate-reflow-lock-write pipeline."""
 
     from agent_slides.engine.reflow import reflow_deck
 
     deck = read_deck(path)
-    manifest_path = resolve_manifest_path(path, deck)
-    layout_provider = (
-        TemplateLayoutRegistry(manifest_path)
-        if manifest_path is not None
-        else BuiltinLayoutProvider()
-    )
+    provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
-    with use_layout_provider(layout_provider):
-        result = fn(deck)
-        deck.bump_revision()
-        reflow_deck(deck, layout_provider=layout_provider)
+    result = fn(deck, provider)
+    deck.bump_revision()
+    reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 
