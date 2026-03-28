@@ -18,9 +18,9 @@ from agent_slides.errors import (
     INVALID_SLOT,
     SCHEMA_ERROR,
 )
-from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide, TableSpec
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide, TableSpec, load_design_rules
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model.types import CHART_TYPE_VALUES, TextBlock, parse_inline_markdown_runs
+from agent_slides.model.types import CHART_TYPE_VALUES, TextBlock, apply_inline_color_suffixes, parse_inline_markdown_runs
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -134,7 +134,7 @@ def _find_node(deck: Deck, node_id: str) -> tuple[Slide, Node]:
     raise AgentSlidesError(SCHEMA_ERROR, f"Node {node_id!r} does not exist")
 
 
-def _coerce_content(args: dict[str, Any]) -> NodeContent:
+def _coerce_content(args: dict[str, Any], *, color_aliases: dict[str, str] | None = None) -> NodeContent:
     if "content" in args:
         try:
             return NodeContent.model_validate(args["content"])
@@ -146,7 +146,8 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
         raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
     runs = parse_inline_markdown_runs(text)
     if runs is not None:
-        return NodeContent(blocks=[TextBlock(type="paragraph", text=text, runs=runs)])
+        resolved_runs = apply_inline_color_suffixes(runs, color_aliases=color_aliases)
+        return NodeContent(blocks=[TextBlock(type="paragraph", text=text, runs=resolved_runs)])
     return NodeContent.from_text(text)
 
 
@@ -169,7 +170,11 @@ def _coerce_image_fit(args: dict[str, Any]) -> str:
     return normalized
 
 
-def _coerce_slot_set_payload(args: dict[str, Any]) -> tuple[str, NodeContent, str | None, str]:
+def _coerce_slot_set_payload(
+    args: dict[str, Any],
+    *,
+    color_aliases: dict[str, str] | None = None,
+) -> tuple[str, NodeContent, str | None, str]:
     has_text = "text" in args or "content" in args
     image_path = args.get("image")
     has_image = isinstance(image_path, str) and bool(image_path.strip())
@@ -183,7 +188,7 @@ def _coerce_slot_set_payload(args: dict[str, Any]) -> tuple[str, NodeContent, st
     if has_image:
         return "image", NodeContent(), image_path.strip(), _coerce_image_fit(args)
 
-    return "text", _coerce_content(args), None, _coerce_image_fit(args)
+    return "text", _coerce_content(args, color_aliases=color_aliases), None, _coerce_image_fit(args)
 
 
 def _validate_chart_type(chart_type: str) -> str:
@@ -344,6 +349,8 @@ def apply_mutation(
 ) -> dict[str, Any]:
     """Apply one supported mutation and return its structured result."""
 
+    color_aliases = load_design_rules(deck.design_rules).conditional_formatting.color_aliases
+
     if command == "slide_add":
         auto_layout = _require_bool(args, "auto_layout", default=False)
         if auto_layout:
@@ -353,7 +360,7 @@ def apply_mutation(
                     "Arguments 'auto_layout' and 'layout' are mutually exclusive",
                 )
 
-            content = _coerce_content(args)
+            content = _coerce_content(args, color_aliases=color_aliases)
             if content.is_empty():
                 raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must include at least one text block")
 
@@ -409,7 +416,7 @@ def apply_mutation(
 
     if command == "slot_set":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
-        node_type, content, image_path, image_fit = _coerce_slot_set_payload(args)
+        node_type, content, image_path, image_fit = _coerce_slot_set_payload(args, color_aliases=color_aliases)
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
 
         slot_nodes = _find_slot_nodes(slide, slot_name)

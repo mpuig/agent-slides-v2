@@ -16,7 +16,7 @@ from agent_slides.io import read_deck
 from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide, TableSpec
 from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
-from agent_slides.preview.watcher import SidecarWatcher
+from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 from tests.image_helpers import write_png
 
 
@@ -698,6 +698,8 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert "blockRuns" in payload
     assert "splitRunsByLine" in payload
     assert "nodeLines" in payload
+    assert "resolvedBlockRuns" in payload
+    assert "applyConditionalRuleToRuns" in payload
     assert 'split(/\\r?\\n/)' in payload
     assert 'block?.type === "bullet"' in payload
     assert '"text-decoration"' in payload
@@ -718,6 +720,7 @@ def test_client_html_contains_chart_preview_helpers() -> None:
     assert "renderBarChartPreview" in payload
     assert "renderColumnChartPreview" in payload
     assert "renderLineChartPreview" in payload
+    assert "resolveChartPointColors" in payload
     assert 'node.type === "chart" || computed.content_type === "chart"' in payload
     assert "Preview approximation" in payload
 
@@ -728,7 +731,19 @@ def test_client_html_contains_table_preview_helpers() -> None:
     assert "renderTableNode" in payload
     assert "tableColumnAlignments" in payload
     assert "tableColumnWidths" in payload
+    assert "resolveTableCellStyle" in payload
     assert 'node.type === "table" || computed.content_type === "table"' in payload
+
+
+def test_load_deck_payload_includes_conditional_formatting_rules(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_deck(revision=1, content="Revenue +23% is urgent"))
+
+    revision, payload = load_deck_payload(deck_path)
+
+    assert revision == 1
+    assert payload["conditional_formatting"]["color_aliases"]["green"] == "#1B8A2D"
+    assert any(rule["pattern"] == "keyword" for rule in payload["conditional_formatting"]["text_rules"])
 
 
 def test_preview_server_serves_chart_deck_payload(tmp_path: Path) -> None:
