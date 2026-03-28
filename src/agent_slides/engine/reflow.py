@@ -83,6 +83,26 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
 
         slot = layout_def.slots[node.slot_binding]
         x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding, theme)
+        style = resolve_style(theme, slot.role)
+
+        if node.type == "image":
+            computed[node.node_id] = ComputedNode(
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                font_size_pt=0.0,
+                font_family=str(style["font_family"]),
+                color=str(style["color"]),
+                bg_color=theme.colors.background,
+                font_bold=False,
+                text_overflow=False,
+                revision=revision,
+                content_type="image",
+                image_fit=str(node.style_overrides.get("image_fit", "contain")),
+            )
+            continue
+
         fit_rules = _text_fit_rules(layout_def, node)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
@@ -91,7 +111,6 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             default_size=fit_rules.default_size,
             min_size=fit_rules.min_size,
         )
-        style = resolve_style(theme, slot.role)
 
         computed[node.node_id] = ComputedNode(
             x=x,
@@ -105,6 +124,7 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             font_bold=bool(style["font_bold"]),
             text_overflow=text_overflow,
             revision=revision,
+            content_type="text",
         )
 
     slide.computed = computed
