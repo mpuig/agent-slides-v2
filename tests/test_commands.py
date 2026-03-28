@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
 
@@ -698,6 +699,113 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
     assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
 
 
+def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Highlights"},
+                        {"type": "bullet", "text": "Point one"},
+                        {"type": "bullet", "text": "Point two", "level": 1},
+                    ]
+                }
+            ),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "col1",
+            "node_id": "n-2",
+            "type": "text",
+            "text": "Highlights\nPoint one\nPoint two",
+            "content": {
+                "blocks": [
+                    {"type": "heading", "text": "Highlights", "level": 0},
+                    {"type": "bullet", "text": "Point one", "level": 0},
+                    {"type": "bullet", "text": "Point two", "level": 1},
+                ]
+            },
+            "image_path": None,
+            "image_fit": "contain",
+            "font_size": None,
+        },
+    }
+    assert updated.slides[0].nodes[1].slot_binding == "col1"
+    assert updated.slides[0].nodes[1].content.model_dump(mode="json") == {
+        "blocks": [
+            {"type": "heading", "text": "Highlights", "level": 0},
+            {"type": "bullet", "text": "Point one", "level": 0},
+            {"type": "bullet", "text": "Point two", "level": 1},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("args",),
+    [
+        (
+            [
+                "--text",
+                "Hello",
+                "--content",
+                json.dumps({"blocks": [{"type": "paragraph", "text": "Intro"}]}),
+            ],
+        ),
+        (
+            [
+                "--text",
+                "Hello",
+                "--image",
+                "photo.png",
+            ],
+        ),
+        (
+            [
+                "--content",
+                json.dumps({"blocks": [{"type": "paragraph", "text": "Intro"}]}),
+                "--image",
+                "photo.png",
+            ],
+        ),
+    ],
+)
+def test_slot_set_rejects_mutually_exclusive_content_options(tmp_path: Path, args: list[str]) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_png(tmp_path / "photo.png", width=12, height=12)
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(["slot", "set", str(deck_path), "--slide", "0", "--slot", "body", *args])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"] == {
+        "code": SCHEMA_ERROR,
+        "message": "Options '--text', '--content', and '--image' are mutually exclusive; provide exactly one",
+    }
+
+
 def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     image_path = write_png(tmp_path / "photo.png", width=30, height=20)
@@ -732,34 +840,6 @@ def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
     body_node = next(node for node in updated.slides[0].nodes if node.slot_binding == "body")
     assert body_node.type == "image"
     assert body_node.image_path == "photo.png"
-
-
-def test_slot_set_rejects_mutually_exclusive_text_and_image_options(tmp_path: Path) -> None:
-    deck_path = tmp_path / "deck.json"
-    image_path = write_png(tmp_path / "photo.png", width=12, height=12)
-    write_deck(deck_path, make_empty_deck())
-
-    result = invoke_cli(
-        [
-            "slot",
-            "set",
-            str(deck_path),
-            "--slide",
-            "0",
-            "--slot",
-            "body",
-            "--text",
-            "Hello",
-            "--image",
-            str(image_path),
-        ]
-    )
-
-    assert result.exit_code == 1
-    assert json.loads(result.stderr)["error"] == {
-        "code": SCHEMA_ERROR,
-        "message": "Options '--text' and '--image' are mutually exclusive; provide exactly one",
-    }
 
 
 def test_slot_set_rejects_missing_image_path(tmp_path: Path) -> None:
@@ -2123,151 +2203,15 @@ def test_preview_command_waits_for_missing_deck(tmp_path: Path, monkeypatch) -> 
     assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
 
 
-def test_chat_command_auto_creates_deck_starts_chat_mode_and_opens_browser(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    deck_path = tmp_path / "deck.json"
-    browser_calls: list[str] = []
-    orchestrator_calls: list[tuple[Path, str]] = []
-    server_events: list[tuple[str, object]] = []
-
-    class FakeServer:
-        def __init__(
-            self,
-            path: Path,
-            *,
-            port: int,
-            mode: str = "preview",
-            orchestrator: object | None = None,
-        ) -> None:
-            self.url = f"http://localhost:{port}"
-            server_events.append(("init", path, port, mode, orchestrator))
-
-        def start(self) -> None:
-            server_events.append(("start",))
-
-        def stop(self) -> None:
-            server_events.append(("stop",))
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: object())
-    monkeypatch.setattr("agent_slides.commands.chat._ForegroundPreviewServer", FakeServer)
-    monkeypatch.setattr(
-        "agent_slides.commands.chat.DeckOrchestrator",
-        lambda path, api_key: orchestrator_calls.append((path, api_key)) or object(),
-    )
-    monkeypatch.setattr(
-        "agent_slides.commands.chat._wait_for_shutdown",
-        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
-    )
-    monkeypatch.setattr(
-        "agent_slides.commands.chat.webbrowser.open",
-        lambda url: browser_calls.append(url),
-    )
-
-    result = invoke_cli(["chat", str(deck_path), "--port", "9876"])
-
-    lines = [line for line in result.output.strip().splitlines() if line]
+def test_cli_help_does_not_list_chat_command() -> None:
+    result = invoke_cli(["--help"])
 
     assert result.exit_code == 0
-    assert result.stderr == ""
-    assert deck_path.exists()
-    assert read_payload(deck_path)["theme"] == "default"
-    assert browser_calls == ["http://localhost:9876"]
-    assert orchestrator_calls == [(deck_path, "test-key")]
-    assert server_events[0][:4] == ("init", deck_path, 9876, "chat")
-    assert server_events[1] == ("start",)
-    assert server_events[2] == ("stop",)
-    assert json.loads(lines[0]) == {
-        "ok": True,
-        "data": {
-            "url": "http://localhost:9876",
-            "mode": "chat",
-        },
-    }
-    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+    assert " chat " not in result.output
 
 
-def test_chat_command_supports_custom_port_and_no_open(tmp_path: Path, monkeypatch) -> None:
-    deck_path = tmp_path / "deck.json"
-    write_deck(deck_path, make_clean_deck())
-    browser_calls: list[str] = []
-    server_events: list[tuple[str, object]] = []
+def test_chat_command_is_not_registered() -> None:
+    result = invoke_cli(["chat"])
 
-    class FakeServer:
-        def __init__(
-            self,
-            path: Path,
-            *,
-            port: int,
-            mode: str = "preview",
-            orchestrator: object | None = None,
-        ) -> None:
-            self.url = f"http://localhost:{port}"
-            server_events.append(("init", path, port, mode, orchestrator))
-
-        def start(self) -> None:
-            server_events.append(("start",))
-
-        def stop(self) -> None:
-            server_events.append(("stop",))
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: object())
-    monkeypatch.setattr("agent_slides.commands.chat._ForegroundPreviewServer", FakeServer)
-    monkeypatch.setattr("agent_slides.commands.chat.DeckOrchestrator", lambda *args: object())
-    monkeypatch.setattr(
-        "agent_slides.commands.chat._wait_for_shutdown",
-        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
-    )
-    monkeypatch.setattr(
-        "agent_slides.commands.chat.webbrowser.open",
-        lambda url: browser_calls.append(url),
-    )
-
-    result = invoke_cli(["chat", str(deck_path), "--port", "9012", "--no-open"])
-
-    lines = [line for line in result.output.strip().splitlines() if line]
-
-    assert result.exit_code == 0
-    assert browser_calls == []
-    assert server_events[0][:4] == ("init", deck_path, 9012, "chat")
-    assert json.loads(lines[0])["data"] == {
-        "url": "http://localhost:9012",
-        "mode": "chat",
-    }
-    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
-
-
-def test_chat_command_requires_api_key(tmp_path: Path, monkeypatch) -> None:
-    deck_path = tmp_path / "deck.json"
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    result = invoke_cli(["chat", str(deck_path), "--no-open"])
-
-    assert result.exit_code == 1
-    assert json.loads(result.stderr) == {
-        "ok": False,
-        "error": {
-            "code": SCHEMA_ERROR,
-            "message": "Chat mode requires `ANTHROPIC_API_KEY`. Set the environment variable and try again.",
-        },
-    }
-
-
-def test_chat_command_reports_missing_anthropic_dependency(tmp_path: Path, monkeypatch) -> None:
-    deck_path = tmp_path / "deck.json"
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: None)
-
-    result = invoke_cli(["chat", str(deck_path), "--no-open"])
-
-    assert result.exit_code == 1
-    assert json.loads(result.stderr) == {
-        "ok": False,
-        "error": {
-            "code": SCHEMA_ERROR,
-            "message": "Chat mode requires: pip install agent-slides[chat]",
-        },
-    }
+    assert result.exit_code != 0
+    assert "No such command 'chat'" in result.output
