@@ -8,6 +8,7 @@ from typing import Any
 import click
 
 from agent_slides.commands.mutations import SUPPORTED_MUTATION_COMMANDS, apply_mutation
+from agent_slides.commands.warnings import attach_layout_fallback_warning
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
 from agent_slides.model.layout_provider import LayoutProvider
@@ -72,5 +73,18 @@ def batch(path: str) -> None:
                 ) from exc
         return results
 
-    _, results = mutate_deck(path, mutate)
-    click.echo(json.dumps({"ok": True, "data": {"operations": len(results), "results": results}}))
+    deck, results = mutate_deck(path, mutate)
+    click.echo(
+        json.dumps(
+            attach_layout_fallback_warning(
+                {"ok": True, "data": {"operations": len(results), "results": results}},
+                deck,
+                slide_ids=[
+                    str(result["slide_id"])
+                    for result in results
+                    if isinstance(result, dict) and "slide_id" in result
+                ]
+                or None,
+            )
+        )
+    )

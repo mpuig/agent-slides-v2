@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from math import isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.constraints import Rect, constraints_from_layout, solve
-from agent_slides.engine.layout_validator import LayoutViolation, validate_layout
+from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW, validate_layout
 from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.icons import require_icon
 from agent_slides.engine.text_fit import compose_blocks, fit_blocks, fit_text, measure_text_height
+from agent_slides.engine.validator import validate_slide
 from agent_slides.model import Deck, LayoutDef, Slide
 from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme, resolve_style
-from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
+from agent_slides.model.types import ComputedNode, Node, NodeContent, TextBlock, TextFitting, Theme
 
 
 def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None) -> TextFitting:
@@ -166,6 +168,413 @@ def _normalize_deck_font_sizes(deck: Deck, provider: LayoutProvider, design_rule
             continue
         computed.font_size_pt = normalized_size
         computed.text_overflow = False
+
+@dataclass(frozen=True)
+class _VariantTextAssignment:
+    candidate_node_id: str
+    slot_name: str
+    source_node_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _VariantCandidate:
+    slide: Slide
+    text_assignments: tuple[_VariantTextAssignment, ...]
+    image_assignments: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class _ReflowOutcome:
+    rects: dict[str, Rect]
+    violations: list[LayoutViolation]
+    fallback_used: bool
+
+
+def _slot_sort_key(layout_def: LayoutDef, slot_name: str) -> tuple[int, float, float, str]:
+    slot = layout_def.slots[slot_name]
+    return (
+        slot.reading_order,
+        float(slot.y if slot.y is not None else 0.0),
+        float(slot.x if slot.x is not None else 0.0),
+        slot_name,
+    )
+
+
+def _ordered_slot_names(layout_def: LayoutDef, *, role: str | None = None, include_image: bool = True) -> list[str]:
+    slot_names = sorted(layout_def.slots, key=lambda slot_name: _slot_sort_key(layout_def, slot_name))
+    if role is not None:
+        return [slot_name for slot_name in slot_names if layout_def.slots[slot_name].role == role]
+    if include_image:
+        return slot_names
+    return [slot_name for slot_name in slot_names if layout_def.slots[slot_name].role != "image"]
+
+
+def _ordered_nodes(slide: Slide, layout_def: LayoutDef, *, node_type: str) -> list[Node]:
+    slot_order = {slot_name: index for index, slot_name in enumerate(_ordered_slot_names(layout_def))}
+    return sorted(
+        [node for node in slide.nodes if node.type == node_type and node.slot_binding is not None],
+        key=lambda node: (slot_order.get(node.slot_binding or "", len(slot_order)), node.node_id),
+    )
+
+
+def _chunk_nodes(nodes: list[Node], chunk_count: int) -> list[list[Node]]:
+    if chunk_count <= 0 or not nodes:
+        return []
+    if len(nodes) <= chunk_count:
+        return [[node] for node in nodes]
+
+    chunks: list[list[Node]] = []
+    cursor = 0
+    remaining_nodes = len(nodes)
+    remaining_chunks = chunk_count
+    while remaining_chunks > 0 and cursor < len(nodes):
+        size = max(1, remaining_nodes // remaining_chunks)
+        if remaining_nodes % remaining_chunks:
+            size += 1
+        chunks.append(nodes[cursor : cursor + size])
+        cursor += size
+        remaining_nodes = len(nodes) - cursor
+        remaining_chunks -= 1
+    return chunks
+
+
+def _clone_content(node: Node) -> NodeContent:
+    if isinstance(node.content, NodeContent):
+        return node.content
+    return NodeContent.model_validate(node.content)
+
+
+def _merged_content(nodes: Iterable[Node]) -> NodeContent:
+    blocks: list[TextBlock] = []
+    for node in nodes:
+        blocks.extend(block.model_copy(deep=True) for block in _clone_content(node).blocks if block.text.strip())
+    return NodeContent(blocks=blocks)
+
+
+def _annotate_computed_metadata(
+    computed: dict[str, ComputedNode],
+    *,
+    layout_used: str | None,
+    fallback_reason: str | None,
+    overflow_reason: str | None,
+) -> None:
+    for node in computed.values():
+        node.layout_used = layout_used
+        node.layout_fallback_reason = fallback_reason
+        node.layout_overflow_reason = overflow_reason
+
+
+def _slide_violations(layout_def: LayoutDef, slide: Slide, rects: dict[str, Rect]) -> list[LayoutViolation]:
+    return validate_layout(layout_def, rects, computed_by_slot=_computed_by_slot(slide))
+
+
+def _first_failure_reason(
+    slide: Slide,
+    violations: list[LayoutViolation],
+    rules: DesignRules,
+) -> str:
+    for node in slide.nodes:
+        if node.type != "text" or node.slot_binding is None:
+            continue
+        computed = slide.computed.get(node.node_id)
+        if computed and computed.text_overflow:
+            return f"text overflow in {node.slot_binding}"
+
+    for violation in violations:
+        if violation.code == TEXT_OVERFLOW and violation.slot_refs:
+            return f"text overflow in {violation.slot_refs[0]}"
+
+    for constraint in validate_slide(slide, rules):
+        if constraint.severity == "error":
+            return constraint.message.rstrip(".")
+
+    if violations:
+        return violations[0].message.rstrip(".")
+    return "layout validation failed"
+
+
+def _build_variant_candidate(
+    slide: Slide,
+    current_layout: LayoutDef,
+    variant_layout: LayoutDef,
+) -> _VariantCandidate | None:
+    if any(node.type in {"chart", "table"} or node.slot_binding is None for node in slide.nodes):
+        return None
+
+    text_sources = _ordered_nodes(slide, current_layout, node_type="text")
+    image_sources = _ordered_nodes(slide, current_layout, node_type="image")
+    image_slots = _ordered_slot_names(variant_layout, role="image")
+    if len(image_sources) > len(image_slots):
+        return None
+
+    heading_sources = [
+        node for node in text_sources if current_layout.slots.get(node.slot_binding or "", None) and current_layout.slots[node.slot_binding].role == "heading"
+    ]
+    body_sources = [node for node in text_sources if node not in heading_sources]
+    heading_slots = _ordered_slot_names(variant_layout, role="heading")
+    body_slots = [
+        slot_name
+        for slot_name in _ordered_slot_names(variant_layout, include_image=False)
+        if variant_layout.slots[slot_name].role != "heading"
+    ]
+
+    candidate_nodes: list[Node] = []
+    text_assignments: list[_VariantTextAssignment] = []
+    remaining_sources = list(body_sources)
+    if heading_slots:
+        if not heading_sources:
+            return None
+        source_node = heading_sources[0]
+        candidate_node_id = "__fallback_heading"
+        candidate_nodes.append(
+            Node(
+                node_id=candidate_node_id,
+                slot_binding=heading_slots[0],
+                type="text",
+                content=_merged_content([source_node]),
+            )
+        )
+        text_assignments.append(
+            _VariantTextAssignment(
+                candidate_node_id=candidate_node_id,
+                slot_name=heading_slots[0],
+                source_node_ids=(source_node.node_id,),
+            )
+        )
+        remaining_sources = heading_sources[1:] + remaining_sources
+    else:
+        remaining_sources = heading_sources + remaining_sources
+
+    for index, (slot_name, source_group) in enumerate(
+        zip(body_slots, _chunk_nodes(remaining_sources, len(body_slots)), strict=False)
+    ):
+        if not source_group:
+            continue
+        candidate_node_id = f"__fallback_body_{index}"
+        candidate_nodes.append(
+            Node(
+                node_id=candidate_node_id,
+                slot_binding=slot_name,
+                type="text",
+                content=_merged_content(source_group),
+            )
+        )
+        text_assignments.append(
+            _VariantTextAssignment(
+                candidate_node_id=candidate_node_id,
+                slot_name=slot_name,
+                source_node_ids=tuple(node.node_id for node in source_group),
+            )
+        )
+
+    image_assignments: list[tuple[str, str]] = []
+    for index, (slot_name, source_node) in enumerate(zip(image_slots, image_sources, strict=False)):
+        candidate_node_id = f"__fallback_image_{index}"
+        candidate_nodes.append(
+            source_node.model_copy(
+                update={
+                    "node_id": candidate_node_id,
+                    "slot_binding": slot_name,
+                },
+                deep=True,
+            )
+        )
+        image_assignments.append((candidate_node_id, source_node.node_id))
+
+    return _VariantCandidate(
+        slide=Slide(
+            slide_id=slide.slide_id,
+            layout=variant_layout.name,
+            nodes=candidate_nodes,
+        ),
+        text_assignments=tuple(text_assignments),
+        image_assignments=tuple(image_assignments),
+    )
+
+
+def _map_candidate_to_original_computed(
+    slide: Slide,
+    candidate: _VariantCandidate,
+    variant_layout: LayoutDef,
+    provider: LayoutProvider,
+    design_rules: DesignRules,
+) -> dict[str, ComputedNode] | None:
+    source_nodes = {node.node_id: node for node in slide.nodes}
+    mapped: dict[str, ComputedNode] = {}
+
+    for candidate_node_id, source_node_id in candidate.image_assignments:
+        mapped[source_node_id] = candidate.slide.computed[candidate_node_id].model_copy(deep=True)
+
+    for assignment in candidate.text_assignments:
+        base = candidate.slide.computed[assignment.candidate_node_id]
+        sources = [source_nodes[node_id] for node_id in assignment.source_node_ids]
+        if len(sources) == 1:
+            mapped[sources[0].node_id] = base.model_copy(deep=True)
+            continue
+
+        slot = variant_layout.slots[assignment.slot_name]
+        slot_role = slot.role
+        fit_rules = provider.get_text_fitting(variant_layout.name, slot_role)
+        text_fitting = _block_text_fitting(variant_layout, provider, slot_role)
+        ladder = _resolve_text_ladder(fit_rules, slot_role, design_rules)
+        measured_heights = [
+            max(
+                1.0,
+                measure_text_height(
+                    _clone_content(source),
+                    max(base.width - (2 * slot.padding), 0.0),
+                    max(base.font_size_pt, 1.0),
+                )
+                + (2 * slot.padding),
+            )
+            for source in sources
+        ]
+        total_height = sum(measured_heights)
+        scale = base.height / total_height if total_height > 0 else 1.0 / len(sources)
+        y_cursor = base.y
+        for index, source in enumerate(sources):
+            height = (
+                (base.y + base.height - y_cursor)
+                if index == len(sources) - 1
+                else measured_heights[index] * scale
+            )
+            font_size_pt, overflow = fit_text(
+                text=_clone_content(source),
+                width=base.width,
+                height=height,
+                default_size=fit_rules.default_size,
+                min_size=fit_rules.min_size,
+                role=slot_role,
+                font_family=base.font_family,
+                ladder=ladder,
+            )
+            if overflow:
+                return None
+            block_fits, block_overflow = fit_blocks(
+                source.content.blocks,
+                max(base.width - (2 * slot.padding), 0.0),
+                max(height - (2 * slot.padding), 0.0),
+                role=slot_role,
+                text_fitting=text_fitting,
+                spacing_rules=design_rules.block_spacing,
+                type_ladders=design_rules.type_ladders,
+                font_family=base.font_family,
+                use_precise=False,
+                fit_text_fn=fit_text,
+            )
+            if block_overflow:
+                return None
+            block_positions = compose_blocks(
+                x=base.x,
+                y=y_cursor,
+                width=base.width,
+                height=height,
+                padding=slot.padding,
+                vertical_align=slot.vertical_align,
+                block_fits=block_fits,
+                spacing_rules=design_rules.block_spacing,
+            )
+            mapped[source.node_id] = base.model_copy(
+                update={
+                    "y": y_cursor,
+                    "height": height,
+                    "font_size_pt": block_positions[0].font_size_pt if block_positions else font_size_pt,
+                    "text_overflow": False,
+                    "block_positions": block_positions,
+                },
+                deep=True,
+            )
+            mapped[source.node_id].font_size_pt = _slot_font_size(source, mapped[source.node_id])
+            y_cursor += height
+
+    bound_node_ids = {node.node_id for node in slide.nodes if node.slot_binding is not None}
+    if set(mapped) != bound_node_ids:
+        return None
+    return mapped
+
+
+def reflow_slide_with_fallback(
+    slide: Slide,
+    provider: LayoutProvider,
+    theme: Theme,
+    rules: DesignRules,
+    *,
+    revision: int,
+) -> _ReflowOutcome:
+    layout_def = provider.get_layout(slide.layout)
+
+    primary_candidate = slide.model_copy(deep=True)
+    primary_rects = _reflow_slide(
+        primary_candidate,
+        layout_def,
+        theme,
+        revision=revision,
+        provider=provider,
+        design_rules=rules,
+    )
+    primary_violations = _slide_violations(layout_def, primary_candidate, primary_rects)
+    if not primary_violations:
+        slide.revision = primary_candidate.revision
+        slide.computed = primary_candidate.computed
+        _annotate_computed_metadata(
+            slide.computed,
+            layout_used=None,
+            fallback_reason=None,
+            overflow_reason=None,
+        )
+        return _ReflowOutcome(rects=primary_rects, violations=[], fallback_used=False)
+
+    if not any(violation.code == TEXT_OVERFLOW for violation in primary_violations):
+        slide.revision = primary_candidate.revision
+        slide.computed = primary_candidate.computed
+        _annotate_computed_metadata(
+            slide.computed,
+            layout_used=None,
+            fallback_reason=None,
+            overflow_reason=None,
+        )
+        return _ReflowOutcome(rects=primary_rects, violations=primary_violations, fallback_used=False)
+
+    failure_reason = _first_failure_reason(primary_candidate, primary_violations, rules)
+    for variant_layout in provider.get_variants(slide.layout):
+        candidate = _build_variant_candidate(slide, layout_def, variant_layout)
+        if candidate is None:
+            continue
+        candidate_rects = _reflow_slide(
+            candidate.slide,
+            variant_layout,
+            theme,
+            revision=revision,
+            provider=provider,
+            design_rules=rules,
+        )
+        candidate_violations = _slide_violations(variant_layout, candidate.slide, candidate_rects)
+        if candidate_violations:
+            continue
+
+        mapped = _map_candidate_to_original_computed(slide, candidate, variant_layout, provider, rules)
+        if mapped is None:
+            continue
+
+        slide.revision = revision
+        slide.computed = mapped
+        _annotate_computed_metadata(
+            slide.computed,
+            layout_used=variant_layout.name,
+            fallback_reason=failure_reason,
+            overflow_reason=None,
+        )
+        return _ReflowOutcome(rects=candidate_rects, violations=[], fallback_used=True)
+
+    slide.revision = primary_candidate.revision
+    slide.computed = primary_candidate.computed
+    _annotate_computed_metadata(
+        slide.computed,
+        layout_used=None,
+        fallback_reason=None,
+        overflow_reason=failure_reason,
+    )
+    return _ReflowOutcome(rects=primary_rects, violations=primary_violations, fallback_used=False)
 
 
 def _slot_font_size(node: Node, computed: ComputedNode) -> float:
@@ -380,33 +789,25 @@ def reflow_deck(
     active_provider = provider or BuiltinLayoutProvider()
     theme = _resolve_theme(deck, active_provider)
     design_rules = load_design_rules(deck.design_rules)
-    rects_by_slide: dict[str, dict[str, Rect]] = {}
+    outcomes_by_slide: dict[str, _ReflowOutcome] = {}
     for slide in deck.slides:
-        layout_def = active_provider.get_layout(slide.layout)
         slide_revision = resolve_slide_revision(
             slide,
             deck_revision=deck.revision,
             previous_slide_signatures=previous_slide_signatures,
         )
-        rects_by_slide[slide.slide_id] = _reflow_slide(
+        outcomes_by_slide[slide.slide_id] = reflow_slide_with_fallback(
             slide,
-            layout_def,
+            active_provider,
             theme,
+            design_rules,
             revision=slide_revision,
-            provider=active_provider,
-            design_rules=design_rules,
         )
     _normalize_deck_font_sizes(deck, active_provider, design_rules)
     violations_by_slide: dict[str, list[LayoutViolation]] = {}
-    for slide in deck.slides:
-        layout_def = active_provider.get_layout(slide.layout)
-        violations = validate_layout(
-            layout_def,
-            rects_by_slide[slide.slide_id],
-            computed_by_slot=_computed_by_slot(slide),
-        )
-        if violations:
-            violations_by_slide[slide.slide_id] = violations
+    for slide_id, outcome in outcomes_by_slide.items():
+        if outcome.violations:
+            violations_by_slide[slide_id] = outcome.violations
     return violations_by_slide
 
 
