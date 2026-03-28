@@ -130,6 +130,8 @@ Three skills ship with the project in `skills/`:
 | `edit-slide` | Modify an existing deck: inspect, smallest mutation, validate. |
 | `review-deck` | Visual QA: LibreOffice-rendered screenshots scored against a checklist. |
 
+These skills are the LLM interface. Agents drive the conversation; `agent-slides` stays model-agnostic and exposes deterministic CLI commands plus the preview viewer.
+
 Symlink to `.claude/skills/` for Claude Code integration:
 
 ```bash
