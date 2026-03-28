@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-slides"
+version = "0.1.0"
+description = "Semantic slide engine for deterministic presentation generation."
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2,<3",
+  "PyYAML>=6.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"agent_slides.config.design_rules" = ["*.yaml"]
