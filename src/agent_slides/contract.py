@@ -28,7 +28,7 @@ from agent_slides.errors import (
 )
 from agent_slides.model import Deck, NodeContent, TableSpec
 from agent_slides.model.constraints import Constraint
-from agent_slides.model.types import CHART_TYPE_VALUES, SHAPE_DASH_VALUES, SHAPE_TYPE_VALUES
+from agent_slides.model.types import CHART_TYPE_VALUES, PATTERN_TYPE_VALUES, SHAPE_DASH_VALUES, SHAPE_TYPE_VALUES
 
 CONTRACT_VERSION = 1
 
@@ -46,6 +46,7 @@ MUTATION_COMMAND_NAMES = (
     "chart_update",
     "shape_add",
     "table_add",
+    "pattern_add",
 )
 
 
@@ -280,6 +281,16 @@ DEFINITIONS: dict[str, Any] = {
         },
         required=["slide_id", "slot", "node_id", "column_count", "row_count"],
     ),
+    "pattern_add_result": _object_schema(
+        {
+            "slide_id": _string_schema(min_length=1),
+            "slot": _string_schema(min_length=1),
+            "node_id": _string_schema(min_length=1),
+            "pattern_type": {"type": "string", "enum": list(PATTERN_TYPE_VALUES)},
+            "item_count": _integer_schema(minimum=1),
+        },
+        required=["slide_id", "slot", "node_id", "pattern_type", "item_count"],
+    ),
     "chart_data": _object_schema(
         {
             "title": {"type": ["string", "null"]},
@@ -321,6 +332,12 @@ DEFINITIONS: dict[str, Any] = {
         description="Chart payload accepted by chart_add and chart_update. Validation rules depend on the chart type.",
     ),
     "table_data": TableSpec.model_json_schema(),
+    "pattern_data": {
+        "anyOf": [
+            {"type": "object", "additionalProperties": True},
+            {"type": "array", "items": {}},
+        ]
+    },
     "build_result": _object_schema(
         {
             "output": _string_schema(min_length=1),
@@ -380,6 +397,7 @@ DEFINITIONS: dict[str, Any] = {
                         _ref("chart_update_result"),
                         _ref("shape_add_result"),
                         _ref("table_add_result"),
+                        _ref("pattern_add_result"),
                     ]
                 }
             ),
@@ -630,6 +648,22 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
         "result_schema": _ref("table_add_result"),
         "errors": [INVALID_SLIDE, INVALID_SLOT, SCHEMA_ERROR],
     },
+    "pattern_add": {
+        "kind": "mutation",
+        "summary": "Insert or replace a slot-bound freeform composition pattern on a slide.",
+        "input_schema": _object_schema(
+            {
+                "slide": _ref("slide_ref"),
+                "slot": _string_schema(min_length=1),
+                "type": {"type": "string", "enum": list(PATTERN_TYPE_VALUES)},
+                "columns": _integer_schema(minimum=1),
+                "data": _ref("pattern_data"),
+            },
+            required=["slide", "type", "data"],
+        ),
+        "result_schema": _ref("pattern_add_result"),
+        "errors": [INVALID_SLIDE, INVALID_SLOT, SCHEMA_ERROR],
+    },
 }
 
 _BATCH_ERROR_CODES = sorted(
@@ -728,6 +762,27 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("table_add_result"))}],
         "errors": [FILE_NOT_FOUND, *MUTATION_CONTRACTS["table_add"]["errors"]],
+    },
+    "pattern.add": {
+        "kind": "cli",
+        "summary": "Create or replace a slot-bound pattern node in a slide.",
+        "cli_command": _cli_command("pattern", "add"),
+        "mutation_command": "pattern_add",
+        "input_schema": _object_schema(
+            {
+                "path": _string_schema(min_length=1),
+                "slide": _ref("slide_ref"),
+                "slot": _string_schema(min_length=1),
+                "type": {"type": "string", "enum": list(PATTERN_TYPE_VALUES)},
+                "columns": _integer_schema(minimum=1),
+                "data": _ref("pattern_data"),
+                "data_file": _string_schema(min_length=1),
+            },
+            required=["path", "slide", "type"],
+            one_of=[{"required": ["data"]}, {"required": ["data_file"]}],
+        ),
+        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("pattern_add_result"))}],
+        "errors": [FILE_NOT_FOUND, *MUTATION_CONTRACTS["pattern_add"]["errors"]],
     },
     "contract": {
         "kind": "cli",
@@ -1090,6 +1145,7 @@ TOOL_PROFILES: dict[str, list[str]] = {
         "slot_clear",
         "slot_bind",
         "table_add",
+        "pattern_add",
         "slide_remove",
         "build",
     ],
@@ -1099,6 +1155,7 @@ TOOL_PROFILES: dict[str, list[str]] = {
         "slot_clear",
         "chart_add",
         "table_add",
+        "pattern_add",
         "slide_set_layout",
         "slide_remove",
         "get_deck_info",

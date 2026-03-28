@@ -18,15 +18,17 @@ from agent_slides.errors import (
     INVALID_SLOT,
     SCHEMA_ERROR,
 )
-from agent_slides.model import ChartSpec, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, PatternSpec, ShapeSpec, Slide, TableSpec
 from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model.types import (
     CHART_TYPE_VALUES,
+    PATTERN_TYPE_VALUES,
     SHAPE_DASH_VALUES,
     SHAPE_TYPE_VALUES,
     TextBlock,
     parse_inline_markdown_runs,
 )
+from agent_slides.patterns import pattern_item_count
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -356,6 +358,54 @@ def _build_table_spec(raw_data: object) -> TableSpec:
         return TableSpec.model_validate(raw_data)
     except ValidationError as exc:
         _raise_table_validation_error(exc)
+
+
+def _build_pattern_spec(args: dict[str, Any]) -> PatternSpec:
+    raw_type = _require_string(args, "type")
+    if raw_type not in PATTERN_TYPE_VALUES:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Unknown pattern type {raw_type!r}",
+            details={"pattern_type": raw_type, "valid_types": list(PATTERN_TYPE_VALUES)},
+        )
+
+    payload = {
+        "pattern_type": raw_type,
+        "data": args.get("data"),
+        "columns": args.get("columns"),
+    }
+    try:
+        spec = PatternSpec.model_validate(payload)
+        pattern_item_count(spec)
+        return spec
+    except (ValidationError, ValueError) as exc:
+        if isinstance(exc, ValidationError):
+            errors = exc.errors(include_url=False)
+            first_error = errors[0] if errors else {"msg": "invalid pattern data"}
+            details: dict[str, Any] = {"validation_errors": errors}
+            message = first_error["msg"]
+        else:
+            details = {}
+            message = str(exc)
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Invalid pattern data: {message}",
+            details=details,
+        ) from exc
+
+
+def _default_pattern_slot_name(slide: Slide, provider: LayoutProvider) -> str:
+    layout = provider.get_layout(slide.layout)
+
+    def first_slot(predicate) -> str | None:
+        return next((slot_name for slot_name, slot in layout.slots.items() if predicate(slot_name, slot)), None)
+
+    return (
+        first_slot(lambda _name, slot: slot.role == "body")
+        or first_slot(lambda _name, slot: slot.role != "heading")
+        or first_slot(lambda _name, _slot: True)
+        or ""
+    )
 
 
 def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
@@ -739,6 +789,50 @@ def apply_mutation(
             "node_id": node.node_id,
             "column_count": len(table_spec.headers),
             "row_count": len(table_spec.rows),
+        }
+
+    if command == "pattern_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        requested_slot = _optional_string(args, "slot")
+        slot_name = (
+            _resolve_slot_name(slide, requested_slot, provider)
+            if requested_slot is not None
+            else _default_pattern_slot_name(slide, provider)
+        )
+        if not slot_name:
+            raise AgentSlidesError(SCHEMA_ERROR, f"Slide {slide.slide_id!r} does not define any slots")
+
+        pattern_spec = _build_pattern_spec(args)
+        slot_nodes = _find_slot_nodes(slide, slot_name)
+        if slot_nodes:
+            node = slot_nodes[0]
+            _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+        else:
+            node = Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="pattern",
+                pattern_spec=pattern_spec,
+            )
+            slide.nodes.append(node)
+
+        node.slot_binding = slot_name
+        node.type = "pattern"
+        node.content = NodeContent()
+        node.image_path = None
+        node.image_fit = "contain"
+        node.chart_spec = None
+        node.shape_spec = None
+        node.table_spec = None
+        node.pattern_spec = pattern_spec
+        node.style_overrides.pop("placeholder", None)
+
+        return {
+            "slide_id": slide.slide_id,
+            "slot": slot_name,
+            "node_id": node.node_id,
+            "pattern_type": pattern_spec.pattern_type,
+            "item_count": pattern_item_count(pattern_spec),
         }
 
     raise AgentSlidesError(

@@ -23,12 +23,15 @@ EMU_PER_POINT = 12_700
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
 SHAPE_TYPE_VALUES = ("rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron")
 SHAPE_DASH_VALUES = ("dash", "dot", "dashDot")
+PATTERN_TYPE_VALUES = ("kpi-row", "card-grid", "process-flow", "chevron-flow", "comparison-cards", "icon-row")
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
 ShapeType = Literal["rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron"]
 ShapeDash = Literal["dash", "dot", "dashDot"]
+PatternType = Literal["kpi-row", "card-grid", "process-flow", "chevron-flow", "comparison-cards", "icon-row"]
+PatternElementKind = Literal["shape", "text"]
 TableAlign = Literal["left", "center", "right"]
-NodeType = Literal["text", "image", "chart", "table", "shape"]
+NodeType = Literal["text", "image", "chart", "table", "shape", "pattern"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
@@ -69,6 +72,83 @@ class BlockPosition(AgentSlidesModel):
     font_size_pt: float
 
 
+class ComputedPatternElement(AgentSlidesModel):
+    kind: PatternElementKind
+    x: float
+    y: float
+    width: float
+    height: float
+    z_index: int = 0
+    shape_type: ShapeType | None = None
+    fill_color: str | None = None
+    line_color: str | None = None
+    line_width: float = 0.0
+    corner_radius: float = 0.0
+    shadow: bool = False
+    dash: ShapeDash | None = None
+    opacity: float = 1.0
+    text: str | None = None
+    font_size_pt: float = 0.0
+    font_family: str = ""
+    color: str = "#000000"
+    font_bold: bool = False
+    text_align: TableAlign = "left"
+    vertical_align: SlotVerticalAlign = "top"
+
+    @field_validator("shape_type", mode="before")
+    @classmethod
+    def validate_shape_type(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value not in SHAPE_TYPE_VALUES:
+            raise ValueError(f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}")
+        return value
+
+    @field_validator("fill_color", "line_color", "color")
+    @classmethod
+    def validate_color(cls, value: str | None, info) -> str | None:
+        if value is None:
+            return value
+        return _normalize_hex_color(value, field_name=info.field_name)
+
+    @field_validator("line_width", "corner_radius", "font_size_pt")
+    @classmethod
+    def validate_non_negative_dimension(cls, value: float, info) -> float:
+        if value < 0:
+            raise ValueError(f"{info.field_name} must be greater than or equal to 0")
+        return float(value)
+
+    @field_validator("dash", mode="before")
+    @classmethod
+    def validate_dash(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str) or value not in SHAPE_DASH_VALUES:
+            raise ValueError(f"dash must be one of: {', '.join(SHAPE_DASH_VALUES)}")
+        return value
+
+    @field_validator("opacity")
+    @classmethod
+    def validate_opacity(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("opacity must be between 0.0 and 1.0")
+        return float(value)
+
+    @model_validator(mode="after")
+    def validate_kind_specific_fields(self) -> ComputedPatternElement:
+        if self.kind == "shape":
+            if self.shape_type is None:
+                raise ValueError("shape elements require shape_type")
+            if self.text is not None:
+                raise ValueError("shape elements cannot define text")
+            return self
+        if self.text is None:
+            raise ValueError("text elements require text")
+        if self.font_size_pt <= 0:
+            raise ValueError("text elements require font_size_pt greater than 0")
+        return self
+
+
 class ComputedNode(AgentSlidesModel):
     x: float
     y: float
@@ -85,6 +165,7 @@ class ComputedNode(AgentSlidesModel):
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
     block_positions: list[BlockPosition] = Field(default_factory=list)
+    pattern_elements: list[ComputedPatternElement] = Field(default_factory=list)
 
 
 class TextRun(AgentSlidesModel):
@@ -524,6 +605,35 @@ class TableSpec(AgentSlidesModel):
         return weights
 
 
+class PatternSpec(AgentSlidesModel):
+    pattern_type: PatternType
+    data: dict[str, Any] | list[Any]
+    columns: int | None = None
+
+    @field_validator("pattern_type", mode="before")
+    @classmethod
+    def validate_pattern_type(cls, value: object) -> object:
+        if not isinstance(value, str) or value not in PATTERN_TYPE_VALUES:
+            raise ValueError(f"pattern_type must be one of: {', '.join(PATTERN_TYPE_VALUES)}")
+        return value
+
+    @field_validator("data")
+    @classmethod
+    def validate_data(cls, value: dict[str, Any] | list[Any]) -> dict[str, Any] | list[Any]:
+        if not isinstance(value, dict | list):
+            raise ValueError("data must be a JSON object or array")
+        return value
+
+    @field_validator("columns")
+    @classmethod
+    def validate_columns(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError("columns must be greater than 0")
+        return value
+
+
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
@@ -534,6 +644,7 @@ class Node(AgentSlidesModel):
     chart_spec: ChartSpec | None = None
     shape_spec: ShapeSpec | None = None
     table_spec: TableSpec | None = None
+    pattern_spec: PatternSpec | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -569,6 +680,10 @@ class Node(AgentSlidesModel):
             data["content"] = NodeContent.model_validate(content)
             if data.get("shape_spec") is not None:
                 data["shape_spec"] = ShapeSpec.model_validate(data["shape_spec"]).model_dump(mode="json")
+        elif node_type == "pattern":
+            data["content"] = NodeContent.model_validate(content)
+            if data.get("pattern_spec") is not None:
+                data["pattern_spec"] = PatternSpec.model_validate(data["pattern_spec"]).model_dump(mode="json")
         elif node_type == "table":
             if data.get("table_spec") is None and content not in (None, "", {"blocks": []}):
                 raw_table_spec = content
@@ -604,6 +719,8 @@ class Node(AgentSlidesModel):
                 raise ValueError("text nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("text nodes cannot define table_spec")
+            if self.pattern_spec is not None:
+                raise ValueError("text nodes cannot define pattern_spec")
             return self
 
         if self.type == "image":
@@ -613,6 +730,8 @@ class Node(AgentSlidesModel):
                 raise ValueError("image nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("image nodes cannot define table_spec")
+            if self.pattern_spec is not None:
+                raise ValueError("image nodes cannot define pattern_spec")
             if not self.image_path:
                 if self.style_overrides.get("placeholder"):
                     return self
@@ -633,6 +752,8 @@ class Node(AgentSlidesModel):
                 raise ValueError("shape nodes cannot define chart_spec")
             if self.table_spec is not None:
                 raise ValueError("shape nodes cannot define table_spec")
+            if self.pattern_spec is not None:
+                raise ValueError("shape nodes cannot define pattern_spec")
             if self.shape_spec is None:
                 raise ValueError("shape nodes require shape_spec")
             if not isinstance(self.content, NodeContent):
@@ -655,12 +776,33 @@ class Node(AgentSlidesModel):
                 raise ValueError("chart nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("chart nodes cannot define table_spec")
+            if self.pattern_spec is not None:
+                raise ValueError("chart nodes cannot define pattern_spec")
             if self.chart_spec is None:
                 raise ValueError("chart nodes require chart_spec")
             if not isinstance(self.content, NodeContent):
                 self.content = NodeContent.model_validate(self.content)
             if not self.content.is_empty():
                 raise ValueError("chart nodes cannot define text content")
+            return self
+
+        if self.type == "pattern":
+            if self.slot_binding is None:
+                raise ValueError("pattern nodes require slot_binding")
+            if self.image_path is not None:
+                raise ValueError("pattern nodes cannot define image_path")
+            if self.chart_spec is not None:
+                raise ValueError("pattern nodes cannot define chart_spec")
+            if self.shape_spec is not None:
+                raise ValueError("pattern nodes cannot define shape_spec")
+            if self.table_spec is not None:
+                raise ValueError("pattern nodes cannot define table_spec")
+            if self.pattern_spec is None:
+                raise ValueError("pattern nodes require pattern_spec")
+            if not isinstance(self.content, NodeContent):
+                self.content = NodeContent.model_validate(self.content)
+            if not self.content.is_empty():
+                raise ValueError("pattern nodes cannot define text content")
             return self
 
         if self.type != "table":
@@ -671,6 +813,8 @@ class Node(AgentSlidesModel):
             raise ValueError("table nodes cannot define chart_spec")
         if self.shape_spec is not None:
             raise ValueError("table nodes cannot define shape_spec")
+        if self.pattern_spec is not None:
+            raise ValueError("table nodes cannot define pattern_spec")
         if self.table_spec is None:
             raise ValueError("table nodes require table_spec")
         if not isinstance(self.content, NodeContent):
@@ -732,7 +876,7 @@ class SlotDef(AgentSlidesModel):
     alignment_group: str | None = None
     reading_order: int = 0
     size_policy: str = "fixed"
-    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart", "table"])
+    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart", "table", "pattern"])
     min_font: float | None = None
     max_font: float | None = None
     preferred_font: float | None = None

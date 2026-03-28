@@ -16,6 +16,7 @@ from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProv
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
+from agent_slides.patterns import generate_pattern_elements
 
 
 def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None) -> TextFitting:
@@ -245,6 +246,35 @@ def _reflow_slide(
         y = rect.y
         width = rect.width
         height = rect.height
+        if node.type == "pattern":
+            style = resolve_style(theme, slot.role)
+            if node.pattern_spec is None:
+                continue
+            computed[node.node_id] = ComputedNode(
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                font_size_pt=0.0,
+                font_family=str(style["font_family"]),
+                color=str(style["color"]),
+                bg_color=None,
+                bg_transparency=0.0,
+                font_bold=bool(style["font_bold"]),
+                text_overflow=False,
+                revision=revision,
+                content_type="pattern",
+                pattern_elements=generate_pattern_elements(
+                    node.pattern_spec,
+                    x=x,
+                    y=y,
+                    width=width,
+                    height=height,
+                    theme=theme,
+                ),
+            )
+            continue
+
         if node.type in {"chart", "table"}:
             style = resolve_style(theme, slot.role)
             computed[node.node_id] = ComputedNode(

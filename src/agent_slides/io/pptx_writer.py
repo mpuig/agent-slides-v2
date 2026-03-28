@@ -23,7 +23,16 @@ from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
 from agent_slides.io.assets import resolve_image_path
-from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock, TextRun, split_text_runs_by_line
+from agent_slides.model.types import (
+    ComputedNode,
+    ComputedPatternElement,
+    Deck,
+    EMU_PER_POINT,
+    Node,
+    TextBlock,
+    TextRun,
+    split_text_runs_by_line,
+)
 from agent_slides.model.themes import load_theme
 
 BLANK_LAYOUT_INDEX = 6
@@ -478,6 +487,82 @@ def _render_shape_node(slide_shape_collection: SlideShapes, node: Node, computed
         _apply_shape_shadow(shape)
 
 
+def _pattern_vertical_anchor(value: str) -> MSO_ANCHOR:
+    if value == "middle":
+        return MSO_ANCHOR.MIDDLE
+    if value == "bottom":
+        return MSO_ANCHOR.BOTTOM
+    return MSO_ANCHOR.TOP
+
+
+def _render_pattern_shape_element(slide_shape_collection: SlideShapes, element: ComputedPatternElement) -> None:
+    node = Node(
+        node_id="pattern-shape",
+        type="shape",
+        shape_spec={
+            "shape_type": element.shape_type,
+            "fill_color": element.fill_color,
+            "line_color": element.line_color,
+            "line_width": element.line_width,
+            "corner_radius": element.corner_radius,
+            "shadow": element.shadow,
+            "dash": element.dash,
+            "opacity": element.opacity,
+        },
+        style_overrides={
+            "x": element.x,
+            "y": element.y,
+            "width": element.width,
+            "height": element.height,
+            "z_index": element.z_index,
+        },
+    )
+    computed = ComputedNode(
+        x=element.x,
+        y=element.y,
+        width=element.width,
+        height=element.height,
+        revision=0,
+        content_type="shape",
+    )
+    _render_shape_node(slide_shape_collection, node, computed)
+
+
+def _render_pattern_text_element(slide_shape_collection: SlideShapes, element: ComputedPatternElement) -> None:
+    shape = slide_shape_collection.add_textbox(
+        points_to_emu(element.x),
+        points_to_emu(element.y),
+        points_to_emu(element.width),
+        points_to_emu(element.height),
+    )
+    shape.line.fill.background()
+    shape.fill.background()
+
+    text_frame = shape.text_frame
+    _configure_text_frame(text_frame)
+    text_frame.vertical_anchor = _pattern_vertical_anchor(element.vertical_align)
+
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = _table_alignment(element.text_align)
+    run = paragraph.add_run()
+    run.text = element.text or ""
+    _apply_run_style(
+        run,
+        font_family=element.font_family,
+        font_size_pt=element.font_size_pt,
+        bold=element.font_bold,
+        color=element.color,
+    )
+
+
+def _render_pattern_node(slide_shape_collection: SlideShapes, computed: ComputedNode) -> None:
+    for element in sorted(computed.pattern_elements, key=lambda item: item.z_index):
+        if element.kind == "shape":
+            _render_pattern_shape_element(slide_shape_collection, element)
+        else:
+            _render_pattern_text_element(slide_shape_collection, element)
+
+
 def _delete_all_slides(prs: Presentation) -> None:
     """Remove every slide from a presentation while keeping masters and layouts."""
 
@@ -558,10 +643,13 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
         binding = registry.binding_for(slide.layout)
         pptx_slide = presentation.slides.add_slide(_resolve_layout(presentation, slide.layout, binding))
         for node in _iter_rendered_nodes(slide.nodes):
-            if node.type == "shape":
+            if node.type in {"shape", "pattern"}:
                 computed = slide.computed.get(node.node_id)
                 if computed is not None:
-                    _render_shape_node(pptx_slide.shapes, node, computed)
+                    if node.type == "shape":
+                        _render_shape_node(pptx_slide.shapes, node, computed)
+                    else:
+                        _render_pattern_node(pptx_slide.shapes, computed)
         for node in slide.nodes:
             _fill_placeholder(node, binding.slot_mapping, pptx_slide)
 
@@ -849,6 +937,8 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
 
             if node.type == "shape":
                 _render_shape_node(pptx_slide.shapes, node, computed)
+            elif node.type == "pattern":
+                _render_pattern_node(pptx_slide.shapes, computed)
             elif node.type == "chart":
                 _render_chart_node(pptx_slide.shapes, node, computed)
             elif node.type == "table":

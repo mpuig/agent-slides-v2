@@ -18,10 +18,12 @@ from agent_slides.model.types import (
     ChartStyle,
     ComputedDeck,
     ComputedNode,
+    ComputedPatternElement,
     Counters,
     Deck,
     Node,
     NodeContent,
+    PatternSpec,
     Slide,
     SlotDef,
     TableSpec,
@@ -52,6 +54,21 @@ def build_table_node() -> Node:
             rows=[
                 ["Revenue", "$100K", "$150K"],
                 ["Users", "1000", "1500"],
+            ],
+        ),
+    )
+
+
+def build_pattern_node() -> Node:
+    return Node(
+        node_id="n-pattern-1",
+        slot_binding="body",
+        type="pattern",
+        pattern_spec=PatternSpec(
+            pattern_type="kpi-row",
+            data=[
+                {"value": "87%", "label": "Adoption"},
+                {"value": "3.2x", "label": "ROI"},
             ],
         ),
     )
@@ -274,6 +291,45 @@ def test_computed_node_accepts_table_content_type() -> None:
     assert computed.font_size_pt == 0.0
 
 
+def test_computed_node_accepts_pattern_content_type_and_elements() -> None:
+    computed = ComputedNode(
+        x=0.0,
+        y=0.0,
+        width=320.0,
+        height=180.0,
+        font_size_pt=0.0,
+        font_family="IBM Plex Sans",
+        color="#111111",
+        revision=1,
+        content_type="pattern",
+        pattern_elements=[
+            ComputedPatternElement(
+                kind="shape",
+                shape_type="rounded_rectangle",
+                x=0.0,
+                y=0.0,
+                width=120.0,
+                height=80.0,
+                fill_color="#F2F2F2",
+            ),
+            ComputedPatternElement(
+                kind="text",
+                text="Adoption",
+                x=10.0,
+                y=12.0,
+                width=100.0,
+                height=24.0,
+                font_size_pt=14.0,
+                font_family="IBM Plex Sans",
+                color="#111111",
+            ),
+        ],
+    )
+
+    assert computed.content_type == "pattern"
+    assert len(computed.pattern_elements) == 2
+
+
 def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
     image_path = tmp_path / "diagram.svg"
     image_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
@@ -349,9 +405,24 @@ def test_table_nodes_accept_table_spec_and_round_trip_json() -> None:
     assert restored.table_spec.headers == ["Metric", "Q1", "Q2"]
 
 
+def test_pattern_nodes_accept_pattern_spec_and_round_trip_json() -> None:
+    node = build_pattern_node()
+    restored = Node.model_validate_json(node.model_dump_json())
+
+    assert restored == node
+    assert restored.type == "pattern"
+    assert restored.pattern_spec is not None
+    assert restored.pattern_spec.pattern_type == "kpi-row"
+
+
 def test_table_nodes_require_table_spec() -> None:
     with pytest.raises(ValidationError, match="table_spec"):
         Node(node_id="n-table-2", type="table")
+
+
+def test_pattern_nodes_require_pattern_spec() -> None:
+    with pytest.raises(ValidationError, match="pattern_spec"):
+        Node(node_id="n-pattern-2", slot_binding="body", type="pattern")
 
 
 def test_table_spec_auto_detects_numeric_columns_and_widths() -> None:
