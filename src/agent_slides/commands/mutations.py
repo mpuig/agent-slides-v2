@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from agent_slides.contract import MUTATION_COMMAND_NAMES
 from agent_slides.engine.layout_suggestions import suggest_layouts
 from agent_slides.engine.reflow import rebind_slots
 from agent_slides.errors import (
@@ -28,18 +29,7 @@ SLOT_ALIASES = {
     "right": "col2",
 }
 
-SUPPORTED_MUTATION_COMMANDS = frozenset(
-    {
-        "slide_add",
-        "slide_remove",
-        "slide_set_layout",
-        "slot_set",
-        "slot_clear",
-        "slot_bind",
-        "chart_add",
-        "chart_update",
-    }
-)
+SUPPORTED_MUTATION_COMMANDS = frozenset(MUTATION_COMMAND_NAMES)
 _UNSET = object()
 
 

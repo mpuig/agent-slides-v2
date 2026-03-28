@@ -14,10 +14,11 @@ except ImportError:  # pragma: no cover - exercised via runtime guard
     anthropic = None
 
 from agent_slides.commands.mutations import apply_mutation
+from agent_slides.contract import PREVIEW_CHAT_PROFILE, get_tool_definitions
 from agent_slides.engine.reflow import reflow_deck
 from agent_slides.engine.template_reflow import template_reflow
 from agent_slides.engine.validator import validate_deck
-from agent_slides.errors import AgentSlidesError, OVERFLOW, UNBOUND_NODES
+from agent_slides.errors import AgentSlidesError, INVALID_TOOL_INPUT, INVALID_TOOL_NAME, OVERFLOW, UNBOUND_NODES
 from agent_slides.io import mutate_deck, read_deck, resolve_manifest_path, write_computed_deck, write_pptx
 from agent_slides.model.constraints import Constraint
 from agent_slides.model.design_rules import load_design_rules
@@ -61,197 +62,7 @@ You are the deck editing assistant for agent-slides.
 - Use deck tools instead of describing changes you did not apply.
 """.strip()
 
-SLIDE_REF_SCHEMA: dict[str, Any] = {
-    "anyOf": [
-        {"type": "integer", "minimum": 0},
-        {"type": "string", "minLength": 1},
-    ]
-}
-
-TEXT_BLOCK_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "type": {"type": "string", "enum": ["paragraph", "bullet", "heading"]},
-        "text": {"type": "string"},
-        "level": {"type": "integer", "minimum": 0},
-    },
-    "required": ["type", "text"],
-    "additionalProperties": False,
-}
-
-STRUCTURED_TEXT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "blocks": {
-            "type": "array",
-            "items": TEXT_BLOCK_SCHEMA,
-        }
-    },
-    "required": ["blocks"],
-    "additionalProperties": False,
-}
-
-CHART_DATA_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "categories": {
-            "type": "array",
-            "items": {"type": "string"},
-        },
-        "series": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "values": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                    },
-                    "points": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "x": {"type": "number"},
-                                "y": {"type": "number"},
-                            },
-                            "required": ["x", "y"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                "required": ["name"],
-                "additionalProperties": False,
-            },
-        },
-        "style": {
-            "type": "object",
-            "properties": {
-                "has_legend": {"type": "boolean"},
-                "has_data_labels": {"type": "boolean"},
-                "series_colors": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "additionalProperties": False,
-        },
-    },
-    "additionalProperties": True,
-}
-
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "name": "slide_add",
-        "description": "Add a slide. Prefer auto_layout for new content unless the user requires a specific layout.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "layout": {"type": "string", "minLength": 1},
-                "auto_layout": {"type": "boolean"},
-                "content": STRUCTURED_TEXT_SCHEMA,
-                "image_count": {"type": "integer", "minimum": 0},
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "slot_set",
-        "description": "Set text, structured content, or an image in a specific slot on a slide.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": SLIDE_REF_SCHEMA,
-                "slot": {"type": "string", "minLength": 1},
-                "text": {"type": "string"},
-                "content": STRUCTURED_TEXT_SCHEMA,
-                "image": {"type": "string", "minLength": 1},
-                "image_fit": {"type": "string", "enum": ["contain", "cover", "stretch"]},
-                "font_size": {"type": "number"},
-            },
-            "required": ["slide", "slot"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "slot_clear",
-        "description": "Remove content from a slot on a slide.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": SLIDE_REF_SCHEMA,
-                "slot": {"type": "string", "minLength": 1},
-            },
-            "required": ["slide", "slot"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "chart_add",
-        "description": "Insert or replace a chart in a slot on a slide.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": SLIDE_REF_SCHEMA,
-                "slot": {"type": "string", "minLength": 1},
-                "type": {
-                    "type": "string",
-                    "enum": ["bar", "column", "line", "pie", "scatter", "area", "doughnut"],
-                },
-                "title": {"type": ["string", "null"]},
-                "data": CHART_DATA_SCHEMA,
-            },
-            "required": ["slide", "slot", "type", "data"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "slide_set_layout",
-        "description": "Change the layout used by an existing slide.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": SLIDE_REF_SCHEMA,
-                "layout": {"type": "string", "minLength": 1},
-            },
-            "required": ["slide", "layout"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "slide_remove",
-        "description": "Remove a slide by index or slide id.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": SLIDE_REF_SCHEMA,
-            },
-            "required": ["slide"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "get_deck_info",
-        "description": "Read the current deck state, including slides, nodes, theme, and revision.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "build",
-        "description": "Reflow the deck, persist computed data, and write a PPTX artifact.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "output_path": {"type": "string", "minLength": 1},
-            },
-            "additionalProperties": False,
-        },
-    },
-]
+TOOL_DEFINITIONS = get_tool_definitions(profile=PREVIEW_CHAT_PROFILE)
 
 
 @dataclass
@@ -368,7 +179,7 @@ class DeckOrchestrator:
 
     def _execute_tool(self, tool_name: str, raw_input: Any) -> dict[str, Any]:
         if not isinstance(raw_input, dict):
-            raise AgentSlidesError("INVALID_TOOL_INPUT", "Tool input must be an object")
+            raise AgentSlidesError(INVALID_TOOL_INPUT, "Tool input must be an object")
 
         if tool_name in MUTATING_TOOLS:
             return self._run_mutation_tool(tool_name, raw_input)
@@ -376,7 +187,7 @@ class DeckOrchestrator:
             return self._run_get_deck_info()
         if tool_name == "build":
             return self._run_build_tool(raw_input)
-        raise AgentSlidesError("INVALID_TOOL_NAME", f"Unsupported tool {tool_name!r}")
+        raise AgentSlidesError(INVALID_TOOL_NAME, f"Unsupported tool {tool_name!r}")
 
     def _run_mutation_tool(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         deck, mutation_result = mutate_deck(
@@ -408,7 +219,7 @@ class DeckOrchestrator:
             reflow_deck(deck, provider)
         write_computed_deck(self.deck_path, deck)
 
-        output_path = self._resolve_output_path(tool_input.get("output_path"))
+        output_path = self._resolve_output_path(tool_input.get("output_path", tool_input.get("output")))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         write_pptx(deck, str(output_path), asset_base_dir=Path(self.deck_path).parent)
         return {
