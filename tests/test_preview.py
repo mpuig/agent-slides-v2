@@ -13,7 +13,19 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
 from agent_slides.io import read_deck
-from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec, TextBlock
+from agent_slides.model import (
+    ChartSpec,
+    ComputedNode,
+    ComputedPatternElement,
+    Counters,
+    Deck,
+    Node,
+    NodeContent,
+    ShapeSpec,
+    Slide,
+    TableSpec,
+    TextBlock,
+)
 from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
@@ -376,6 +388,75 @@ def make_table_deck(*, revision: int) -> Deck:
                         font_family="Aptos",
                         color="#333333",
                         bg_color="#FFFFFF",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+
+def make_pattern_deck(*, revision: int) -> Deck:
+    return Deck(
+        deck_id="deck-preview-pattern",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                revision=revision,
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="pattern",
+                        pattern_spec={
+                            "pattern_type": "kpi-row",
+                            "data": [
+                                {"value": "87%", "label": "Adoption"},
+                                {"value": "3.2x", "label": "ROI"},
+                            ],
+                        },
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=96.0,
+                        y=120.0,
+                        width=528.0,
+                        height=220.0,
+                        revision=revision,
+                        content_type="pattern",
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#333333",
+                        pattern_elements=[
+                            ComputedPatternElement(
+                                kind="shape",
+                                shape_type="rounded_rectangle",
+                                x=96.0,
+                                y=120.0,
+                                width=252.0,
+                                height=220.0,
+                                fill_color="#F2F2F2",
+                                line_color="#CCCCCC",
+                                line_width=1.0,
+                            ),
+                            ComputedPatternElement(
+                                kind="text",
+                                text="87%",
+                                x=112.0,
+                                y=136.0,
+                                width=220.0,
+                                height=40.0,
+                                font_size_pt=28.0,
+                                font_family="Aptos Display",
+                                color="#1A73E8",
+                                font_bold=True,
+                            ),
+                        ],
                     )
                 },
             )
@@ -885,6 +966,15 @@ def test_client_html_contains_shape_preview_helpers() -> None:
     assert "appendShapeShadow" in payload
 
 
+def test_client_html_contains_pattern_preview_helpers() -> None:
+    payload = read_client_html()
+
+    assert "renderPatternNode" in payload
+    assert "renderPatternTextElement" in payload
+    assert 'node.type === "pattern" || computed.content_type === "pattern"' in payload
+    assert "computed.pattern_elements" in payload
+
+
 def test_preview_server_serves_shape_deck_payload(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
@@ -901,6 +991,27 @@ def test_preview_server_serves_shape_deck_payload(tmp_path: Path) -> None:
             assert shape_node["shape_spec"]["fill_color"] == "#F2F2F2"
             assert shape_node["style_overrides"]["z_index"] == -1
             assert payload["slides"][0]["computed"]["n-1"]["content_type"] == "shape"
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_serves_pattern_deck_payload(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_pattern_deck(revision=5))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            pattern_node = payload["slides"][0]["nodes"][0]
+            assert pattern_node["type"] == "pattern"
+            assert pattern_node["pattern_spec"]["pattern_type"] == "kpi-row"
+            assert payload["slides"][0]["computed"]["n-1"]["content_type"] == "pattern"
+            assert len(payload["slides"][0]["computed"]["n-1"]["pattern_elements"]) == 2
         finally:
             await server.stop()
 

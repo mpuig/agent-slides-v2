@@ -1619,6 +1619,109 @@ def test_table_add_creates_table_node_with_inline_data(tmp_path: Path) -> None:
     assert table_node.table_spec.rows[1] == ["Users", "1000", "1500"]
 
 
+def test_pattern_add_creates_slot_bound_pattern_node(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "pattern",
+            "add",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--type",
+            "kpi-row",
+            "--data",
+            json.dumps(
+                [
+                    {"value": "87%", "label": "Adoption"},
+                    {"value": "3.2x", "label": "ROI"},
+                    {"value": "+24", "label": "NPS"},
+                ]
+            ),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    pattern_node = updated.slides[0].nodes[1]
+    computed = updated.slides[0].computed[pattern_node.node_id]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "body",
+            "node_id": "n-2",
+            "pattern_type": "kpi-row",
+            "item_count": 3,
+        },
+    }
+    assert pattern_node.type == "pattern"
+    assert pattern_node.slot_binding == "body"
+    assert pattern_node.pattern_spec is not None
+    assert pattern_node.pattern_spec.pattern_type == "kpi-row"
+    assert computed.content_type == "pattern"
+    assert len(computed.pattern_elements) == 9
+
+
+def test_batch_supports_pattern_add(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-batch-pattern",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {
+                    "command": "pattern_add",
+                    "args": {
+                        "slide": "s-1",
+                        "slot": "col2",
+                        "type": "card-grid",
+                        "columns": 2,
+                        "data": [
+                            {"title": "Speed", "body": "Build in seconds"},
+                            {"title": "Quality", "body": "Validated output"},
+                            {"title": "Control", "body": "Named slots"},
+                            {"title": "Trust", "body": "Deterministic CLI"},
+                        ],
+                    },
+                }
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 1
+    assert payload["data"]["results"][0] == {
+        "slide_id": "s-1",
+        "slot": "col2",
+        "node_id": "n-3",
+        "pattern_type": "card-grid",
+        "item_count": 4,
+    }
+
+    deck = read_deck(str(deck_path))
+    pattern_node = deck.slides[0].nodes[2]
+    assert pattern_node.type == "pattern"
+    assert pattern_node.pattern_spec is not None
+    assert pattern_node.pattern_spec.columns == 2
+    assert deck.slides[0].computed[pattern_node.node_id].content_type == "pattern"
+
+
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)

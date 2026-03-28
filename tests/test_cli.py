@@ -68,6 +68,14 @@ def test_table_help_lists_all_edit_subcommands() -> None:
     assert "add" in result.output
 
 
+def test_pattern_help_lists_all_edit_subcommands() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["pattern", "--help"])
+
+    assert result.exit_code == 0
+    assert "add" in result.output
+
+
 def test_cli_version_runs() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
