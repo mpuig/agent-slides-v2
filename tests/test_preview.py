@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
 from websockets.asyncio.client import connect
+from websockets.exceptions import InvalidStatus
 
-from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
-from agent_slides.preview import client_html_path, read_client_html
+from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.preview import chat_html_path, client_html_path, read_chat_html, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
 from tests.image_helpers import write_png
@@ -113,6 +116,52 @@ def make_image_deck(image_path: str, *, revision: int) -> Deck:
     )
 
 
+def make_chart_deck(*, revision: int, chart_type: str = "bar") -> Deck:
+    return Deck(
+        deck_id="deck-preview-chart",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type=chart_type,
+                            title="Quarterly revenue",
+                            categories=["Q1", "Q2", "Q3"],
+                            series=[
+                                {"name": "North", "values": [2.0, 4.0, 5.0]},
+                                {"name": "South", "values": [1.0, 3.0, 4.0]},
+                            ],
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=96.0,
+                        y=120.0,
+                        width=528.0,
+                        height=260.0,
+                        revision=revision,
+                        content_type="chart",
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#333333",
+                        bg_color="#FFFFFF",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+
 def test_sidecar_watcher_detects_revision_change_and_debounces(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
@@ -148,10 +197,15 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
         try:
             html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
+            chat_html = await asyncio.to_thread(_fetch_text, f"{server.origin}/chat")
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
             assert "<svg" in html
+            assert "<svg" in chat_html
             assert 'id="prev-slide"' in html
+            assert 'id="chat-messages"' in chat_html
+            assert 'id="build-button"' in chat_html
+            assert "/chat/ws" in chat_html
             assert 'id="next-slide"' in html
             assert 'id="slide-dots"' in html
             assert 'id="slide-count"' in html
@@ -210,6 +264,108 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_preview_server_chat_mode_serves_chat_client_and_messages(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        download_path = tmp_path / "deck-output.pptx"
+        download_bytes = b"pptx-bytes"
+        download_path.write_bytes(download_bytes)
+
+        async def handle_chat_message(message: dict[str, object], emit) -> None:
+            assert message == {"type": "user_message", "text": "Add a slide about Q3 revenue"}
+
+            await emit({"type": "assistant_message", "text": "Adding a slide...", "status": "thinking"})
+            await emit(
+                {
+                    "type": "tool_call",
+                    "text": "Running slide_add...",
+                    "status": "executing",
+                    "tool_name": "slide_add",
+                }
+            )
+            await emit({"type": "assistant_message", "text": "Done. Added slide 3.", "status": "done"})
+
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            mode="chat",
+            chat_message_handler=handle_chat_message,
+            debounce_ms=20,
+        )
+        await server.start()
+        try:
+            html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            download_response = await asyncio.to_thread(
+                _fetch_response, f"{server.origin}/download/{download_path.name}"
+            )
+
+            assert "agent-slides chat" in html
+            assert "/chat/ws" in html
+            assert payload["revision"] == 1
+            assert download_response["body"] == download_bytes
+            assert (
+                download_response["headers"]["Content-Disposition"]
+                == f'attachment; filename="{download_path.name}"'
+            )
+
+            async with connect(f"ws://127.0.0.1:{server.port}/chat/ws") as chat_client:
+                await chat_client.send(
+                    json.dumps({"type": "user_message", "text": "Add a slide about Q3 revenue"})
+                )
+
+                first = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+                second = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+                third = json.loads(await asyncio.wait_for(chat_client.recv(), timeout=1.0))
+
+                assert first == {
+                    "type": "assistant_message",
+                    "text": "Adding a slide...",
+                    "status": "thinking",
+                }
+                assert second == {
+                    "type": "tool_call",
+                    "text": "Running slide_add...",
+                    "status": "executing",
+                    "tool_name": "slide_add",
+                }
+                assert third == {
+                    "type": "assistant_message",
+                    "text": "Done. Added slide 3.",
+                    "status": "done",
+                }
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_chat_websocket_is_not_available_in_preview_mode(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            with pytest.raises(InvalidStatus) as exc_info:
+                async with connect(f"ws://127.0.0.1:{server.port}/chat/ws"):
+                    pass
+
+            assert exc_info.value.response.status_code == 404
+
+            with pytest.raises(urllib.error.HTTPError) as http_exc:
+                await asyncio.to_thread(_fetch_bytes, f"{server.origin}/download/../outside.pptx")
+
+            assert http_exc.value.code == 404
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
 def test_client_html_is_packaged_and_self_contained() -> None:
     html_path = client_html_path()
     parser = InlineAssetParser()
@@ -217,6 +373,20 @@ def test_client_html_is_packaged_and_self_contained() -> None:
     parser.feed(payload)
 
     assert html_path.name == "client.html"
+    assert html_path.exists()
+    assert parser.script_srcs == []
+    assert parser.stylesheet_hrefs == []
+    assert parser.inline_script_count >= 1
+    assert parser.inline_style_count >= 1
+
+
+def test_chat_html_is_packaged_and_self_contained() -> None:
+    html_path = chat_html_path()
+    parser = InlineAssetParser()
+    payload = read_chat_html()
+    parser.feed(payload)
+
+    assert html_path.name == "chat.html"
     assert html_path.exists()
     assert parser.script_srcs == []
     assert parser.stylesheet_hrefs == []
@@ -241,6 +411,27 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert "preserveAspectRatio" in payload
 
 
+def test_chat_html_contains_required_chat_surface() -> None:
+    payload = read_chat_html()
+
+    assert 'id="chat-messages"' in payload
+    assert 'id="chat-input"' in payload
+    assert 'id="send-button"' in payload
+    assert 'id="build-button"' in payload
+    assert 'id="download-link"' in payload
+    assert 'id="typing-indicator"' in payload
+    assert 'id="chat-status-dot"' in payload
+    assert 'id="preview-status-dot"' in payload
+    assert "/chat/ws" in payload
+    assert '"user_message"' in payload
+    assert "setTimeout" in payload
+    assert "showDownloadLink" in payload
+    assert "Reconnecting in" in payload
+    assert "ArrowLeft" in payload
+    assert "ArrowRight" in payload
+    assert "preserveAspectRatio" in payload
+
+
 def test_client_html_wraps_text_and_renders_structured_content() -> None:
     payload = read_client_html()
 
@@ -253,6 +444,53 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert 'createSvgElement("tspan")' in payload
     assert 'createSvgElement("rect")' in payload
     assert "currentSlideIndex" in payload
+
+
+def test_chat_html_reuses_preview_rendering_logic() -> None:
+    payload = read_chat_html()
+
+    assert "wrapText" in payload
+    assert "breakLongWord" in payload
+    assert "nodeLines" in payload
+    assert 'createSvgElement("tspan")' in payload
+    assert 'createSvgElement("rect")' in payload
+    assert "currentSlideIndex" in payload
+
+
+def test_client_html_contains_chart_preview_helpers() -> None:
+    payload = read_client_html()
+
+    assert "chartTypeLabels" in payload
+    assert "summarizeChart" in payload
+    assert "renderChartNode" in payload
+    assert "renderBarChartPreview" in payload
+    assert "renderColumnChartPreview" in payload
+    assert "renderLineChartPreview" in payload
+    assert 'node.type === "chart" || computed.content_type === "chart"' in payload
+    assert "Preview approximation" in payload
+
+
+def test_preview_server_serves_chart_deck_payload(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_chart_deck(revision=4))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            chart_node = payload["slides"][0]["nodes"][0]
+            assert chart_node["type"] == "chart"
+            assert chart_node["chart_spec"]["chart_type"] == "bar"
+            assert chart_node["chart_spec"]["title"] == "Quarterly revenue"
+            assert chart_node["chart_spec"]["categories"] == ["Q1", "Q2", "Q3"]
+            assert chart_node["chart_spec"]["series"][1]["values"] == [1.0, 3.0, 4.0]
+            assert payload["slides"][0]["computed"]["n-1"]["content_type"] == "chart"
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
 
 
 async def _wait_for(predicate, *, interval: float = 0.01) -> None:
@@ -268,3 +506,11 @@ def _fetch_text(url: str) -> str:
 def _fetch_bytes(url: str) -> bytes:
     with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
         return response.read()
+
+
+def _fetch_response(url: str) -> dict[str, object]:
+    with urllib.request.urlopen(url) as response:  # noqa: S310 - localhost test server
+        return {
+            "body": response.read(),
+            "headers": dict(response.headers.items()),
+        }
