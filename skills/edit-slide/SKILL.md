@@ -1,4 +1,9 @@
-# edit-slide
+---
+name: edit-slide
+description: Modify an existing agent-slides deck in place. Inspect → smallest mutation → validate. Handles layout switches, slot edits, content changes, rebinding, and batch operations.
+---
+
+# Edit Slide
 
 Use this skill to modify an existing `agent-slides` deck in place. Stay operational: inspect the current deck state, make the smallest mutation that satisfies the request, then validate the result. Do not apply design opinions or rewrite content beyond the requested edit.
 
@@ -16,6 +21,15 @@ In this repo, prefer `uv run agent-slides ...` so the command uses the checked-o
 - Slides cannot be inserted at an arbitrary position or reordered by a dedicated command in v0.
 - If a request depends on true reordering, do not pretend the CLI supports it. Stay within the available operations.
 
+## Workflow Overview
+
+Run the work in four steps:
+
+1. Inspect
+2. Mutate
+3. Validate
+4. Repair fallout when layout or bindings changed
+
 ## Core workflow
 
 1. Inspect first.
@@ -29,6 +43,20 @@ In this repo, prefer `uv run agent-slides ...` so the command uses the checked-o
    Run `uv run agent-slides validate <deck.json>` to catch warnings such as unbound nodes or text overflow.
 4. If the edit changed layout or bindings, inspect for fallout.
    `slide set-layout` can leave nodes unbound; handle those explicitly before you stop.
+
+## CLI Surface To Use
+
+Prefer the shipped repo commands rather than inventing alternate entry points:
+
+- `uv run agent-slides info`
+- `uv run agent-slides slide add`
+- `uv run agent-slides slide remove`
+- `uv run agent-slides slide set-layout`
+- `uv run agent-slides slot set`
+- `uv run agent-slides slot clear`
+- `uv run agent-slides slot bind`
+- `uv run agent-slides batch`
+- `uv run agent-slides validate`
 
 ## Commands to reach for
 
