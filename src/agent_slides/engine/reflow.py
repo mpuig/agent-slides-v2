@@ -33,11 +33,11 @@ def _span_extent(
     return offset, span
 
 
-def _compute_slot_frame(layout_def: LayoutDef, slot_name: str) -> tuple[float, float, float, float]:
+def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
     slot = layout_def.slots[slot_name]
     grid = layout_def.grid
-    margin = grid.margin
-    gutter = grid.gutter
+    margin = theme.spacing.margin
+    gutter = theme.spacing.gutter
     available_width = SLIDE_WIDTH_PT - (2 * margin)
     available_height = SLIDE_HEIGHT_PT - (2 * margin)
 
@@ -82,7 +82,7 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             )
 
         slot = layout_def.slots[node.slot_binding]
-        x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding)
+        x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding, theme)
         fit_rules = _text_fit_rules(layout_def, node)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
