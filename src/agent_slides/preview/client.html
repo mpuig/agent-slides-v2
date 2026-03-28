@@ -308,6 +308,9 @@
       const measureContext = document.createElement("canvas").getContext("2d");
       const APPROXIMATE_PREVIEW_NOTICE = "Approximate preview (LibreOffice unavailable)";
       const chartPalette = ["#c98e48", "#6e8ca7", "#8f9b5f", "#c56f5e", "#8672b8"];
+      const ICON_VIEWBOX = 24;
+      const ICON_SIZE_FACTOR = 0.78;
+      const ICON_GAP_FACTOR = 0.4;
       const chartTypeLabels = {
         area: "Area Chart",
         bar: "Bar Chart",
@@ -523,23 +526,26 @@
           const plain = typeof node?.content === "string" ? node.content : "";
           return String(plain)
             .split(/\r?\n/)
-            .map((text) => ({ text, level: 0, runs: [{ text }] }));
+            .map((text) => ({ text, level: 0, runs: [{ text }], type: "paragraph", iconPath: null }));
         }
 
         const lines = [];
         for (const block of blocks) {
           const level = Number(block?.level ?? 0);
-          const prefix = block?.type === "bullet" ? [{ text: "\u2022 " }] : [];
+          const hasIcon = block?.type === "bullet" && Boolean(block?.icon_svg_path);
+          const prefix = block?.type === "bullet" && !hasIcon ? [{ text: "\u2022 " }] : [];
           for (const lineRuns of splitRunsByLine(block)) {
             const runs = [...prefix, ...lineRuns];
             lines.push({
               text: runs.map((run) => run.text ?? "").join(""),
               level,
               runs,
+              type: block?.type ?? "paragraph",
+              iconPath: block?.icon_svg_path || null,
             });
           }
         }
-        return lines.length > 0 ? lines : [{ text: "", level: 0, runs: [{ text: "" }] }];
+        return lines.length > 0 ? lines : [{ text: "", level: 0, runs: [{ text: "" }], type: "paragraph", iconPath: null }];
       };
 
       const measureWidth = (text, fontFamily, fontSize, fontWeight, fontStyle = "normal") => {
@@ -702,6 +708,19 @@
         element.textContent = text;
         parent.appendChild(element);
         return element;
+      };
+
+      const renderIconPath = (pathData, x, y, size, color, parent = stage) => {
+        if (!pathData) {
+          return;
+        }
+        const path = createSvgElement("path", {
+          d: pathData,
+          fill: color || "#1f1e1a",
+          "fill-rule": "evenodd",
+          transform: `translate(${x} ${y}) scale(${size / ICON_VIEWBOX})`,
+        });
+        parent.appendChild(path);
       };
 
       const formatCount = (count, singular, plural = `${singular}s`) =>
@@ -1444,17 +1463,32 @@
         let firstVisualLine = true;
         for (const line of nodeLines(node)) {
           const level = Math.max(0, Number(line.level ?? 0));
-          const startX = Number(computed.x) + (level * indentSize);
-          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize));
+          const hasIcon = line.type === "bullet" && Boolean(line.iconPath);
+          const iconSize = fontSize * ICON_SIZE_FACTOR;
+          const iconGap = fontSize * ICON_GAP_FACTOR;
+          const iconOffset = hasIcon ? iconSize + iconGap : 0;
+          const startX = Number(computed.x) + (level * indentSize) + iconOffset;
+          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize) - iconOffset);
           const wrapped = wrapTextRuns(line.runs ?? [{ text: line.text ?? "" }], availableWidth, fontFamily, fontSize, fontWeight);
 
-          for (const segments of wrapped) {
+          for (const [segmentIndex, segments] of wrapped.entries()) {
             const lineHeight = Math.max(
               ...segments.map((segment) => runFontSize(segment, fontSize) * 1.25),
               fontSize * 1.25,
             );
             if (usedHeight + lineHeight > Math.max(Number(computed.height ?? lineHeight), lineHeight)) {
               break;
+            }
+
+            if (hasIcon && segmentIndex === 0) {
+              const iconY = Number(computed.y) + usedHeight + ((lineHeight - iconSize) / 2);
+              renderIconPath(
+                line.iconPath,
+                Number(computed.x) + (level * indentSize),
+                iconY,
+                iconSize,
+                computed.color || "#1f1e1a",
+              );
             }
 
             segments.forEach((segment, index) => {
@@ -1490,6 +1524,16 @@
         }
 
         stage.appendChild(text);
+      };
+
+      const renderIconNode = (node, computed) => {
+        renderIconPath(
+          node.icon_svg_path || computed.icon_svg_path,
+          Number(computed.x),
+          Number(computed.y),
+          Number(computed.width),
+          computed.color || node.color || "#1f1e1a",
+        );
       };
 
       const renderImageNode = (node, computed) => {
@@ -1667,6 +1711,11 @@
 
           if (node.type === "table" || computed.content_type === "table") {
             renderTableNode(node, computed);
+            continue;
+          }
+
+          if (node.type === "icon" || computed.content_type === "icon") {
+            renderIconNode(node, computed);
             continue;
           }
 

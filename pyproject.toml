@@ -62,6 +62,7 @@ include = [
 packages = ["src/agent_slides"]
 include = [
   "src/agent_slides/config/design_rules/*.yaml",
+  "src/agent_slides/icons/*.json",
   "src/agent_slides/preview/*.html",
   "src/agent_slides/themes/*.json",
 ]

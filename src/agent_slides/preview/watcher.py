@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -15,19 +16,39 @@ from watchdog.observers.polling import PollingObserver
 from agent_slides.model import load_design_rules
 from agent_slides.engine.conditional_formatting import preview_conditional_formatting_payload
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
+from agent_slides.icons import require_icon
 from agent_slides.io import read_deck
 
 DeckPayload = dict[str, Any]
 UpdateCallback = Callable[[DeckPayload], Awaitable[None]]
 
 
+def _enrich_icon_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    hydrated = deepcopy(payload)
+    for slide in hydrated.get("slides", []):
+        for node in slide.get("nodes", []):
+            if node.get("type") == "icon" and isinstance(node.get("icon_name"), str):
+                node["icon_svg_path"] = require_icon(str(node["icon_name"]))
+
+            blocks = node.get("content", {}).get("blocks", [])
+            if not isinstance(blocks, list):
+                continue
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                icon_name = block.get("icon")
+                if isinstance(icon_name, str) and icon_name.strip():
+                    block["icon_svg_path"] = require_icon(icon_name)
+    return hydrated
+
+
 def load_deck_payload(sidecar_path: Path) -> tuple[int, DeckPayload]:
     """Read the current deck payload and revision from disk."""
 
     deck = read_deck(str(sidecar_path))
-    payload = deck.model_dump(mode="json", by_alias=True)
+    payload = deck.model_dump(mode="json", by_alias=True, exclude_none=True)
     payload["conditional_formatting"] = preview_conditional_formatting_payload(load_design_rules(deck.design_rules))
-    return deck.revision, payload
+    return deck.revision, _enrich_icon_payload(payload)
 
 
 class _SidecarEventHandler(FileSystemEventHandler):
