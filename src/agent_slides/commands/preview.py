@@ -16,7 +16,6 @@ from pathlib import Path
 import click
 
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
-from agent_slides.io import read_deck
 from agent_slides.preview import PreviewServer
 
 
@@ -180,7 +179,6 @@ def preview_command(
 ) -> None:
     """Start the live preview HTTP and WebSocket server."""
 
-    read_deck(str(path))
     if background:
         result = _spawn_background_preview(path, port=port)
         if not no_open:
@@ -190,7 +188,6 @@ def preview_command(
                 pass
         click.echo(json.dumps({"ok": True, "data": result}))
         return
-
     server = _ForegroundPreviewServer(path, port=port)
     server.start()
 
