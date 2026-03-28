@@ -1,278 +1,196 @@
 ---
 name: create-deck
-description: Orchestrate end-to-end deck creation from a natural-language brief using the agent-slides CLI. Use when asked to make a deck, presentation, or slide outline from a topic, and turn it into a validated deck JSON plus optional PPTX output.
+description: Build consulting-grade presentations from a natural-language brief using a 3-phase Plan -> Build -> QA workflow on top of the agent-slides CLI.
 ---
 
 # Create Deck
 
-Use this skill when the user gives a topic such as "make a deck about X" and wants a complete presentation built with `agent-slides`.
+Use this skill when the user asks for a new presentation, deck, or slide narrative from scratch.
 
-Keep this skill focused on orchestration. Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
-Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
+In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
+Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
+Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, and the five pre-flight questions.
 
-## Quick Workflow
+This skill is not just CLI orchestration. It is responsible for presentation quality, storyline quality, and final QA.
 
-1. Plan a 5-10 slide outline from the brief.
-2. Choose a theme and initialize the deck.
-3. Add title and closing slides with explicit layouts, then create content slides with `--auto-layout`.
-4. Fill any remaining explicit-layout slots, preferably with one `batch` call.
-5. Run `validate`, fix warnings, then validate again.
-6. Build the `.pptx`.
-7. Optionally run `preview`.
+## Required References
 
-If `agent-slides` is not already on `PATH`, run the same commands through the repo wrapper the project uses, for example `uv run agent-slides ...`.
+Load these references at the point they matter:
 
-## Plan First
+- Before Phase 1, read `references/storytelling.md`.
+- Before choosing or overriding layouts, read `references/layout-selection.md`.
+- Before adding a chart, read `references/chart-guide.md`.
+- Before Phase 3, read `references/common-mistakes.md`.
 
-Before touching the CLI, turn the brief into a slide plan:
+Treat those references as part of the operating instructions for both this skill and the conversational deck orchestrator.
+
+## Workflow Overview
+
+Run the work in three phases:
+
+1. Plan
+2. Build
+3. QA
+
+Do not skip Phase 1. Do not build a full deck until the storyline is coherent.
+
+## Phase 1: Plan
+
+### Step 1: Ask the pre-flight questions
+
+Before touching the CLI, collect the inputs that determine deck quality:
+
+- Audience: who will see this deck and what is their context?
+- Objective: what decision, understanding, or action should the deck drive?
+- Recommendation: what is the answer or point of view?
+- Scope: what is in scope, out of scope, and what evidence is available?
+- Length: how many slides or how much time does the user want?
+
+If one or more of those answers are missing, stop and ask concise bundled questions before building.
+
+### Step 2: Build the storyline with the Pyramid Principle
+
+Read `references/storytelling.md`, then draft the argument in this order:
+
+1. Answer first: the recommendation or takeaway.
+2. Supporting arguments: the 2-4 reasons the answer is true.
+3. Evidence: facts, examples, comparisons, or charts that prove each reason.
+
+The deck should feel like one argument unfolding, not a pile of related slides.
+
+### Step 3: Create the slide-by-slide plan
+
+Read `references/layout-selection.md` before locking layouts.
+
+For each slide, define:
+
+- slide purpose
+- action title
+- key evidence or content
+- target layout
+- whether the slide should use `--auto-layout` or an explicit layout
+- whether the slide needs a chart or image
+
+Apply the isomorphism principle: the visual structure should match the shape of the idea.
+
+Use layout variety deliberately. Do not repeat the same content layout over and over unless the repetition is part of the story.
+
+### Step 4: Enforce action titles
+
+Every content slide must have an action title that states the conclusion.
+
+Good action title:
+
+- "Automation cuts weekly reporting time by 60%"
+
+Weak title:
+
+- "Reporting Automation"
+
+The body of the slide must prove the title, not merely relate to it.
+
+### Step 5: Stop for approval
+
+Before Phase 2, present the slide-by-slide plan and stop.
+
+Include:
+
+- the audience and objective you are optimizing for
+- the top-level recommendation
+- the storyline in Pyramid form
+- the proposed slides with action titles and layouts
+
+Ask for approval before building the deck.
+
+## Phase 2: Build
+
+After the plan is approved, execute it through the CLI.
+
+### Build rules
+
+- Initialize the deck with a built-in theme.
+- Use `slide add`, `slot set`, `slot clear`, `slot bind`, `chart add`, and `batch` as appropriate.
+- Use `--auto-layout` where the content shape is clear from the content payload and the layout does not need to be predetermined.
+- Use explicit layouts for fixed-role slides such as `title`, `closing`, or when the structure is known in advance.
+- Follow the layout variety rule from `references/layout-selection.md`.
+- Fill all planned content, including charts, images, and sources.
+- Do not leave placeholder thinking in the deck. Finish the slide content fully.
+
+### Practical build sequence
+
+1. `uv run agent-slides init deck.json --theme <theme> --rules default`
+2. Add the opener and closer with explicit layouts.
+3. Add content slides with `--auto-layout` or explicit `--layout` according to the approved plan.
+4. Use `slot set` or one atomic `batch` payload to fill all text and image slots.
+5. If a slide needs a chart, read `references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
+6. Build only after the deck content is complete and validated.
+
+### Layout guidance during build
+
+- `title` for the opener.
+- `closing` for the final recommendation or call to action.
+- `title_content` for a single claim with one supporting body area.
+- `two_col` or `comparison` for before/after, option A vs B, or trade-offs.
+- `three_col` for three pillars, steps, or lenses.
+- `quote` only for a genuinely important voice-of-customer or executive statement.
+
+If auto-layout chooses a weak structure, correct it with `slide set-layout`, then repair any unbound content.
+
+## Phase 3: QA
+
+Before QA, read `references/common-mistakes.md`.
+
+### Required QA loop
+
+1. Run `uv run agent-slides validate deck.json`.
+2. Review the deck against the common-mistakes checklist.
+3. Check the storytelling standard:
+   - Is every content title an action title?
+   - Does the body prove the title?
+   - Are sources present for factual claims, numbers, charts, and external visuals?
+   - Does each slide advance the argument instead of repeating context?
+4. Fix any issues.
+5. Run `uv run agent-slides validate deck.json` again.
+6. Only then build the `.pptx`.
+
+If validation passes but the deck still fails the storytelling checklist, the deck is not done.
+
+## CLI Surface To Use
+
+Prefer the shipped repo commands rather than inventing alternate entry points:
+
+- `uv run agent-slides init`
+- `uv run agent-slides slide add`
+- `uv run agent-slides slide set-layout`
+- `uv run agent-slides slot set`
+- `uv run agent-slides slot clear`
+- `uv run agent-slides slot bind`
+- `uv run agent-slides chart add`
+- `uv run agent-slides batch`
+- `uv run agent-slides validate`
+- `uv run agent-slides build`
+- `uv run agent-slides preview`
+
+## Operational Defaults
 
 - Start with the recommendation or answer, not the background.
 - If the brief is under-specified, ask or infer the five pre-flight inputs from `references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
 - Organize the deck as answer -> 2-4 supporting arguments -> evidence.
 - Give each content slide one message and an action title that states the takeaway.
-
 - Default to 5 slides for a simple topic.
-- Use 6-8 slides when the topic needs setup, comparison, and takeaway slides.
+- Use 6-8 slides when the argument needs setup, comparison, and proof.
 - Stay under 10 slides unless the user explicitly asks for more.
-- Put one idea on each slide.
-- Prefer short headings and concise bullet text.
-- Draft the outline before generating commands so slide order, layouts, and slot names are clear.
+- Put one message on each slide.
+- Prefer concise evidence over dense exposition.
+- Use charts only when they clarify a claim better than text.
+- Cite sources directly on the slide or in speaker-note-style supporting text if the workflow supports it.
 
-Good default 5-slide structure:
+## Minimum Acceptable Output
 
-1. Title slide
-2. Problem or context
-3. Main points or comparison
-4. Proof, quote, or example
-5. Closing / takeaway
+A successful run of this skill produces:
 
-Decide which slides are fixed-structure versus content-shaped before generating commands:
-
-- Usually keep slide 1 explicit as `title`.
-- Usually keep the last slide explicit as `closing`.
-- Default every middle content slide to `--auto-layout` so the engine can choose from the actual content shape.
-- Reach for explicit `--layout` on a content slide only when the structure is already obvious before generation or when you are correcting a bad auto pick.
-
-## Choose Layouts From Content Shape
-
-Use only built-in layouts that exist:
-
-- `title`: title slide with `heading` and `subheading` slots. Aliases `title` and `subtitle` also work for slot setting. If you want a title-only opener, remove the unused subtitle slot with a batch `slot_clear`.
-- `title_content`: one heading plus one body area. Best default for explanation, agenda, summary, or bullets.
-- `two_col`: one heading plus two body columns. Aliases `left` and `right` also work for slot setting.
-- `comparison`: structured comparison with `heading`, `left_header`, `left_body`, `right_header`, `right_body`.
-- `three_col`: one heading plus three short columns.
-- `quote`: `quote` plus `attribution`.
-- `closing`: single `body` slot for final takeaway or call to action.
-- `blank`: only when you intentionally need an empty slide.
-
-Layout selection heuristics:
-
-- Intro / cover -> `title`
-- Agenda / summary / simple explanation -> `title_content`
-- Two competing options / before-vs-after -> `two_col` or `comparison`
-- Three pillars / three steps -> `three_col`
-- Testimonial / key quote -> `quote`
-- Final takeaway / thank-you / CTA -> `closing`
-
-Default creation strategy:
-
-- Use explicit `--layout title` for the opener.
-- Use explicit `--layout closing` for the last slide.
-- For content slides, prefer `agent-slides slide add deck.json --auto-layout --content '...'`.
-- `--auto-layout` and `--layout` are mutually exclusive. Do not pass both on the same command.
-- Keep explicit layout selection in reserve for slides where the structure is predetermined or where auto-layout chose poorly.
-
-## Choose a Theme
-
-Start with a built-in theme instead of inventing one:
-
-```bash
-agent-slides theme list
-```
-
-Practical defaults:
-
-- `default`: safe general-purpose choice
-- `corporate`: formal business deck
-- `startup`: more energetic pitch-style deck
-- `academic`: sober / lecture style
-- `dark`: dark-room presentation
-
-Pick the theme from audience and setting, not from ad hoc style rules in the skill.
-
-## Initialize the Deck
-
-Initialize a new sidecar JSON file with the chosen theme and the default ruleset:
-
-```bash
-agent-slides init deck.json --theme startup --rules default
-```
-
-## Add Slides
-
-Create slides in outline order:
-
-```bash
-agent-slides slide add deck.json --layout title
-agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Why teams are experimenting now"},{"type":"bullet","text":"Faster drafting"},{"type":"bullet","text":"Better repetitive-task coverage"},{"type":"bullet","text":"Lower cost to test ideas"}]}'
-agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Human-only vs agent-assisted"},{"type":"paragraph","text":"Human-only: Strong judgment and slower first pass."},{"type":"paragraph","text":"Agent-assisted: Faster iteration but needs review."}]}'
-agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Adoption rule"},{"type":"paragraph","text":"Use agents to widen the first draft, then review with human judgment."}]}'
-agent-slides slide add deck.json --layout closing
-```
-
-When `--auto-layout` succeeds, it both selects the layout and pre-fills matching slots. Use that as the default for slide 2 onward unless the slide has an obvious fixed role such as `title` or `closing`.
-
-## Fallback When Auto-Layout Picks Wrong
-
-Treat auto-layout as the first pass, not the last word:
-
-1. Create the content slide with `--auto-layout --content '...'`.
-2. Read the command output to see the chosen `layout`, `auto_selected: true`, and selection `reason`.
-3. Validate or preview the deck.
-4. If the structure is wrong, switch the slide explicitly with `slide set-layout`.
-5. Re-check for `UNBOUND_NODES`, then refill or rebind any slots that no longer map cleanly.
-
-Example fallback:
-
-```bash
-agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Human-only vs agent-assisted"},{"type":"paragraph","text":"Human-only: Strong judgment and slower first pass."},{"type":"paragraph","text":"Agent-assisted: Faster iteration but needs review."}]}'
-agent-slides slide set-layout deck.json --slide 2 --layout comparison
-agent-slides slot set deck.json --slide 2 --slot left_header --text "Human-only"
-agent-slides slot set deck.json --slide 2 --slot left_body --text "- Strong judgment\n- Slower first pass"
-agent-slides slot set deck.json --slide 2 --slot right_header --text "Agent-assisted"
-agent-slides slot set deck.json --slide 2 --slot right_body --text "- Faster iteration\n- Needs review"
-```
-
-## Fill Content
-
-For one-off edits, use `slot set`:
-
-```bash
-agent-slides slot set deck.json --slide 0 --slot title --text "AI Agents for Product Teams"
-agent-slides slot set deck.json --slide 0 --slot subtitle --text "Where they help, where they fail, and how to adopt them"
-agent-slides slot set deck.json --slide 1 --slot heading --text "Why teams adopt them"
-agent-slides slot set deck.json --slide 1 --slot body --text "- Faster first drafts\n- Better task coverage\n- Lower coordination cost"
-```
-
-Prefer one `batch` call when creating a full deck. It is more efficient and applies all operations atomically.
-
-Example 5-slide batch that validates cleanly:
-
-```bash
-cat <<'JSON' | agent-slides batch deck.json
-[
-  {"command": "slide_add", "args": {"layout": "title"}},
-  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
-    {"type": "heading", "text": "Why teams are experimenting now"},
-    {"type": "bullet", "text": "Faster drafting"},
-    {"type": "bullet", "text": "Better repetitive-task coverage"},
-    {"type": "bullet", "text": "Lower cost to test ideas"}
-  ]}}},
-  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
-    {"type": "heading", "text": "Human-only vs agent-assisted"},
-    {"type": "paragraph", "text": "Human-only: Strong judgment and slower first pass."},
-    {"type": "paragraph", "text": "Agent-assisted: Faster iteration but needs review."}
-  ]}}},
-  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
-    {"type": "heading", "text": "Adoption rule"},
-    {"type": "paragraph", "text": "Use agents to widen the first draft, then review with human judgment."}
-  ]}}},
-  {"command": "slide_add", "args": {"layout": "closing"}},
-
-  {"command": "slot_set", "args": {"slide": 0, "slot": "title", "text": "AI Agents for Product Teams"}},
-  {"command": "slot_clear", "args": {"slide": 0, "slot": "subtitle"}},
-
-  {"command": "slot_set", "args": {"slide": 4, "slot": "body", "text": "Start with one workflow, measure quality and speed, then expand."}}
-]
-JSON
-```
-
-Batch payload rules:
-
-- The stdin payload must be a JSON array.
-- Each item must be `{"command": "...", "args": {...}}`.
-- Use supported mutation commands only: `slide_add`, `slide_remove`, `slide_set_layout`, `slot_set`, `slot_clear`, `slot_bind`.
-- `slide_add` can either take an explicit `layout` or an auto-layout payload such as `{"auto_layout": true, "content": {"blocks": [...]}}`.
-- If one operation is invalid, the batch fails and the deck write is rolled back. Fix the bad operation and rerun the whole batch.
-- `slot_clear` is useful when a layout includes a slot you do not want to keep, for example removing the unused `subtitle` from a title slide.
-
-## Validate and Iterate
-
-Run validation after filling content and again after every meaningful fix:
-
-```bash
-agent-slides validate deck.json
-```
-
-Treat validation as an editing loop:
-
-1. Read the warning or error code.
-2. Fix the content or layout.
-3. Run `validate` again.
-4. Repeat until the deck is clean enough to build confidently.
-
-Common validation outcomes and what to do:
-
-- `OVERFLOW`: text still overflows at the minimum font size. Shorten the text first. If the idea still needs more space, switch to a roomier layout such as `title_content`, `two_col`, or `comparison`.
-- `MAX_WORDS_PER_COLUMN_EXCEEDED`: reduce prose, split the idea across slides, or change to a multi-column layout only if it improves fit.
-- `MAX_BULLETS_PER_SLIDE_EXCEEDED`: keep only the essential bullets and move the rest to another slide.
-- `FONT_SIZE_OUT_OF_RANGE`: usually a sign the slide is too dense or an override is too aggressive. Remove the override or simplify content.
-- `MISSING_TITLE_SLIDE`: make the first slide `title` unless the user intentionally wants a different opening.
-- `MISSING_CLOSING_SLIDE`: add a `closing` slide when the deck needs a clear ending.
-- Auto-layout picked a valid but weak structure: use `slide set-layout` to correct it, then refill any slots the new layout needs.
-- `UNBOUND_NODES`: most often caused by `slide set-layout` when the old layout had slots the new layout does not support. Either move the content into valid slots or choose a layout that matches the content shape better.
-
-If a slide keeps failing validation, do not keep squeezing text. Change the outline.
-
-## Build
-
-Generate the PowerPoint after validation:
-
-```bash
-agent-slides build deck.json -o presentation.pptx
-```
-
-## Preview
-
-Use preview when you want a live browser view while iterating:
-
-```bash
-agent-slides preview deck.json
-```
-
-Useful non-browser variant:
-
-```bash
-agent-slides preview deck.json --no-open --port 8765
-```
-
-## Content Rules of Thumb
-
-- One idea per slide.
-- Keep headings short and specific.
-- Prefer 3-5 bullets over dense paragraphs.
-- Use sentence fragments for bullets.
-- For content slides, let `--auto-layout` make the first layout choice before reaching for manual `--layout`.
-- Reserve `quote` for one memorable statement, not an entire paragraph.
-- Use `comparison` and `three_col` only when each column can stay concise.
-- When the topic is broad, split it into multiple `title_content` slides instead of overloading one slide.
-
-## Minimum Deliverable For "Make A Deck About X"
-
-A good default outcome is:
-
-- a 5-slide outline
-- a valid `deck.json`
-- a built `presentation.pptx`
-
-The shortest reliable sequence is:
-
-```bash
-agent-slides init deck.json --theme default --rules default
-agent-slides batch deck.json < ops.json
-agent-slides validate deck.json
-agent-slides build deck.json -o presentation.pptx
-```
-
-Where `ops.json` is a single JSON array covering the full slide-add and slot-set sequence for the planned deck.
+- an approved slide-by-slide plan before build
+- a complete `deck.json`
+- a clean or consciously resolved validation result
+- a deck whose content slides use action titles
+- a built `.pptx` when the user asks for output
