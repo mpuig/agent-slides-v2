@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import socket
+import threading
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from uuid import UUID
 
@@ -62,6 +68,24 @@ def make_empty_deck() -> Deck:
 def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
     runner = CliRunner()
     return runner.invoke(cli, args, input=input)
+
+
+def find_free_port() -> int:
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def wait_for_http(url: str, *, timeout: float = 5.0) -> tuple[int, str]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=0.25) as response:
+                return response.status, response.read().decode("utf-8")
+        except (ConnectionError, TimeoutError, urllib.error.URLError):
+            time.sleep(0.05)
+
+    raise AssertionError(f"Timed out waiting for {url}")
 
 
 def make_computed_node(font_size_pt: float, *, overflow: bool = False) -> ComputedNode:
@@ -735,5 +759,121 @@ def test_info_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> 
         "error": {
             "code": FILE_NOT_FOUND,
             "message": f"Deck file not found: {tmp_path / 'missing.json'}",
+        },
+    }
+
+
+def test_preview_command_starts_server_opens_browser_and_stops_cleanly(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_clean_deck())
+    stop_event = threading.Event()
+    browser_calls: list[str] = []
+    result_box: dict[str, Result] = {}
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "agent_slides.commands.preview._wait_for_shutdown",
+        lambda: stop_event.wait(timeout=5),
+    )
+    monkeypatch.setattr(
+        "agent_slides.commands.preview.webbrowser.open",
+        lambda url: browser_calls.append(url),
+    )
+
+    def invoke() -> None:
+        result_box["result"] = runner.invoke(cli, ["preview", str(deck_path)])
+
+    thread = threading.Thread(target=invoke, daemon=True)
+    thread.start()
+
+    status, body = wait_for_http("http://127.0.0.1:8765/api/deck")
+    assert status == 200
+    assert json.loads(body)["deck_id"] == "deck-clean"
+    assert thread.is_alive()
+
+    stop_event.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    result = result_box["result"]
+    lines = [line for line in result.output.strip().splitlines() if line]
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert browser_calls == ["http://localhost:8765"]
+    assert json.loads(lines[0]) == {
+        "ok": True,
+        "data": {
+            "url": "http://localhost:8765",
+            "watching": "deck.json",
+        },
+    }
+    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_preview_command_supports_custom_port_and_no_open(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_clean_deck())
+    stop_event = threading.Event()
+    browser_calls: list[str] = []
+    result_box: dict[str, Result] = {}
+    runner = CliRunner()
+    port = find_free_port()
+
+    monkeypatch.setattr(
+        "agent_slides.commands.preview._wait_for_shutdown",
+        lambda: stop_event.wait(timeout=5),
+    )
+    monkeypatch.setattr(
+        "agent_slides.commands.preview.webbrowser.open",
+        lambda url: browser_calls.append(url),
+    )
+
+    def invoke() -> None:
+        result_box["result"] = runner.invoke(
+            cli,
+            ["preview", str(deck_path), "--port", str(port), "--no-open"],
+        )
+
+    thread = threading.Thread(target=invoke, daemon=True)
+    thread.start()
+
+    status, body = wait_for_http(f"http://127.0.0.1:{port}/")
+    assert status == 200
+    assert "<title>agent-slides preview</title>" in body
+
+    stop_event.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    result = result_box["result"]
+    lines = [line for line in result.output.strip().splitlines() if line]
+
+    assert result.exit_code == 0
+    assert browser_calls == []
+    assert json.loads(lines[0])["data"] == {
+        "url": f"http://localhost:{port}",
+        "watching": "deck.json",
+    }
+    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_preview_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
+    missing_path = tmp_path / "missing.json"
+
+    result = invoke_cli(["preview", str(missing_path), "--no-open"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": FILE_NOT_FOUND,
+            "message": f"Deck file not found: {missing_path}",
         },
     }

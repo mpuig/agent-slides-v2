@@ -11,6 +11,7 @@ from agent_slides.commands.batch import batch
 from agent_slides.commands.build import build_command
 from agent_slides.commands.info import info_command
 from agent_slides.commands.init import init_command
+from agent_slides.commands.preview import preview_command
 from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
 from agent_slides.commands.validate_cmd import validate_command
@@ -53,6 +54,7 @@ cli.add_command(slide)
 cli.add_command(slot)
 cli.add_command(info_command)
 cli.add_command(build_command)
+cli.add_command(preview_command, name="preview")
 cli.add_command(validate_command, name="validate")
 cli.add_command(info_command, name="info")
 cli.add_command(build_command, name="build")
