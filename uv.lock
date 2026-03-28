@@ -21,7 +21,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
-    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "python-pptx", specifier = ">=1.0.2" },
 ]
 
