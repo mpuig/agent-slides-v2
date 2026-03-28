@@ -1,4 +1,4 @@
-"""Scene graph model types."""
+"""Scene graph model package."""
 
 from .types import (
     ComputedNode,
