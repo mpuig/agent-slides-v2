@@ -4,7 +4,7 @@ from importlib import resources
 
 import pytest
 
-from agent_slides.errors import AgentSlidesError
+from agent_slides.errors import AgentSlidesError, THEME_NOT_FOUND
 from agent_slides.model.themes import list_themes, load_theme, resolve_style
 from agent_slides.model.types import Theme
 
@@ -22,7 +22,7 @@ def test_load_theme_raises_for_missing_theme() -> None:
     with pytest.raises(AgentSlidesError) as exc_info:
         load_theme("nonexistent")
 
-    assert exc_info.value.code == "theme_not_found"
+    assert exc_info.value.code == THEME_NOT_FOUND
 
 
 def test_list_themes_returns_default() -> None:

@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-from agent_slides.errors import AgentSlidesError
+from agent_slides.errors import (
+    AgentSlidesError,
+    THEME_INVALID,
+    THEME_NOT_FOUND,
+    THEME_ROLE_NOT_FOUND,
+)
 from agent_slides.model.types import Theme, ThemeColors, ThemeFonts, ThemeSpacing
 
 
@@ -19,7 +24,7 @@ def load_theme(name: str) -> Theme:
     resource = _theme_package().joinpath(f"{name}.json")
     if not resource.is_file():
         raise AgentSlidesError(
-            code="theme_not_found",
+            code=THEME_NOT_FOUND,
             message=f"Theme '{name}' was not found.",
         )
 
@@ -33,7 +38,7 @@ def load_theme(name: str) -> Theme:
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AgentSlidesError(
-            code="theme_invalid",
+            code=THEME_INVALID,
             message=f"Theme '{name}' is invalid.",
         ) from exc
 
@@ -70,6 +75,6 @@ def resolve_style(theme: Theme, role: str) -> dict[str, str | bool]:
             "font_bold": False,
         }
     raise AgentSlidesError(
-        code="theme_role_not_found",
+        code=THEME_ROLE_NOT_FOUND,
         message=f"Role '{role}' is not defined by the theme system.",
     )
