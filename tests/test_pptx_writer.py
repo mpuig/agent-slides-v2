@@ -40,6 +40,7 @@ PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn0K4sAAAAASUVORK5CYII="
 )
 CHART_NS = {"c": "http://schemas.openxmlformats.org/drawingml/2006/chart"}
+DRAWING_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 
 
 def build_deck() -> Deck:
@@ -165,6 +166,12 @@ def first_chart_shape(presentation: Presentation):
 def read_chart_xml(path: Path, *, index: int = 1) -> ET.Element:
     with ZipFile(path) as archive:
         payload = archive.read(f"ppt/charts/chart{index}.xml")
+    return ET.fromstring(payload)
+
+
+def read_slide_xml(path: Path, *, index: int = 1) -> ET.Element:
+    with ZipFile(path) as archive:
+        payload = archive.read(f"ppt/slides/slide{index}.xml")
     return ET.fromstring(payload)
 
 
@@ -459,15 +466,29 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
 
     presentation = open_presentation(output_path)
     text_frame = presentation.slides[0].shapes[0].text_frame
+    slide_xml = read_slide_xml(output_path)
+    paragraphs = slide_xml.findall(".//a:p", DRAWING_NS)
+    texts = [text.text for text in slide_xml.findall(".//a:t", DRAWING_NS)]
 
     assert [paragraph.text for paragraph in text_frame.paragraphs] == [
         "Highlights",
-        "• First takeaway",
-        "• Nested takeaway",
+        "First takeaway",
+        "Nested takeaway",
     ]
     assert text_frame.paragraphs[0].runs[0].font.size == Pt(27)
     assert text_frame.paragraphs[1].level == 0
     assert text_frame.paragraphs[2].level == 1
+    assert texts == ["Highlights", "First takeaway", "Nested takeaway"]
+    assert paragraphs[0].find("./a:pPr/a:buNone", DRAWING_NS) is not None
+    assert paragraphs[0].find("./a:pPr/a:buChar", DRAWING_NS) is None
+    assert paragraphs[1].find("./a:pPr/a:buChar", DRAWING_NS) is not None
+    assert paragraphs[1].find("./a:pPr/a:buNone", DRAWING_NS) is None
+    assert paragraphs[1].find("./a:pPr", DRAWING_NS).attrib["marL"] == str(Pt(18))
+    assert paragraphs[1].find("./a:pPr", DRAWING_NS).attrib["indent"] == str(Pt(-18))
+    assert paragraphs[2].find("./a:pPr/a:buChar", DRAWING_NS) is not None
+    assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["lvl"] == "1"
+    assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["marL"] == str(Pt(36))
+    assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["indent"] == str(Pt(-18))
 
 def test_write_pptx_renders_image_nodes_with_contain_fit(tmp_path: Path) -> None:
     image_path = write_png(tmp_path / "photo.png", width=200, height=100)
