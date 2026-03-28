@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>agent-slides preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Aptos", "Segoe UI", sans-serif;
+        background: #f5f2ea;
+        color: #1f1e1a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(201, 142, 72, 0.16), transparent 35%),
+          linear-gradient(180deg, #f8f4ed 0%, #efe7db 100%);
+      }
+
+      main {
+        width: min(92vw, 980px);
+        padding: 24px;
+      }
+
+      .frame {
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(70, 50, 25, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(78, 55, 21, 0.15);
+        overflow: hidden;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(70, 50, 25, 0.08);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .status {
+        font-size: 14px;
+        color: #6a5841;
+      }
+
+      svg {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        display: block;
+        background: white;
+      }
+
+      .empty {
+        fill: #7b6b56;
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="frame">
+        <header>
+          <strong>agent-slides live preview</strong>
+          <span class="status" id="status">Connecting…</span>
+        </header>
+        <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
+      </div>
+    </main>
+    <script>
+      const stage = document.getElementById("stage");
+      const status = document.getElementById("status");
+
+      const setStatus = (text) => {
+        status.textContent = text;
+      };
+
+      const renderDeck = (deck) => {
+        const slide = deck?.slides?.[0];
+        stage.replaceChildren();
+
+        if (!slide) {
+          const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          label.setAttribute("x", "360");
+          label.setAttribute("y", "270");
+          label.setAttribute("text-anchor", "middle");
+          label.setAttribute("class", "empty");
+          label.textContent = "No slides yet";
+          stage.appendChild(label);
+          return;
+        }
+
+        for (const node of slide.nodes ?? []) {
+          const computed = slide.computed?.[node.node_id];
+          if (!computed) continue;
+
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", `${computed.x}`);
+          text.setAttribute("y", `${computed.y + computed.font_size_pt}`);
+          text.setAttribute("font-size", `${computed.font_size_pt}`);
+          text.setAttribute("font-family", computed.font_family ?? "Aptos");
+          text.setAttribute("font-weight", computed.font_bold ? "700" : "400");
+          text.setAttribute("fill", computed.color ?? "#1f1e1a");
+          text.textContent = node.content ?? "";
+          stage.appendChild(text);
+        }
+      };
+
+      const connect = () => {
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+
+        socket.addEventListener("open", () => setStatus("Connected"));
+        socket.addEventListener("message", (event) => {
+          renderDeck(JSON.parse(event.data));
+          setStatus("Live");
+        });
+        socket.addEventListener("close", () => {
+          setStatus("Reconnecting…");
+          window.setTimeout(connect, 250);
+        });
+      };
+
+      fetch("/api/deck")
+        .then((response) => response.json())
+        .then(renderDeck)
+        .finally(connect);
+    </script>
+  </body>
+</html>
