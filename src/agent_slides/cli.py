@@ -7,6 +7,7 @@ import json
 import click
 
 from agent_slides import __version__
+from agent_slides.commands.init import init_command
 from agent_slides.errors import AgentSlidesError
 
 
@@ -36,3 +37,6 @@ class AgentSlidesGroup(click.Group):
 @click.version_option(version=__version__, prog_name="agent-slides")
 def cli() -> None:
     """Agent Slides command line interface."""
+
+
+cli.add_command(init_command)
