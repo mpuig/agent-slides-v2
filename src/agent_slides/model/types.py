@@ -1,4 +1,4 @@
-"""Core Pydantic types for the scene graph."""
+"""Core model value objects."""
 
 from __future__ import annotations
 
@@ -58,6 +58,16 @@ class ThemeColors(AgentSlidesModel):
     accent: str
     background: str
     text: str
+    heading_text: str | None = None
+    subtle_text: str | None = None
+
+    @model_validator(mode="after")
+    def apply_role_defaults(self) -> ThemeColors:
+        if self.heading_text is None:
+            self.heading_text = self.primary
+        if self.subtle_text is None:
+            self.subtle_text = self.text
+        return self
 
 
 class ThemeFonts(AgentSlidesModel):

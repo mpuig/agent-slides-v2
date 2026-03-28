@@ -1,6 +1,6 @@
-"""Scene-graph model exports."""
+"""Scene graph model package."""
 
-from agent_slides.model.types import (
+from .types import (
     ComputedNode,
     Counters,
     Deck,
@@ -16,10 +16,15 @@ from agent_slides.model.types import (
     ThemeSpacing,
 )
 
+from agent_slides.model.constraints import Constraint
+from agent_slides.model.design_rules import DesignRules, list_design_rules, load_design_rules
+
 __all__ = [
     "ComputedNode",
+    "Constraint",
     "Counters",
     "Deck",
+    "DesignRules",
     "GridDef",
     "LayoutDef",
     "Node",
@@ -30,4 +35,6 @@ __all__ = [
     "ThemeColors",
     "ThemeFonts",
     "ThemeSpacing",
+    "list_design_rules",
+    "load_design_rules",
 ]

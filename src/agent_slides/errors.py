@@ -13,6 +13,9 @@ IMAGE_NOT_SUPPORTED = "IMAGE_NOT_SUPPORTED"
 REVISION_CONFLICT = "REVISION_CONFLICT"
 SLOT_OCCUPIED = "SLOT_OCCUPIED"
 FILE_EXISTS = "FILE_EXISTS"
+THEME_INVALID = "THEME_INVALID"
+THEME_NOT_FOUND = "THEME_NOT_FOUND"
+THEME_ROLE_NOT_FOUND = "THEME_ROLE_NOT_FOUND"
 
 
 class AgentSlidesError(Exception):
@@ -26,7 +29,6 @@ class AgentSlidesError(Exception):
     def __str__(self) -> str:
         return self.message
 
-
 __all__ = [
     "AgentSlidesError",
     "FILE_EXISTS",
@@ -39,5 +41,8 @@ __all__ = [
     "REVISION_CONFLICT",
     "SCHEMA_ERROR",
     "SLOT_OCCUPIED",
+    "THEME_INVALID",
+    "THEME_NOT_FOUND",
+    "THEME_ROLE_NOT_FOUND",
     "UNBOUND_NODES",
 ]
