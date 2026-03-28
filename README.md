@@ -10,12 +10,6 @@ The key idea: deck edits are structural. Add a slide, switch layouts, set slot c
 pip install agent-slides
 ```
 
-Or with chat mode (conversational UI via Anthropic API):
-
-```bash
-pip install agent-slides[chat]
-```
-
 ## Quick Start
 
 ```bash
@@ -129,6 +123,8 @@ Three skills ship with the project in `skills/`:
 | `create-deck` | Build a deck from a brief: pre-flight questions, Pyramid Principle storyline, build, QA. |
 | `edit-slide` | Modify an existing deck: inspect, smallest mutation, validate. |
 | `review-deck` | Visual QA: LibreOffice-rendered screenshots scored against a checklist. |
+
+These skills are the LLM interface. Agents drive the conversation; `agent-slides` stays model-agnostic and exposes deterministic CLI commands plus the preview viewer.
 
 Symlink to `.claude/skills/` for Claude Code integration:
 
