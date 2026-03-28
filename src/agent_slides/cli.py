@@ -10,6 +10,7 @@ from agent_slides.commands.chart import chart
 from agent_slides import __version__
 from agent_slides.commands.batch import batch
 from agent_slides.commands.build import build_command
+from agent_slides.commands.chart import chart
 from agent_slides.commands.info import info_command
 from agent_slides.commands.inspect_cmd import inspect_command
 from agent_slides.commands.init import init_command
@@ -57,6 +58,7 @@ cli.add_command(batch)
 cli.add_command(chart)
 cli.add_command(init_command)
 cli.add_command(preview_command)
+cli.add_command(chart)
 cli.add_command(slide)
 cli.add_command(slot)
 cli.add_command(theme)

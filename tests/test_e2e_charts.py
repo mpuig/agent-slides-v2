@@ -17,7 +17,7 @@ def invoke(runner: CliRunner, args: list[str], *, input_text: str | None = None)
     return result.exit_code, payload, result.stderr
 
 
-def chart_spec_payload(payload: dict[str, object]) -> str:
+def chart_data_payload(payload: dict[str, object]) -> str:
     return json.dumps(payload)
 
 
@@ -48,9 +48,7 @@ def test_bar_chart_full_flow_builds_editable_native_chart(tmp_path: Path) -> Non
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "bar.pptx"
-    spec = {
-        "chart_type": "bar",
-        "title": "Revenue",
+    chart_data = {
         "categories": ["Q1", "Q2", "Q3"],
         "series": [{"name": "Revenue", "values": [1.5, 2.25, 3.75]}],
     }
@@ -73,8 +71,12 @@ def test_bar_chart_full_flow_builds_editable_native_chart(tmp_path: Path) -> Non
             "0",
             "--slot",
             "left",
-            "--spec",
-            chart_spec_payload(spec),
+            "--type",
+            "bar",
+            "--data",
+            chart_data_payload(chart_data),
+            "--title",
+            "Revenue",
         ],
     )
     assert exit_code == 0
@@ -98,8 +100,7 @@ def test_multi_series_line_chart_round_trips_both_series(tmp_path: Path) -> None
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "line.pptx"
-    spec = {
-        "chart_type": "line",
+    chart_data = {
         "categories": ["Jan", "Feb", "Mar"],
         "series": [
             {"name": "North", "values": [4.0, 5.5, 6.0]},
@@ -120,8 +121,10 @@ def test_multi_series_line_chart_round_trips_both_series(tmp_path: Path) -> None
             "0",
             "--slot",
             "col1",
-            "--spec",
-            chart_spec_payload(spec),
+            "--type",
+            "line",
+            "--data",
+            chart_data_payload(chart_data),
         ],
     )
     assert exit_code == 0
@@ -146,8 +149,7 @@ def test_scatter_chart_round_trips_xy_data(tmp_path: Path) -> None:
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "scatter.pptx"
-    spec = {
-        "chart_type": "scatter",
+    chart_data = {
         "scatter_series": [
             {
                 "name": "Observations",
@@ -173,8 +175,10 @@ def test_scatter_chart_round_trips_xy_data(tmp_path: Path) -> None:
             "0",
             "--slot",
             "col1",
-            "--spec",
-            chart_spec_payload(spec),
+            "--type",
+            "scatter",
+            "--data",
+            chart_data_payload(chart_data),
         ],
     )
     assert exit_code == 0
@@ -195,13 +199,11 @@ def test_chart_update_builds_with_latest_data(tmp_path: Path) -> None:
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "updated.pptx"
-    initial_spec = {
-        "chart_type": "column",
+    initial_data = {
         "categories": ["Old A", "Old B"],
         "series": [{"name": "Pipeline", "values": [1.0, 2.0]}],
     }
-    updated_spec = {
-        "chart_type": "column",
+    updated_data = {
         "categories": ["New A", "New B", "New C"],
         "series": [{"name": "Pipeline", "values": [3.0, 4.5, 6.0]}],
     }
@@ -219,8 +221,12 @@ def test_chart_update_builds_with_latest_data(tmp_path: Path) -> None:
             "0",
             "--slot",
             "col1",
-            "--spec",
-            chart_spec_payload(initial_spec),
+            "--type",
+            "column",
+            "--data",
+            chart_data_payload(initial_data),
+            "--title",
+            "Pipeline",
         ],
     )
     assert exit_code == 0
@@ -234,8 +240,8 @@ def test_chart_update_builds_with_latest_data(tmp_path: Path) -> None:
             str(deck_path),
             "--node",
             node_id,
-            "--spec",
-            chart_spec_payload(updated_spec),
+            "--data",
+            chart_data_payload(updated_data),
         ],
     )
     assert exit_code == 0
@@ -264,15 +270,15 @@ def test_batch_builds_mixed_text_and_chart_slide(tmp_path: Path) -> None:
             {
                 "command": "chart_add",
                 "args": {
-                    "slide": 0,
-                    "slot": "left",
-                    "chart_spec": {
-                        "chart_type": "bar",
-                        "categories": ["Q1", "Q2"],
-                        "series": [{"name": "Revenue", "values": [9.0, 11.0]}],
+                        "slide": 0,
+                        "slot": "left",
+                        "type": "bar",
+                        "data": {
+                            "categories": ["Q1", "Q2"],
+                            "series": [{"name": "Revenue", "values": [9.0, 11.0]}],
+                        },
                     },
                 },
-            },
             {"command": "slot_set", "args": {"slide": 0, "slot": "right", "text": "Margin improved."}},
         ]
     )
@@ -306,8 +312,7 @@ def test_batch_builds_mixed_text_and_chart_slide(tmp_path: Path) -> None:
 def test_pie_chart_rejects_multiple_series(tmp_path: Path) -> None:
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
-    invalid_spec = {
-        "chart_type": "pie",
+    invalid_data = {
         "categories": ["East", "West"],
         "series": [
             {"name": "Revenue", "values": [5.0, 7.0]},
@@ -328,17 +333,15 @@ def test_pie_chart_rejects_multiple_series(tmp_path: Path) -> None:
             "0",
             "--slot",
             "col1",
-            "--spec",
-            chart_spec_payload(invalid_spec),
+            "--type",
+            "pie",
+            "--data",
+            chart_data_payload(invalid_data),
         ],
     )
     payload = json.loads(result.stderr)
 
     assert result.exit_code == 1
-    assert payload == {
-        "ok": False,
-        "error": {
-            "code": CHART_DATA_ERROR,
-            "message": "pie charts support exactly one series",
-        },
-    }
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == CHART_DATA_ERROR
+    assert payload["error"]["message"] == "Invalid chart data: pie charts support exactly one series"
