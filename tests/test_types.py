@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 from agent_slides.model.types import (
     ComputedDeck,

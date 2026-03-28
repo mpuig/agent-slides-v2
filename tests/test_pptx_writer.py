@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
+from agent_slides.engine.reflow import reflow_deck
 from agent_slides.io.pptx_writer import write_pptx
 from agent_slides.model.types import (
     ComputedNode,
@@ -17,6 +20,10 @@ from agent_slides.model.types import (
     NodeContent,
     Slide,
     TextBlock,
+)
+
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn0K4sAAAAASUVORK5CYII="
 )
 
 
@@ -107,6 +114,10 @@ def build_deck() -> Deck:
 
 def open_presentation(path: Path) -> Presentation:
     return Presentation(path)
+
+
+def write_test_png(path: Path) -> None:
+    path.write_bytes(PNG_1X1)
 
 
 def test_write_pptx_renders_expected_slides_and_shapes(tmp_path: Path) -> None:
@@ -222,3 +233,73 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
     assert text_frame.paragraphs[0].runs[0].font.size == Pt(27)
     assert text_frame.paragraphs[1].level == 0
     assert text_frame.paragraphs[2].level == 1
+
+
+def test_write_pptx_renders_image_layout_variants(tmp_path: Path) -> None:
+    output_path = tmp_path / "image-layouts.pptx"
+    image_path = tmp_path / "pixel.png"
+    write_test_png(image_path)
+
+    deck = Deck(
+        deck_id="deck-images",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="image_left",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="image", type="image", image_path=str(image_path)),
+                    Node(node_id="n-2", slot_binding="heading", type="text", content="Image left"),
+                    Node(node_id="n-3", slot_binding="body", type="text", content="Caption copy"),
+                ],
+            ),
+            Slide(
+                slide_id="s-2",
+                layout="image_right",
+                nodes=[
+                    Node(node_id="n-4", slot_binding="heading", type="text", content="Image right"),
+                    Node(node_id="n-5", slot_binding="body", type="text", content="Mirrored split"),
+                    Node(node_id="n-6", slot_binding="image", type="image", image_path=str(image_path)),
+                ],
+            ),
+            Slide(
+                slide_id="s-3",
+                layout="hero_image",
+                nodes=[
+                    Node(node_id="n-7", slot_binding="image", type="image", image_path=str(image_path)),
+                    Node(node_id="n-8", slot_binding="heading", type="text", content="Hero"),
+                    Node(node_id="n-9", slot_binding="subheading", type="text", content="Overlay copy"),
+                ],
+            ),
+            Slide(
+                slide_id="s-4",
+                layout="gallery",
+                nodes=[
+                    Node(node_id="n-10", slot_binding="heading", type="text", content="Gallery"),
+                    Node(node_id="n-11", slot_binding="img1", type="image", image_path=str(image_path)),
+                    Node(node_id="n-12", slot_binding="img2", type="image", image_path=str(image_path)),
+                    Node(node_id="n-13", slot_binding="img3", type="image", image_path=str(image_path)),
+                    Node(node_id="n-14", slot_binding="img4", type="image", image_path=str(image_path)),
+                ],
+            ),
+        ],
+        counters=Counters(slides=4, nodes=14),
+    )
+
+    reflow_deck(deck)
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+
+    assert len(presentation.slides) == 4
+    assert sum(1 for shape in presentation.slides[0].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE) == 1
+    assert sum(1 for shape in presentation.slides[1].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE) == 1
+    assert sum(1 for shape in presentation.slides[2].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE) == 1
+    assert sum(1 for shape in presentation.slides[3].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE) == 4
+
+    hero_picture = next(
+        shape for shape in presentation.slides[2].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+    )
+    assert hero_picture.left == 0
+    assert hero_picture.top == 0
+    assert hero_picture.width == int(720.0 * EMU_PER_POINT)
+    assert hero_picture.height == int(540.0 * EMU_PER_POINT)

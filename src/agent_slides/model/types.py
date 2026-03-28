@@ -41,6 +41,7 @@ class ComputedNode(AgentSlidesModel):
     font_family: str
     color: str
     bg_color: str | None = None
+    bg_transparency: float = 0.0
     font_bold: bool = False
     text_overflow: bool = False
     revision: int
@@ -129,6 +130,9 @@ class Node(AgentSlidesModel):
             return self
 
         if not self.image_path:
+            if self.style_overrides.get("placeholder"):
+                self.content = ""
+                return self
             raise ValueError("image nodes require image_path")
         if not isinstance(self.content, str):
             raise ValueError("image nodes must serialize content as a file path string")
@@ -181,9 +185,19 @@ class Theme(AgentSlidesModel):
 
 
 class SlotDef(AgentSlidesModel):
-    grid_row: int
+    grid_row: int | list[int]
     grid_col: int | list[int]
     role: SlotRole
+    full_bleed: bool = False
+    bg_color: str | None = None
+    bg_transparency: float = 0.0
+
+    @field_validator("bg_transparency")
+    @classmethod
+    def validate_bg_transparency(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
 
 
 class GridDef(AgentSlidesModel):

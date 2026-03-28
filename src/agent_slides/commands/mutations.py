@@ -65,7 +65,8 @@ def _create_slot_nodes(deck: Deck, layout_name: str) -> Slide:
             Node(
                 node_id=deck.next_node_id(),
                 slot_binding=slot_name,
-                type="text",
+                type="image" if layout.slots[slot_name].role == "image" else "text",
+                style_overrides={"placeholder": True} if layout.slots[slot_name].role == "image" else {},
             )
             for slot_name in layout.slots
         ],
