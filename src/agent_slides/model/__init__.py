@@ -17,6 +17,7 @@ from .types import (
 )
 from agent_slides.model.constraints import Constraint
 from agent_slides.model.design_rules import DesignRules, list_design_rules, load_design_rules
+from agent_slides.model.layouts import get_layout, list_layouts
 
 __all__ = [
     "ComputedNode",
@@ -36,4 +37,6 @@ __all__ = [
     "ThemeSpacing",
     "list_design_rules",
     "load_design_rules",
+    "get_layout",
+    "list_layouts",
 ]
