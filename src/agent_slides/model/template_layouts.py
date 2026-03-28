@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ _TEMPLATE_GRID = GridDef(
     margin=0.0,
     gutter=0.0,
 )
+_THEME_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 def _as_dict(value: object, *, context: str) -> dict[str, Any]:
@@ -175,6 +177,16 @@ class TemplateLayoutRegistry:
         if not isinstance(raw_theme, dict):
             raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'theme' must be an object")
 
+        raw_name = raw_theme.get("name")
+        if isinstance(raw_name, str) and raw_name.strip():
+            theme_name = raw_name.strip()
+        else:
+            stem = self._manifest_path.name.removesuffix(".json")
+            if stem.endswith(".manifest"):
+                stem = stem.removesuffix(".manifest")
+            slug = _THEME_SLUG_PATTERN.sub("-", stem.casefold()).strip("-") or "template"
+            theme_name = f"extracted-{slug}"
+
         raw_colors = raw_theme.get("colors", {})
         raw_fonts = raw_theme.get("fonts", {})
         raw_spacing = raw_theme.get("spacing", {})
@@ -182,7 +194,7 @@ class TemplateLayoutRegistry:
             raise AgentSlidesError(SCHEMA_ERROR, "Template theme colors, fonts, and spacing must be objects")
 
         return Theme(
-            name=str(raw_theme.get("name", manifest.get("name", self._manifest_path.stem))),
+            name=theme_name,
             colors=ThemeColors(
                 primary=str(raw_colors.get("primary", default_theme.colors.primary)),
                 secondary=str(raw_colors.get("secondary", default_theme.colors.secondary)),

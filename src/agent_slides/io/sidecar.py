@@ -209,29 +209,46 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     """Run the shared read-mutate-reflow-lock-write pipeline."""
 
     from agent_slides.engine.reflow import reflow_deck
+    from agent_slides.engine.template_reflow import template_reflow
+    from agent_slides.model.layout_provider import TemplateLayoutRegistry
 
     deck = read_deck(path)
     provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
-    reflow_deck(deck, provider)
+    if isinstance(provider, TemplateLayoutRegistry):
+        template_reflow(deck, provider)
+    else:
+        reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 
 
-def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
+def init_deck(
+    path: str,
+    theme: str,
+    design_rules: str,
+    force: bool,
+    *,
+    template_manifest: str | None = None,
+) -> Deck:
     """Create a new sidecar deck file."""
 
     deck_path = Path(path)
     if deck_path.exists() and not force:
         raise AgentSlidesError(FILE_EXISTS, f"Deck file already exists: {deck_path}")
 
+    relative_manifest: str | None = None
+    if template_manifest is not None:
+        relative_manifest = os.path.relpath(template_manifest, start=deck_path.resolve().parent)
+
     deck = Deck(
         deck_id=str(uuid4()),
         revision=0,
         theme=theme,
         design_rules=design_rules,
+        template_manifest=relative_manifest,
     )
     _write_bundle_atomic(deck_path, deck)
     return deck
