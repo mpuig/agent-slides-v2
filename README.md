@@ -47,6 +47,7 @@ What that does:
 | `agent-slides theme list` | List the built-in themes available to the CLI. |
 | `agent-slides theme apply PATH --theme THEME` | Switch an existing deck to a different built-in theme. |
 | `agent-slides build PATH --output FILE` | Reflow the deck, persist computed layout data, and render a `.pptx`. |
+| `agent-slides review PATH [--output-dir DIR] [--dpi N] [--fix]` | Build the deck, render slide screenshots through LibreOffice + `pdftoppm`, score visual quality, and optionally apply common auto-fixes. |
 | `agent-slides validate PATH` | Run design-rule validation and emit structured warnings. |
 | `agent-slides info PATH` | Print the full sidecar JSON with indentation. |
 | `agent-slides preview PATH [--port PORT] [--no-open]` | Start the live preview server and optionally suppress automatic browser launch. |
@@ -89,6 +90,16 @@ Five built-in themes are packaged with the CLI today:
 - The validator checks the deck against packaged design rules and emits structured warnings before or after rendering.
 - The PPTX writer consumes the computed scene graph and produces the final `.pptx` artifact.
 - The preview server serves the same computed model to a browser client for live iteration.
+
+## Visual QA
+
+`agent-slides review` is the rendered QA companion to `validate`.
+
+- `validate` checks structural rules such as overflow, hierarchy, and content limits from computed deck state.
+- `review` builds the `.pptx`, renders it to slide PNGs via LibreOffice headless and `pdftoppm`, then scores the deck against a visual checklist with screenshot-backed evidence.
+- `review --fix` applies a small set of common mechanical fixes, rerenders the deck, and records before/after comparison artifacts.
+
+By default the review artifacts land in `<deck-stem>.review/` next to the source deck and include `report.md`, `report.json`, and rendered slide PNGs.
 
 ## Development Notes
 
