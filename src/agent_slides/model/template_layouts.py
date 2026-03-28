@@ -27,7 +27,7 @@ _THEME_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 _ALIGNMENT_EPSILON_PT = 8.0
 _PEER_Y_EPSILON_PT = 18.0
 _PEER_HEIGHT_RATIO = 0.1
-_CONTENT_TYPES = {"text", "image", "chart"}
+_CONTENT_TYPES = {"text", "image", "chart", "table"}
 
 
 @dataclass(frozen=True)
@@ -183,7 +183,7 @@ def _build_slot(
         alignment_group=_optional_string(slot_mapping, "alignment_group"),
         reading_order=_optional_int(slot_mapping, "reading_order") or 0,
         size_policy=_optional_string(slot_mapping, "size_policy") or _default_size_policy(role),
-        allowed_content=_optional_string_list(slot_mapping, "allowed_content") or ["text", "image", "chart"],
+        allowed_content=_optional_string_list(slot_mapping, "allowed_content") or ["text", "image", "chart", "table"],
         min_font=_optional_number(slot_mapping, "min_font"),
         max_font=_optional_number(slot_mapping, "max_font"),
         preferred_font=(
@@ -470,7 +470,10 @@ def _copy_slot(slot: SlotDef, **updates: Any) -> SlotDef:
     return slot.model_copy(update=updates)
 
 
-def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef]) -> bool:
+def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) -> bool:
+    from agent_slides.engine.constraints import constraints_from_layout, solve
+    from agent_slides.engine.layout_validator import validate_layout
+
     if heading.x is None or heading.y is None or heading.width is None or heading.height is None:
         return False
     if not bodies:
@@ -484,10 +487,21 @@ def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef]) -> bool:
         first_alignment = bodies[0].alignment_group
         if first_alignment is None or any(slot.alignment_group != first_alignment for slot in bodies[1:]):
             return False
-    return True
+    validation_slots = {
+        "heading": heading,
+        **{f"body_{index}": body for index, body in enumerate(bodies, start=1)},
+    }
+    validation_layout = LayoutDef(
+        name="variant_validation",
+        slots=validation_slots,
+        grid=_TEMPLATE_GRID,
+        text_fitting=_variant_text_fitting(validation_slots),
+    )
+    rects = solve(constraints_from_layout(validation_layout, theme), {}, lambda _slot_name, _content, _width: 0.0)
+    return not any(violation.severity == "error" for violation in validate_layout(validation_layout, rects))
 
 
-def _generate_variants(layout: LayoutDef) -> list[LayoutDef]:
+def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
     heading_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "heading"]
     body_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "body"]
     if len(heading_slots) != 1 or len(body_slots) < 1:
@@ -496,7 +510,7 @@ def _generate_variants(layout: LayoutDef) -> list[LayoutDef]:
     heading = heading_slots[0]
     variants: list[LayoutDef] = []
 
-    if len(body_slots) == 2 and _is_valid_variant(heading=heading, bodies=[body_slots[0]]):
+    if len(body_slots) == 2 and _is_valid_variant(heading=heading, bodies=[body_slots[0]], theme=theme):
         title_content_slots = {
             "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
             "body": _copy_slot(
@@ -516,7 +530,7 @@ def _generate_variants(layout: LayoutDef) -> list[LayoutDef]:
             )
         )
 
-    if len(body_slots) >= 2 and _is_valid_variant(heading=heading, bodies=body_slots[:2]):
+    if len(body_slots) >= 2 and _is_valid_variant(heading=heading, bodies=body_slots[:2], theme=theme):
         two_col_slots = {
             "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
             "col1": _copy_slot(
@@ -543,7 +557,7 @@ def _generate_variants(layout: LayoutDef) -> list[LayoutDef]:
             )
         )
 
-    if len(body_slots) >= 3 and _is_valid_variant(heading=heading, bodies=body_slots[:3]):
+    if len(body_slots) >= 3 and _is_valid_variant(heading=heading, bodies=body_slots[:3], theme=theme):
         three_col_slots = {
             "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
             "col1": _copy_slot(
@@ -645,7 +659,7 @@ class TemplateLayoutRegistry:
             )
             self._slot_names[slug] = list(slot_mapping)
             self._layout_refs[slug] = (master_index, layout_index)
-            self._variants[slug] = _generate_variants(self._layouts[slug])
+            self._variants[slug] = _generate_variants(self._layouts[slug], self._theme)
             if bool(raw_layout.get("usable", raw_layout.get("is_usable", True))):
                 self._usable_layouts.append(slug)
 
