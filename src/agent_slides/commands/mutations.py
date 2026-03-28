@@ -207,6 +207,20 @@ def _populate_auto_layout_slide(
         _set_slot_content(deck, slide, slot_name, NodeContent(blocks=block_group))
 
 
+def _summarize_auto_layout_reason(reason: str) -> str:
+    prefixes = (
+        "Heading-focused content",
+        "Single supporting content block",
+        "Two balanced content blocks",
+        "Three balanced content blocks",
+        "Image-led layout with supporting content",
+    )
+    for prefix in prefixes:
+        if reason.startswith(prefix):
+            return prefix
+    return reason.rstrip(".")
+
+
 def apply_mutation(
     deck: Deck,
     command: str,
@@ -242,7 +256,7 @@ def apply_mutation(
                 "slide_id": slide.slide_id,
                 "layout": slide.layout,
                 "auto_selected": True,
-                "reason": suggestion.reason,
+                "reason": _summarize_auto_layout_reason(suggestion.reason),
             }
 
         if "content" in args:

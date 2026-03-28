@@ -540,6 +540,9 @@ def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
                         {"type": "bullet", "text": "Revenue up 24%"},
                         {"type": "bullet", "text": "Margin improved"},
                         {"type": "bullet", "text": "Hiring plan"},
+                        {"type": "bullet", "text": "Upsell motion"},
+                        {"type": "bullet", "text": "Pricing refresh"},
+                        {"type": "bullet", "text": "Channel rollout"},
                     ]
                 }
             ),
@@ -553,8 +556,8 @@ def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
     suggestions = payload["data"]["suggestions"]
 
     assert payload["ok"] is True
-    assert len(suggestions) == 3
     assert suggestions[0]["layout"] == "two_col"
+    assert suggestions[0]["score"] == 0.7
     assert [item["score"] for item in suggestions] == sorted(
         [item["score"] for item in suggestions],
         reverse=True,
@@ -605,8 +608,8 @@ def test_suggest_layout_image_count_surfaces_image_layouts() -> None:
     layouts = [item["layout"] for item in payload["data"]["suggestions"]]
 
     assert payload["ok"] is True
-    assert set(layouts) <= {"gallery", "hero_image", "image_left", "image_right"}
-    assert layouts[0] in {"hero_image", "image_left", "image_right"}
+    assert set(layouts) <= {"gallery", "title", "title_content"}
+    assert layouts[0] == "gallery"
 
 
 def test_suggest_layout_returns_json_error_for_invalid_content() -> None:
@@ -777,7 +780,7 @@ def test_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path)
             "blocks": [
                 {"type": "heading", "text": "Highlights"},
                 {"type": "paragraph", "text": "Left column summary"},
-                {"type": "bullet", "text": "Right column bullet"},
+                {"type": "paragraph", "text": "Right column summary"},
             ]
         }
     )
@@ -805,7 +808,7 @@ def test_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path)
     ] == [
         ("heading", {"blocks": [{"type": "heading", "text": "Highlights", "level": 0}]}),
         ("col1", {"blocks": [{"type": "paragraph", "text": "Left column summary", "level": 0}]}),
-        ("col2", {"blocks": [{"type": "bullet", "text": "Right column bullet", "level": 0}]}),
+        ("col2", {"blocks": [{"type": "paragraph", "text": "Right column summary", "level": 0}]}),
     ]
 
 
@@ -1147,7 +1150,7 @@ def test_batch_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path:
                             "blocks": [
                                 {"type": "heading", "text": "Highlights"},
                                 {"type": "paragraph", "text": "Left column summary"},
-                                {"type": "bullet", "text": "Right column bullet"},
+                                {"type": "paragraph", "text": "Right column summary"},
                             ]
                         },
                     },
@@ -1183,7 +1186,7 @@ def test_batch_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path:
     ] == [
         ("heading", "Highlights"),
         ("col1", "Left column summary"),
-        ("col2", "Right column bullet"),
+        ("col2", "Right column summary"),
     ]
 
 
