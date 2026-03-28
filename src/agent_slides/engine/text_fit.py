@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from PIL import ImageFont
 
-from agent_slides.model.types import NodeContent, TextBlock, TextRun, split_text_runs_by_line
+from agent_slides.model.design_rules import BlockSpacingRules
+from agent_slides.model.types import (
+    BlockPosition,
+    NodeContent,
+    SlotVerticalAlign,
+    TextBlock,
+    TextFitting,
+    TextRun,
+    split_text_runs_by_line,
+)
 
 TYPE_LADDERS = {
     "heading": [36.0, 32.0, 28.0, 24.0],
@@ -37,6 +48,32 @@ BULLET_GLYPH_WIDTH_CHARS = 2.0
 ICON_GLYPH_WIDTH_FACTOR = 1.4
 ICON_GAP_WIDTH_FACTOR = 0.45
 TOKEN_PATTERN = re.compile(r"\s+|\S+")
+
+
+@dataclass(frozen=True)
+class BlockFit:
+    block_index: int
+    block: TextBlock
+    role: str
+    font_size_pt: float
+    rendered_height: float
+    line_count: int
+
+
+@dataclass
+class _BlockFitState:
+    block_index: int
+    block: TextBlock
+    role: str
+    ladder: list[float]
+    ladder_index: int = 0
+    rendered_height: float = 0.0
+    line_count: int = 1
+    overflowed: bool = False
+
+    @property
+    def font_size_pt(self) -> float:
+        return self.ladder[self.ladder_index]
 
 
 def fit_text(
@@ -95,10 +132,179 @@ def measure_text_height(
     )
 
 
+def fit_blocks(
+    blocks: list[TextBlock],
+    width: float,
+    height: float,
+    *,
+    role: str,
+    text_fitting: Mapping[str, TextFitting],
+    spacing_rules: BlockSpacingRules,
+    type_ladders: Mapping[str, list[float]] | None = None,
+    font_family: str | None = None,
+    use_precise: bool = False,
+    fit_text_fn=None,
+) -> tuple[list[BlockFit], bool]:
+    """Fit structured blocks independently, then shrink to the slot height if needed."""
+
+    normalized_blocks = blocks or [TextBlock(type="paragraph", text="")]
+    width_overflow = width <= 0
+    height_overflow = height <= 0
+    available_width = max(width, 1.0)
+    available_height = max(height, 0.0)
+
+    fit_text_impl = fit_text if fit_text_fn is None else fit_text_fn
+
+    states: list[_BlockFitState] = []
+    for block_index, block in enumerate(normalized_blocks):
+        block_role = "heading" if block.type == "heading" else role
+        fit_rules = _text_fitting_for_role(text_fitting, block_role)
+        ladder = _resolve_block_ladder(fit_rules, block_role, type_ladders)
+        selected_size, initial_overflow = fit_text_impl(
+            text=NodeContent(blocks=[block]),
+            width=available_width,
+            height=available_height or 1.0,
+            default_size=fit_rules.default_size,
+            min_size=fit_rules.min_size,
+            role=block_role,
+            font_family=font_family,
+            ladder=ladder,
+            use_precise=use_precise,
+        )
+        if selected_size not in ladder:
+            ladder = _sanitize_ladder([*ladder, float(selected_size)])
+        state = _BlockFitState(
+            block_index=block_index,
+            block=block,
+            role=block_role,
+            ladder=ladder,
+            ladder_index=ladder.index(selected_size),
+            overflowed=initial_overflow,
+        )
+        _refresh_block_fit(state, available_width, font_family=font_family, use_precise=use_precise)
+        states.append(state)
+
+    _shrink_states_to_fit(
+        states,
+        available_width,
+        available_height,
+        spacing_rules,
+        font_family=font_family,
+        use_precise=use_precise,
+    )
+
+    fits = [
+        BlockFit(
+            block_index=state.block_index,
+            block=state.block,
+            role=state.role,
+            font_size_pt=state.font_size_pt,
+            rendered_height=state.rendered_height,
+            line_count=state.line_count,
+        )
+        for state in states
+    ]
+    overflowed = (
+        width_overflow
+        or height_overflow
+        or any(state.overflowed for state in states)
+        or total_height(fits, spacing_rules=spacing_rules) > available_height
+    )
+    return fits, overflowed
+
+
+def compose_blocks(
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    padding: float,
+    vertical_align: SlotVerticalAlign,
+    block_fits: list[BlockFit],
+    spacing_rules: BlockSpacingRules,
+) -> list[BlockPosition]:
+    """Resolve fitted blocks into concrete positions inside a slot."""
+
+    content_x = x + padding
+    content_y = y + padding
+    content_width = max(width - (2 * padding), 0.0)
+    available_height = max(height - (2 * padding), 0.0)
+    content_height = total_height(block_fits, spacing_rules=spacing_rules)
+    remaining_height = max(available_height - content_height, 0.0)
+
+    if vertical_align == "middle":
+        start_y = content_y + (remaining_height / 2)
+    elif vertical_align == "bottom":
+        start_y = content_y + remaining_height
+    else:
+        start_y = content_y
+
+    positions: list[BlockPosition] = []
+    cursor_y = start_y
+    for index, fit in enumerate(block_fits):
+        positions.append(
+            BlockPosition(
+                block_index=fit.block_index,
+                x=content_x,
+                y=cursor_y,
+                width=content_width,
+                height=fit.rendered_height,
+                font_size_pt=fit.font_size_pt,
+            )
+        )
+        if index < len(block_fits) - 1:
+            cursor_y += fit.rendered_height + spacing_between(fit.block, block_fits[index + 1].block, spacing_rules)
+
+    return positions
+
+
+def spacing_between(previous: TextBlock, current: TextBlock, spacing_rules: BlockSpacingRules) -> float:
+    return spacing_rules.between(previous.type, current.type)
+
+
+def total_height(block_fits: list[BlockFit], *, spacing_rules: BlockSpacingRules) -> float:
+    if not block_fits:
+        return 0.0
+
+    spacing_total = 0.0
+    for index in range(len(block_fits) - 1):
+        spacing_total += spacing_between(block_fits[index].block, block_fits[index + 1].block, spacing_rules)
+    return sum(fit.rendered_height for fit in block_fits) + spacing_total
+
+
 def _normalize_content(text: str | NodeContent) -> NodeContent:
     if isinstance(text, NodeContent):
         return text
     return NodeContent.from_text(text)
+
+
+def _text_fitting_for_role(text_fitting: Mapping[str, TextFitting], role: str) -> TextFitting:
+    rules = text_fitting.get(role)
+    if rules is not None:
+        return rules
+
+    fallback = text_fitting.get("body") or text_fitting.get("heading")
+    if fallback is not None:
+        return fallback
+
+    return TextFitting(default_size=18.0, min_size=10.0)
+
+
+def _resolve_block_ladder(
+    fit_rules: TextFitting,
+    role: str,
+    type_ladders: Mapping[str, list[float]] | None,
+) -> list[float]:
+    ladder = fit_rules.ladder
+    if ladder is None and type_ladders is not None:
+        ladder = [size for size in type_ladders.get(role, []) if fit_rules.min_size <= size <= fit_rules.default_size] or None
+    return _resolve_ladder(
+        role,
+        default_size=fit_rules.default_size,
+        min_size=fit_rules.min_size,
+        ladder=list(ladder) if ladder is not None else None,
+    )
 
 
 def _font_size_factor(block: TextBlock) -> float:
@@ -437,6 +643,78 @@ def _measured_text_height(
             lines_height += font_size * BLOCK_SPACING_FACTOR
 
     return lines_height
+
+
+def _refresh_block_fit(
+    state: _BlockFitState,
+    width: float,
+    *,
+    font_family: str | None,
+    use_precise: bool,
+) -> None:
+    font_size = state.font_size_pt
+    block_width = _block_width(width, state.block, font_size, font_family=font_family)
+    font_cache: dict[float, ImageFont.ImageFont] = {}
+    line_count = 0
+    for line_runs in split_text_runs_by_line(state.block):
+        wrapped_lines = _wrap_line_runs(
+            line_runs,
+            block_width,
+            font_size=font_size,
+            block=state.block,
+            font_family=font_family,
+            use_precise=use_precise,
+            font_cache=font_cache,
+        )
+        line_count += len(wrapped_lines)
+
+    state.line_count = max(line_count, 1)
+    state.rendered_height = _measured_text_height(
+        NodeContent(blocks=[state.block]),
+        width,
+        font_size,
+        font_family=font_family,
+        use_precise=use_precise,
+    )
+
+
+def _shrink_states_to_fit(
+    states: list[_BlockFitState],
+    width: float,
+    height: float,
+    spacing_rules: BlockSpacingRules,
+    *,
+    font_family: str | None,
+    use_precise: bool,
+) -> None:
+    for shrink_heading in (False, True):
+        while _states_total_height(states, spacing_rules) > height:
+            candidates = [
+                state
+                for state in states
+                if (state.block.type == "heading") is shrink_heading and state.ladder_index < len(state.ladder) - 1
+            ]
+            if not candidates:
+                return
+
+            candidate = max(candidates, key=lambda state: (state.font_size_pt, -state.block_index))
+            candidate.ladder_index += 1
+            _refresh_block_fit(candidate, width, font_family=font_family, use_precise=use_precise)
+
+
+def _states_total_height(states: list[_BlockFitState], spacing_rules: BlockSpacingRules) -> float:
+    fits = [
+        BlockFit(
+            block_index=state.block_index,
+            block=state.block,
+            role=state.role,
+            font_size_pt=state.font_size_pt,
+            rendered_height=state.rendered_height,
+            line_count=state.line_count,
+        )
+        for state in states
+    ]
+    return total_height(fits, spacing_rules=spacing_rules)
 
 
 def _fits(

@@ -23,14 +23,19 @@ STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
+SHAPE_TYPE_VALUES = ("rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron")
+SHAPE_DASH_VALUES = ("dash", "dot", "dashDot")
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
+ShapeType = Literal["rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron"]
+ShapeDash = Literal["dash", "dot", "dashDot"]
 TableAlign = Literal["left", "center", "right"]
-NodeType = Literal["text", "image", "chart", "table", "icon"]
+NodeType = Literal["text", "image", "chart", "table", "icon", "shape"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
 ConstraintWidthMode = Literal["fixed", "equal_share"]
+SlotVerticalAlign = Literal["top", "middle", "bottom"]
 _HEX_COLOR_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
@@ -40,13 +45,6 @@ _NUMERIC_TABLE_VALUE_PATTERN = re.compile(
     r"^\s*[\(\-+]?\s*(?:[$€£¥]\s*)?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\d*\.\d+)\s*(?:[KMBT]|bn|mm)?\s*%?\s*\)?\s*$",
     re.IGNORECASE,
 )
-
-
-def _normalize_hex_color(value: str) -> str:
-    normalized = value.strip()
-    if not _HEX_COLOR_PATTERN.match(normalized):
-        raise ValueError("header_color must use #RRGGBB or RRGGBB format")
-    return normalized if normalized.startswith("#") else f"#{normalized}"
 
 
 def _looks_numeric_table_value(value: str) -> bool:
@@ -62,6 +60,15 @@ class AgentSlidesModel(BaseModel):
         validate_by_alias=True,
         validate_by_name=True,
     )
+
+
+class BlockPosition(AgentSlidesModel):
+    block_index: int
+    x: float
+    y: float
+    width: float
+    height: float
+    font_size_pt: float
 
 
 class ComputedNode(AgentSlidesModel):
@@ -80,6 +87,8 @@ class ComputedNode(AgentSlidesModel):
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
     icon_svg_path: str | None = None
+    block_positions: list[BlockPosition] = Field(default_factory=list)
+    block_positions: list[BlockPosition] = Field(default_factory=list)
 
 
 class TextRun(AgentSlidesModel):
@@ -193,6 +202,12 @@ class NodeContent(AgentSlidesModel):
 
     def is_empty(self) -> bool:
         return not self.blocks or all(block.text == "" for block in self.blocks)
+
+def _normalize_hex_color(value: str, *, field_name: str) -> str:
+    normalized = value.strip().lstrip("#")
+    if len(normalized) != 6 or any(char not in "0123456789abcdefABCDEF" for char in normalized):
+        raise ValueError(f"{field_name} must use #RRGGBB or RRGGBB format")
+    return f"#{normalized.upper()}"
 
 
 def parse_inline_markdown_runs(text: str) -> list[TextRun] | None:
@@ -396,6 +411,54 @@ class ChartSpec(AgentSlidesModel):
         return self
 
 
+class ShapeSpec(AgentSlidesModel):
+    shape_type: ShapeType
+    fill_color: str | None = None
+    line_color: str | None = None
+    line_width: float = 1.0
+    corner_radius: float = 0.0
+    shadow: bool = False
+    dash: ShapeDash | None = None
+    opacity: float = 1.0
+
+    @field_validator("shape_type", mode="before")
+    @classmethod
+    def validate_shape_type(cls, value: object) -> object:
+        if not isinstance(value, str) or value not in SHAPE_TYPE_VALUES:
+            raise ValueError(f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}")
+        return value
+
+    @field_validator("fill_color", "line_color")
+    @classmethod
+    def validate_color(cls, value: str | None, info) -> str | None:
+        if value is None:
+            return value
+        return _normalize_hex_color(value, field_name=info.field_name)
+
+    @field_validator("line_width", "corner_radius")
+    @classmethod
+    def validate_non_negative_dimension(cls, value: float, info) -> float:
+        if value < 0:
+            raise ValueError(f"{info.field_name} must be greater than or equal to 0")
+        return value
+
+    @field_validator("dash", mode="before")
+    @classmethod
+    def validate_dash(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str) or value not in SHAPE_DASH_VALUES:
+            raise ValueError(f"dash must be one of: {', '.join(SHAPE_DASH_VALUES)}")
+        return value
+
+    @field_validator("opacity")
+    @classmethod
+    def validate_opacity(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("opacity must be between 0.0 and 1.0")
+        return value
+
+
 class TableSpec(AgentSlidesModel):
     headers: list[str]
     rows: list[list[str]]
@@ -439,7 +502,7 @@ class TableSpec(AgentSlidesModel):
     def validate_header_color(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        return _normalize_hex_color(value)
+        return _normalize_hex_color(value, field_name="header_color")
 
     @field_validator("font_size", "header_font_size")
     @classmethod
@@ -499,6 +562,7 @@ class Node(AgentSlidesModel):
     image_path: str | None = None
     image_fit: ImageFit = "contain"
     chart_spec: ChartSpec | None = None
+    shape_spec: ShapeSpec | None = None
     table_spec: TableSpec | None = None
     icon_name: str | None = None
     x: float | None = None
@@ -536,6 +600,10 @@ class Node(AgentSlidesModel):
                 data["content"] = NodeContent.model_validate(content)
             if data.get("chart_spec") is not None:
                 data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"]).model_dump(mode="json")
+        elif node_type == "shape":
+            data["content"] = NodeContent.model_validate(content)
+            if data.get("shape_spec") is not None:
+                data["shape_spec"] = ShapeSpec.model_validate(data["shape_spec"]).model_dump(mode="json")
         elif node_type == "table":
             if data.get("table_spec") is None and content not in (None, "", {"blocks": []}):
                 raw_table_spec = content
@@ -573,6 +641,8 @@ class Node(AgentSlidesModel):
                 raise ValueError("text nodes cannot define image_path")
             if self.chart_spec is not None:
                 raise ValueError("text nodes cannot define chart_spec")
+            if self.shape_spec is not None:
+                raise ValueError("text nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("text nodes cannot define table_spec")
             if icon_fields_present:
@@ -582,6 +652,8 @@ class Node(AgentSlidesModel):
         if self.type == "image":
             if self.chart_spec is not None:
                 raise ValueError("image nodes cannot define chart_spec")
+            if self.shape_spec is not None:
+                raise ValueError("image nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("image nodes cannot define table_spec")
             if icon_fields_present:
@@ -604,6 +676,8 @@ class Node(AgentSlidesModel):
                 raise ValueError("icon nodes cannot define image_path")
             if self.chart_spec is not None:
                 raise ValueError("icon nodes cannot define chart_spec")
+            if self.shape_spec is not None:
+                raise ValueError("icon nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("icon nodes cannot define table_spec")
             if not self.content.is_empty():
@@ -620,9 +694,37 @@ class Node(AgentSlidesModel):
             self.color = normalize_hex_color(self.color or "#000000")
             return self
 
+        if self.type == "shape":
+            if self.slot_binding is not None:
+                raise ValueError("shape nodes cannot be bound to a slot")
+            if self.image_path is not None:
+                raise ValueError("shape nodes cannot define image_path")
+            if self.chart_spec is not None:
+                raise ValueError("shape nodes cannot define chart_spec")
+            if self.table_spec is not None:
+                raise ValueError("shape nodes cannot define table_spec")
+            if icon_fields_present:
+                raise ValueError("shape nodes cannot define icon placement fields")
+            if self.shape_spec is None:
+                raise ValueError("shape nodes require shape_spec")
+            if not isinstance(self.content, NodeContent):
+                self.content = NodeContent.model_validate(self.content)
+            if not self.content.is_empty():
+                raise ValueError("shape nodes cannot define text content")
+            for key in ("x", "y", "width", "height"):
+                value = self.style_overrides.get(key)
+                if isinstance(value, bool) or not isinstance(value, int | float):
+                    raise ValueError(f"shape nodes require numeric style_overrides['{key}']")
+            z_index = self.style_overrides.get("z_index")
+            if z_index is not None and (isinstance(z_index, bool) or not isinstance(z_index, int)):
+                raise ValueError("shape nodes require integer style_overrides['z_index'] when provided")
+            return self
+
         if self.type == "chart":
             if self.image_path is not None:
                 raise ValueError("chart nodes cannot define image_path")
+            if self.shape_spec is not None:
+                raise ValueError("chart nodes cannot define shape_spec")
             if self.table_spec is not None:
                 raise ValueError("chart nodes cannot define table_spec")
             if icon_fields_present:
@@ -631,14 +733,20 @@ class Node(AgentSlidesModel):
                 raise ValueError("chart nodes require chart_spec")
             if not isinstance(self.content, NodeContent):
                 self.content = NodeContent.model_validate(self.content)
+            if not self.content.is_empty():
+                raise ValueError("chart nodes cannot define text content")
             return self
 
+        if self.type != "table":
+            raise ValueError(f"unsupported node type: {self.type}")
         if self.image_path is not None:
             raise ValueError("table nodes cannot define image_path")
         if self.chart_spec is not None:
             raise ValueError("table nodes cannot define chart_spec")
         if icon_fields_present:
             raise ValueError("table nodes cannot define icon placement fields")
+        if self.shape_spec is not None:
+            raise ValueError("table nodes cannot define shape_spec")
         if self.table_spec is None:
             raise ValueError("table nodes require table_spec")
         if not isinstance(self.content, NodeContent):
@@ -705,8 +813,9 @@ class SlotDef(AgentSlidesModel):
     max_font: float | None = None
     preferred_font: float | None = None
     text_align: str = "left"
-    vertical_align: str = "top"
+    vertical_align: SlotVerticalAlign = "top"
     full_bleed: bool = False
+    padding: float = 8.0
     x: float | None = None
     y: float | None = None
     width: float | None = None
@@ -721,6 +830,13 @@ class SlotDef(AgentSlidesModel):
     def validate_bg_transparency(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
             raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
+
+    @field_validator("padding")
+    @classmethod
+    def validate_padding(cls, value: float) -> float:
+        if value < 0.0:
+            raise ValueError("padding must be greater than or equal to 0.0")
         return value
 
 

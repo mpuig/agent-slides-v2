@@ -19,9 +19,15 @@ from agent_slides.errors import (
     SCHEMA_ERROR,
 )
 from agent_slides.icons import normalize_hex_color, require_icon
-from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide, TableSpec
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model.types import CHART_TYPE_VALUES, TextBlock, parse_inline_markdown_runs
+from agent_slides.model.types import (
+    CHART_TYPE_VALUES,
+    SHAPE_DASH_VALUES,
+    SHAPE_TYPE_VALUES,
+    TextBlock,
+    parse_inline_markdown_runs,
+)
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -77,13 +83,45 @@ def _require_non_negative_int(args: dict[str, Any], key: str, *, default: int = 
     return value
 
 
+def _require_int(args: dict[str, Any], key: str, *, default: int | object = _UNSET) -> int:
+    value = args.get(key, default)
+    if value is _UNSET:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be an integer")
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("-") and stripped[1:].isdigit():
+            return int(stripped)
+        if stripped.isdigit():
+            return int(stripped)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be an integer")
+    return value
+
+
 def _require_number(args: dict[str, Any], key: str) -> float:
     value = args.get(key)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError as exc:
+            raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a number") from exc
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a number")
     return float(value)
 
 
+def _require_non_negative_number(args: dict[str, Any], key: str, *, default: float | object = _UNSET) -> float:
+    value = args.get(key, default)
+    if value is _UNSET:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number")
+    if isinstance(value, str):
+        try:
+            value = float(value.strip())
+        except ValueError as exc:
+            raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number") from exc
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number")
+    return float(value)
 def _require_object(args: dict[str, Any], key: str) -> dict[str, Any]:
     value = args.get(key)
     if not isinstance(value, dict):
@@ -215,6 +253,65 @@ def _raise_chart_validation_error(exc: ValidationError) -> None:
         f"Invalid chart data: {first_error['msg']}",
         details={"validation_errors": errors},
     ) from exc
+
+
+def _optional_string(args: dict[str, Any], key: str) -> str | None:
+    value = args.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a string")
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_shape_type(shape_type: str) -> str:
+    if shape_type not in SHAPE_TYPE_VALUES:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Unknown shape type {shape_type!r}",
+            details={
+                "shape_type": shape_type,
+                "valid_types": list(SHAPE_TYPE_VALUES),
+            },
+        )
+    return shape_type
+
+
+def _build_shape_spec(args: dict[str, Any]) -> ShapeSpec:
+    raw_color = args.get("color")
+    raw_line_color = args.get("line_color")
+    if raw_color is not None and raw_line_color is not None:
+        raise AgentSlidesError(SCHEMA_ERROR, "Arguments 'color' and 'line_color' are mutually exclusive")
+
+    dash = args.get("dash")
+    if dash is not None and (not isinstance(dash, str) or dash not in SHAPE_DASH_VALUES):
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Argument 'dash' must be one of: {', '.join(SHAPE_DASH_VALUES)}",
+        )
+
+    try:
+        return ShapeSpec.model_validate(
+            {
+                "shape_type": _validate_shape_type(_require_string(args, "type")),
+                "fill_color": _optional_string(args, "fill"),
+                "line_color": _optional_string(args, "line_color") or _optional_string(args, "color"),
+                "line_width": _require_non_negative_number(args, "line_width", default=1.0),
+                "corner_radius": _require_non_negative_number(args, "corner_radius", default=0.0),
+                "shadow": _require_bool(args, "shadow", default=False),
+                "dash": dash,
+                "opacity": args.get("opacity", 1.0),
+            }
+        )
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False)
+        first_error = errors[0] if errors else {"msg": "invalid shape data"}
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Invalid shape data: {first_error['msg']}",
+            details={"validation_errors": errors},
+        ) from exc
 
 
 def _raise_table_validation_error(exc: ValidationError) -> None:
@@ -441,6 +538,7 @@ def apply_mutation(
         node.image_path = image_path
         node.image_fit = image_fit
         node.chart_spec = None
+        node.shape_spec = None
         node.table_spec = None
         node.icon_name = None
         node.x = None
@@ -537,6 +635,7 @@ def apply_mutation(
         node.image_path = None
         node.image_fit = "contain"
         node.chart_spec = chart_spec
+        node.shape_spec = None
         node.table_spec = None
         node.icon_name = None
         node.x = None
@@ -580,6 +679,41 @@ def apply_mutation(
             "updated": True,
         }
 
+    if command == "shape_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        shape_spec = _build_shape_spec(args)
+        node = Node(
+            node_id=deck.next_node_id(),
+            type="shape",
+            content=NodeContent(),
+            shape_spec=shape_spec,
+            style_overrides={
+                "x": _require_number(args, "x"),
+                "y": _require_number(args, "y"),
+                "width": _require_non_negative_number(args, "w"),
+                "height": _require_non_negative_number(args, "h"),
+                "z_index": _require_int(args, "z_index", default=-1),
+            },
+        )
+        slide.nodes.append(node)
+        return {
+            "slide_id": slide.slide_id,
+            "node_id": node.node_id,
+            "shape_type": shape_spec.shape_type,
+            "x": node.style_overrides["x"],
+            "y": node.style_overrides["y"],
+            "w": node.style_overrides["width"],
+            "h": node.style_overrides["height"],
+            "fill_color": shape_spec.fill_color,
+            "line_color": shape_spec.line_color,
+            "line_width": shape_spec.line_width,
+            "corner_radius": shape_spec.corner_radius,
+            "shadow": shape_spec.shadow,
+            "dash": shape_spec.dash,
+            "opacity": shape_spec.opacity,
+            "z_index": node.style_overrides["z_index"],
+        }
+
     if command == "table_add":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
@@ -604,6 +738,7 @@ def apply_mutation(
         node.image_path = None
         node.image_fit = "contain"
         node.chart_spec = None
+        node.shape_spec = None
         node.table_spec = table_spec
         node.icon_name = None
         node.x = None
