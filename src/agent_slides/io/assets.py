@@ -11,10 +11,19 @@ def resolve_image_path(image_path: str, *, base_dir: str | Path | None = None) -
     """Resolve an image path relative to a deck location and ensure it exists."""
 
     candidate = Path(image_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = Path(base_dir or ".").expanduser() / candidate
+    if base_dir is not None:
+        asset_root = Path(base_dir).expanduser().resolve()
+        if candidate.is_absolute():
+            raise AgentSlidesError(FILE_NOT_FOUND, "Path traversal not allowed")
 
-    resolved = candidate.resolve()
+        resolved = (asset_root / candidate).resolve()
+        if not resolved.is_relative_to(asset_root):
+            raise AgentSlidesError(FILE_NOT_FOUND, "Path traversal not allowed")
+    else:
+        if not candidate.is_absolute():
+            candidate = Path(".").expanduser() / candidate
+        resolved = candidate.resolve()
+
     if not resolved.is_file():
         raise AgentSlidesError(FILE_NOT_FOUND, f"Image file not found: {resolved}")
     return resolved
