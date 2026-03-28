@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import inspect
 import json
 import logging
 import mimetypes
 import signal
-from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from importlib import resources
 from pathlib import Path
@@ -29,12 +27,6 @@ LOGGER = logging.getLogger(__name__)
 CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
     encoding="utf-8"
 )
-CHAT_HTML = resources.files("agent_slides.preview").joinpath("chat.html").read_text(
-    encoding="utf-8"
-)
-
-ChatEmitter = Callable[[dict[str, Any]], Awaitable[None]]
-ChatMessageHandler = Callable[[dict[str, Any], ChatEmitter], Awaitable[None] | None]
 
 
 class PreviewServer:
@@ -46,8 +38,6 @@ class PreviewServer:
         *,
         host: str = "localhost",
         port: int = 8765,
-        mode: str = "preview",
-        chat_message_handler: ChatMessageHandler | None = None,
         slide_renderer: SlideRenderer | None = None,
         debounce_ms: int | None = None,
         debounce_interval: float | None = None,
@@ -56,9 +46,6 @@ class PreviewServer:
         self.sidecar_path = Path(sidecar_path).resolve()
         self.host = host
         self.port = port
-        if mode not in {"preview", "chat"}:
-            raise ValueError("mode must be 'preview' or 'chat'")
-        self.mode = mode
         effective_debounce_ms = debounce_ms
         if debounce_interval is not None:
             effective_debounce_ms = int(debounce_interval * 1000)
@@ -71,15 +58,13 @@ class PreviewServer:
             debounce_ms=effective_debounce_ms,
             logger=self._logger,
         )
-        self._chat_message_handler = chat_message_handler
         self._server: Server | None = None
         self._preview_clients: set[ServerConnection] = set()
-        self._chat_clients: set[ServerConnection] = set()
         self._preview_backend = "svg"
         self._preview_payload: dict[str, Any] | None = None
         self._slide_previews: list[dict[str, Any]] = []
-        self._renderer = slide_renderer if mode == "preview" else None
-        if mode == "preview" and self._renderer is None:
+        self._renderer = slide_renderer
+        if self._renderer is None:
             self._renderer = SlideRenderer(self.sidecar_path)
         self._logged_png_fallback_warning = False
 
@@ -152,20 +137,9 @@ class PreviewServer:
 
         broadcast(self._preview_clients, json.dumps(payload))
 
-    async def broadcast_chat_payload(self, payload: dict[str, Any]) -> None:
-        if not self._chat_clients:
-            return
-
-        broadcast(self._chat_clients, json.dumps(payload))
-
     @property
     def _png_preview_enabled(self) -> bool:
-        return bool(
-            self.mode == "preview"
-            and self._renderer is not None
-            and self._renderer.is_available
-            and self._preview_backend == "png"
-        )
+        return bool(self._renderer is not None and self._renderer.is_available and self._preview_backend == "png")
 
     async def _prime_preview_state(self) -> None:
         try:
@@ -177,7 +151,7 @@ class PreviewServer:
             return
 
         self._preview_payload = payload
-        if self.mode != "preview" or self._renderer is None:
+        if self._renderer is None:
             self._preview_backend = "svg"
             self._slide_previews = []
             return
@@ -266,10 +240,6 @@ class PreviewServer:
         previous_payload = self._preview_payload
         self._preview_payload = payload
 
-        if self.mode != "preview":
-            await self.broadcast_payload(self._build_update_message(payload))
-            return
-
         if not self._png_preview_enabled:
             await self.broadcast_payload(self._build_update_message(payload))
             return
@@ -290,10 +260,6 @@ class PreviewServer:
     async def _handle_websocket(self, websocket: ServerConnection) -> None:
         if websocket.request.path == "/ws":
             await self._handle_preview_websocket(websocket)
-            return
-
-        if websocket.request.path == "/chat/ws" and self.mode == "chat":
-            await self._handle_chat_websocket(websocket)
 
     async def _handle_preview_websocket(self, websocket: ServerConnection) -> None:
         self._preview_clients.add(websocket)
@@ -307,39 +273,6 @@ class PreviewServer:
             self._preview_clients.discard(websocket)
             self._logger.info("Preview client disconnected: %s", websocket.remote_address)
 
-    async def _handle_chat_websocket(self, websocket: ServerConnection) -> None:
-        self._chat_clients.add(websocket)
-        self._logger.info("Chat client connected: %s", websocket.remote_address)
-
-        try:
-            async for raw_message in websocket:
-                await self._handle_chat_message(websocket, raw_message)
-        finally:
-            self._chat_clients.discard(websocket)
-            self._logger.info("Chat client disconnected: %s", websocket.remote_address)
-
-    async def _handle_chat_message(self, websocket: ServerConnection, raw_message: Any) -> None:
-        try:
-            if isinstance(raw_message, bytes):
-                raise ValueError("Binary chat messages are not supported.")
-            payload = json.loads(raw_message)
-            if not isinstance(payload, dict):
-                raise ValueError("Chat messages must be JSON objects.")
-        except (json.JSONDecodeError, ValueError) as exc:
-            await websocket.send(json.dumps({"type": "error", "text": str(exc)}))
-            return
-
-        async def emit(message: dict[str, Any]) -> None:
-            await websocket.send(json.dumps(message))
-
-        if self._chat_message_handler is None:
-            await emit({"type": "error", "text": "No chat handler configured."})
-            return
-
-        result = self._chat_message_handler(payload, emit)
-        if inspect.isawaitable(result):
-            await result
-
     def _process_request(self, connection: ServerConnection, request: Any) -> Any:
         request_path = request.path.partition("?")[0]
 
@@ -347,8 +280,6 @@ class PreviewServer:
             return None
 
         if request_path == "/chat/ws":
-            if self.mode == "chat":
-                return None
             return self._not_found_response(connection)
 
         if request_path == "/client.html":
@@ -357,14 +288,12 @@ class PreviewServer:
             return response
 
         if request_path == "/":
-            response = connection.respond(HTTPStatus.OK, CHAT_HTML if self.mode == "chat" else CLIENT_HTML)
+            response = connection.respond(HTTPStatus.OK, CLIENT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 
         if request_path in {"/chat", "/chat.html"}:
-            response = connection.respond(HTTPStatus.OK, CHAT_HTML)
-            response.headers["Content-Type"] = "text/html; charset=utf-8"
-            return response
+            return self._not_found_response(connection)
 
         if request_path == "/api/deck":
             try:
@@ -513,7 +442,7 @@ class PreviewServer:
         *,
         changed_indices: list[int] | None = None,
     ) -> dict[str, Any]:
-        if self.mode == "preview" and self._preview_backend == "png":
+        if self._preview_backend == "png":
             previews = self._build_slide_previews(payload)
             return {
                 "type": "slides_updated",
@@ -544,7 +473,6 @@ async def run_preview_server(
     *,
     host: str = "localhost",
     port: int = 8765,
-    mode: str = "preview",
     debounce_ms: int = 50,
 ) -> None:
     """Run the preview server until interrupted."""
@@ -553,7 +481,6 @@ async def run_preview_server(
         sidecar_path,
         host=host,
         port=port,
-        mode=mode,
         debounce_ms=debounce_ms,
     )
     await server.serve_forever()
@@ -564,7 +491,6 @@ def main() -> None:
     parser.add_argument("path", help="Path to the sidecar deck JSON file.")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--mode", choices=("preview", "chat"), default="preview")
     parser.add_argument("--debounce-ms", type=int, default=50)
     args = parser.parse_args()
 
@@ -574,7 +500,6 @@ def main() -> None:
             args.path,
             host=args.host,
             port=args.port,
-            mode=args.mode,
             debounce_ms=args.debounce_ms,
         )
     )
