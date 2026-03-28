@@ -14,7 +14,12 @@ from agent_slides.errors import (
 )
 from agent_slides.model import Deck, Node, Slide, get_layout
 
-SLOT_ALIASES = {"left": "col1", "right": "col2"}
+SLOT_ALIASES = {
+    "heading": "title",
+    "subheading": "subtitle",
+    "left": "col1",
+    "right": "col2",
+}
 
 SUPPORTED_MUTATION_COMMANDS = frozenset(
     {

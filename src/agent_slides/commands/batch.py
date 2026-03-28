@@ -73,4 +73,3 @@ def batch(path: str) -> None:
 
     _, results = mutate_deck(path, mutate)
     click.echo(json.dumps({"ok": True, "data": {"operations": len(results), "results": results}}))
-

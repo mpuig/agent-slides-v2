@@ -1,4 +1,4 @@
-"""Built-in layout definitions."""
+"""Built-in layout definitions for v0."""
 
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ LAYOUTS: dict[str, LayoutDef] = {
         name="blank",
         slots={},
         grid=_grid(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0]),
+        text_fitting={},
     ),
     "comparison": _layout(
         name="comparison",
@@ -116,17 +117,19 @@ LAYOUTS: dict[str, LayoutDef] = {
         grid=_grid(columns=2, rows=2, row_heights=[0.12, 0.88], col_widths=[0.5, 0.5]),
         text_fitting=DEFAULT_TEXT_FITTING,
     ),
+    "closing": _layout(
+        name="closing",
+        slots={
+            "body": SlotDef(grid_row=1, grid_col=1, role="body"),
+        },
+        grid=_grid(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0]),
+        text_fitting=DEFAULT_TEXT_FITTING,
+    ),
 }
 
 
-def list_layouts() -> list[str]:
-    """Return the available built-in layout names."""
-
-    return sorted(LAYOUTS)
-
-
 def get_layout(name: str) -> LayoutDef:
-    """Return a built-in layout or raise a uniform domain error."""
+    """Return a built-in layout definition by name."""
 
     layout = LAYOUTS.get(name)
     if layout is None:
@@ -136,3 +139,9 @@ def get_layout(name: str) -> LayoutDef:
             f"Layout {name!r} is invalid. Available layouts: {available}",
         )
     return layout
+
+
+def list_layouts() -> list[str]:
+    """Return the available built-in layout names."""
+
+    return sorted(LAYOUTS)
