@@ -34,8 +34,6 @@ def _emit_warning(slide_id: str, unbound_nodes: list[str]) -> None:
         },
         err=True,
     )
-
-
 @click.group()
 def slide() -> None:
     """Manage deck slides."""
@@ -44,7 +42,7 @@ def slide() -> None:
 @slide.command("add")
 @click.argument("path")
 @click.option("--layout", "layout_name", required=True)
-def add_slide(path: str, layout_name: str) -> None:
+def add_slide_command(path: str, layout_name: str) -> None:
     """Append a slide using a named layout."""
 
     def mutate(deck: Deck) -> dict[str, object]:
@@ -57,7 +55,7 @@ def add_slide(path: str, layout_name: str) -> None:
 @slide.command("remove")
 @click.argument("path")
 @click.option("--slide", "slide_ref", required=True)
-def remove_slide(path: str, slide_ref: str) -> None:
+def remove_slide_command(path: str, slide_ref: str) -> None:
     """Remove a slide by index or slide_id."""
 
     def mutate(deck: Deck) -> dict[str, object]:
@@ -71,7 +69,7 @@ def remove_slide(path: str, slide_ref: str) -> None:
 @click.argument("path")
 @click.option("--slide", "slide_ref", required=True)
 @click.option("--layout", "layout_name", required=True)
-def set_slide_layout(path: str, slide_ref: str, layout_name: str) -> None:
+def set_slide_layout_command(path: str, slide_ref: str, layout_name: str) -> None:
     """Change a slide layout and rebind its slot-bound nodes."""
 
     def mutate(deck: Deck) -> dict[str, object]:
