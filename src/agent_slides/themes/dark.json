@@ -1,0 +1,21 @@
+{
+  "name": "dark",
+  "colors": {
+    "primary": "#F8FAFC",
+    "secondary": "#CBD5E1",
+    "accent": "#38BDF8",
+    "background": "#111827",
+    "text": "#E5E7EB",
+    "heading_text": "#F8FAFC",
+    "subtle_text": "#CBD5E1"
+  },
+  "fonts": {
+    "heading": "Arial",
+    "body": "Calibri"
+  },
+  "spacing": {
+    "base_unit": 10,
+    "margin": 60,
+    "gutter": 24
+  }
+}
