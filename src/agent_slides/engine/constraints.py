@@ -108,12 +108,25 @@ def _slot_row_key(layout_def: LayoutDef, slot_name: str) -> tuple[int, ...]:
     return tuple(_normalize_grid_indices(slot.grid_row))
 
 
+def _is_template_bounds_layout(layout_def: LayoutDef) -> bool:
+    grid = layout_def.grid
+    return (
+        grid.columns == 1
+        and grid.rows == 1
+        and grid.col_widths == [1.0]
+        and grid.row_heights == [1.0]
+        and grid.margin == 0.0
+        and grid.gutter == 0.0
+    )
+
+
 def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, SlotConstraints]:
     """Convert a layout definition into solver-friendly slot constraints."""
 
     constraints: dict[str, SlotConstraints] = {}
     shared_vertical_bounds: dict[str, tuple[Anchor, Anchor]] = {}
     share_groups: dict[str, list[str]] = defaultdict(list)
+    preserve_explicit_bounds = _is_template_bounds_layout(layout_def)
 
     for index, slot_name in enumerate(layout_def.slots):
         slot = layout_def.slots[slot_name]
@@ -121,7 +134,7 @@ def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, Sl
         left = _slide_edge_offset(frame.x, "left", SLIDE_WIDTH_PT)
         right = _slide_edge_offset(frame.x + frame.width, "right", SLIDE_WIDTH_PT)
 
-        group = slot.alignment_group
+        group = None if preserve_explicit_bounds else slot.alignment_group
         if group and group in shared_vertical_bounds:
             top, bottom = shared_vertical_bounds[group]
         else:
