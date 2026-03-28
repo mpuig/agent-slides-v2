@@ -118,6 +118,15 @@ class LayoutDef(AgentSlidesModel):
     grid: GridDef
     text_fitting: dict[str, TextFitting]
 
+    @model_validator(mode="after")
+    def validate_text_fitting(self) -> LayoutDef:
+        used_roles = {slot.role for slot in self.slots.values()}
+        missing_roles = used_roles.difference(self.text_fitting)
+        if missing_roles:
+            missing = ", ".join(sorted(missing_roles))
+            raise ValueError(f"text_fitting missing roles: {missing}")
+        return self
+
 
 class Counters(AgentSlidesModel):
     slides: int = 0
