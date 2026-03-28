@@ -420,7 +420,7 @@ def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed
     chart.has_legend = spec.style.has_legend
 
     # Native PowerPoint charts do not inherit agent-slides theme colors.
-    for index, color in enumerate(spec.style.series_colors):
+    for index, color in enumerate(spec.style.series_colors or []):
         if index >= len(chart.series):
             break
         fill = chart.series[index].format.fill
