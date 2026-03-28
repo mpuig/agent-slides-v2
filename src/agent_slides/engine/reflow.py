@@ -6,15 +6,16 @@ from collections.abc import Iterable
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.slide_revisions import resolve_slide_revision
-from agent_slides.engine.text_fit import fit_text
+from agent_slides.engine.text_fit import compose_blocks, fit_blocks
 from agent_slides.model import Deck, LayoutDef, Slide
+from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
 from agent_slides.model.layouts import (
     SLIDE_HEIGHT_PT,
     SLIDE_WIDTH_PT,
 )
 from agent_slides.model.themes import load_theme, resolve_style
-from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
+from agent_slides.model.types import ComputedNode, Node, Theme
 
 
 def _normalize_grid_indices(index: int | list[int]) -> list[int]:
@@ -73,14 +74,44 @@ def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> 
     return margin + x_offset, margin + y_offset, width, height
 
 
-def _text_fit_rules(layout_def: LayoutDef, node: Node) -> TextFitting:
-    slot_name = node.slot_binding or ""
-    slot = layout_def.slots[slot_name]
-    return layout_def.text_fitting[slot.role]
+def _slot_font_size(node: Node, computed: ComputedNode) -> float:
+    if not computed.block_positions:
+        return computed.font_size_pt
+
+    blocks = node.content.blocks
+    indexed_positions = {position.block_index: position for position in computed.block_positions}
+    for index, block in enumerate(blocks):
+        if block.type != "heading" and index in indexed_positions:
+            return indexed_positions[index].font_size_pt
+
+    first_position = computed.block_positions[0]
+    return first_position.font_size_pt
 
 
-def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision: int) -> None:
+def _align_peer_baselines(nodes: list[ComputedNode]) -> None:
+    positioned = [node for node in nodes if node.block_positions]
+    if len(positioned) < 2:
+        return
+
+    baseline_y = max(node.block_positions[0].y for node in positioned)
+    for node in positioned:
+        offset = baseline_y - node.block_positions[0].y
+        if offset <= 0:
+            continue
+        for position in node.block_positions:
+            position.y += offset
+
+
+def _reflow_slide(
+    slide: Slide,
+    layout_def: LayoutDef,
+    theme: Theme,
+    design_rules: DesignRules,
+    *,
+    revision: int,
+) -> None:
     computed: dict[str, ComputedNode] = {}
+    peer_groups: dict[str, list[ComputedNode]] = {}
     slide.revision = revision
 
     for node in slide.nodes:
@@ -133,21 +164,33 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             continue
 
         style = resolve_style(theme, slot.role)
-        fit_rules = _text_fit_rules(layout_def, node)
-        font_size_pt, text_overflow = fit_text(
-            text=node.content,
-            width=width,
-            height=height,
-            default_size=fit_rules.default_size,
-            min_size=fit_rules.min_size,
+        inner_width = max(width - (2 * slot.padding), 0.0)
+        inner_height = max(height - (2 * slot.padding), 0.0)
+        block_fits, text_overflow = fit_blocks(
+            node.content.blocks,
+            inner_width,
+            inner_height,
+            role=slot.role,
+            text_fitting=layout_def.text_fitting,
+            spacing_rules=design_rules.block_spacing,
         )
-
-        computed[node.node_id] = ComputedNode(
+        block_positions = compose_blocks(
             x=x,
             y=y,
             width=width,
             height=height,
-            font_size_pt=font_size_pt,
+            padding=slot.padding,
+            vertical_align=slot.vertical_align,
+            block_fits=block_fits,
+            spacing_rules=design_rules.block_spacing,
+        )
+
+        computed_node = ComputedNode(
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            font_size_pt=block_positions[0].font_size_pt if block_positions else 0.0,
             font_family=str(style["font_family"]),
             color=str(style["color"]),
             bg_color=slot.bg_color if slot.bg_color is not None else theme.colors.background,
@@ -157,15 +200,29 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             image_fit=node.image_fit,
             revision=revision,
             content_type="text",
+            block_positions=block_positions,
         )
+        computed_node.font_size_pt = _slot_font_size(node, computed_node)
+        computed[node.node_id] = computed_node
+        if slot.peer_group:
+            peer_groups.setdefault(slot.peer_group, []).append(computed_node)
+
+    for nodes in peer_groups.values():
+        _align_peer_baselines(nodes)
 
     slide.computed = computed
 
 
-def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
+def reflow_slide(
+    slide: Slide,
+    layout_def: LayoutDef,
+    theme: Theme,
+    design_rules: DesignRules | None = None,
+) -> None:
     """Compute concrete geometry and styling for a single slide."""
 
-    _reflow_slide(slide, layout_def, theme, revision=0)
+    active_design_rules = design_rules or load_design_rules("default")
+    _reflow_slide(slide, layout_def, theme, active_design_rules, revision=0)
 
 
 def reflow_deck(
@@ -178,6 +235,7 @@ def reflow_deck(
 
     active_provider = provider or BuiltinLayoutProvider()
     theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
+    design_rules = load_design_rules(deck.design_rules)
     for slide in deck.slides:
         layout_getter = active_provider.get_layout
         slide_revision = resolve_slide_revision(
@@ -185,7 +243,13 @@ def reflow_deck(
             deck_revision=deck.revision,
             previous_slide_signatures=previous_slide_signatures,
         )
-        _reflow_slide(slide, layout_getter(slide.layout), theme, revision=slide_revision)
+        _reflow_slide(
+            slide,
+            layout_getter(slide.layout),
+            theme,
+            design_rules,
+            revision=slide_revision,
+        )
 
 
 def rebind_slots(

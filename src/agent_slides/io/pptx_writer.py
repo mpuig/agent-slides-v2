@@ -13,7 +13,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
@@ -24,8 +24,8 @@ from agent_slides.io.assets import resolve_image_path
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
-HEADING_SIZE_FACTOR = 1.35
 BULLET_MARGIN_STEP_PT = 18.0
+HEADING_SIZE_FACTOR = 1.35
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -83,12 +83,6 @@ def hex_to_rgb(value: str) -> RGBColor:
 
     normalized = value.lstrip("#")
     return RGBColor.from_string(normalized)
-
-
-def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
-    if block.type == "heading":
-        return computed.font_size_pt * HEADING_SIZE_FACTOR
-    return computed.font_size_pt
 
 
 def _block_lines(block: TextBlock) -> list[str]:
@@ -225,6 +219,24 @@ def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
     pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
 
 
+def _configure_text_frame(text_frame) -> None:
+    text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
+    text_frame.vertical_anchor = MSO_ANCHOR.TOP
+    text_frame.margin_left = 0
+    text_frame.margin_right = 0
+    text_frame.margin_top = 0
+    text_frame.margin_bottom = 0
+
+
+def _apply_run_style(run, *, font_family: str, font_size_pt: float, bold: bool, color: str) -> None:
+    run.font.name = font_family
+    run.font.size = Pt(font_size_pt)
+    run.font.bold = bold
+    run.font.color.rgb = hex_to_rgb(color)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -354,27 +366,64 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
         shape.fill.background()
 
     text_frame = shape.text_frame
-    text_frame.clear()
-    text_frame.word_wrap = True
-    text_frame.auto_size = MSO_AUTO_SIZE.NONE
-    text_frame.margin_left = 0
-    text_frame.margin_right = 0
-    text_frame.margin_top = 0
-    text_frame.margin_bottom = 0
-
+    _configure_text_frame(text_frame)
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
+    if computed.block_positions:
+        positions_by_index = {position.block_index: position for position in computed.block_positions}
+        first_position = computed.block_positions[0]
+        last_position = computed.block_positions[-1]
+        left_margin = max(first_position.x - computed.x, 0.0)
+        top_margin = max(first_position.y - computed.y, 0.0)
+        right_margin = max((computed.x + computed.width) - (first_position.x + first_position.width), 0.0)
+        bottom_margin = max((computed.y + computed.height) - (last_position.y + last_position.height), 0.0)
+
+        text_frame.margin_left = points_to_emu(left_margin)
+        text_frame.margin_right = points_to_emu(right_margin)
+        text_frame.margin_top = points_to_emu(top_margin)
+        text_frame.margin_bottom = points_to_emu(bottom_margin)
+
+        paragraph_index = 0
+        for index, block in enumerate(blocks):
+            position = positions_by_index.get(index)
+            if position is None:
+                continue
+
+            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+            _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            next_position = positions_by_index.get(index + 1)
+            gap_after = 0.0 if next_position is None else max(next_position.y - (position.y + position.height), 0.0)
+            paragraph.space_after = Pt(gap_after)
+
+            run = paragraph.add_run()
+            run.text = block.text
+            _apply_run_style(
+                run,
+                font_family=computed.font_family,
+                font_size_pt=position.font_size_pt,
+                bold=computed.font_bold or block.type == "heading",
+                color=computed.color,
+            )
+            paragraph_index += 1
+        return
+
     paragraph_index = 0
     for block in blocks:
         for line in _block_lines(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            paragraph.space_after = Pt(0)
 
             run = paragraph.add_run()
             run.text = line
-            run.font.name = computed.font_family
-            run.font.size = Pt(_block_font_size(computed, block))
-            run.font.bold = computed.font_bold or block.type == "heading"
-            run.font.color.rgb = hex_to_rgb(computed.color)
+            _apply_run_style(
+                run,
+                font_family=computed.font_family,
+                font_size_pt=computed.font_size_pt * HEADING_SIZE_FACTOR if block.type == "heading" else computed.font_size_pt,
+                bold=computed.font_bold or block.type == "heading",
+                color=computed.color,
+            )
             paragraph_index += 1
 
 

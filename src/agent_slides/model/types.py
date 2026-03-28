@@ -25,6 +25,7 @@ ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut
 NodeType = Literal["text", "image", "chart"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
+SlotVerticalAlign = Literal["top", "middle", "bottom"]
 
 
 class AgentSlidesModel(BaseModel):
@@ -35,6 +36,15 @@ class AgentSlidesModel(BaseModel):
         validate_by_alias=True,
         validate_by_name=True,
     )
+
+
+class BlockPosition(AgentSlidesModel):
+    block_index: int
+    x: float
+    y: float
+    width: float
+    height: float
+    font_size_pt: float
 
 
 class ComputedNode(AgentSlidesModel):
@@ -52,6 +62,7 @@ class ComputedNode(AgentSlidesModel):
     revision: int
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
+    block_positions: list[BlockPosition] = Field(default_factory=list)
 
 
 class TextBlock(AgentSlidesModel):
@@ -342,6 +353,9 @@ class SlotDef(AgentSlidesModel):
     grid_col: int | list[int]
     role: SlotRole
     full_bleed: bool = False
+    padding: float = 8.0
+    vertical_align: SlotVerticalAlign = "top"
+    peer_group: str | None = None
     x: float | None = None
     y: float | None = None
     width: float | None = None
@@ -354,6 +368,13 @@ class SlotDef(AgentSlidesModel):
     def validate_bg_transparency(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
             raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
+
+    @field_validator("padding")
+    @classmethod
+    def validate_padding(cls, value: float) -> float:
+        if value < 0.0:
+            raise ValueError("padding must be greater than or equal to 0.0")
         return value
 
 

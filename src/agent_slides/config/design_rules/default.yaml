@@ -20,3 +20,11 @@ layout_hints:
   max_bullets_for_single_column: 5
   equal_length_threshold: 0.4
   short_text_threshold: 10
+block_spacing:
+  heading_to_paragraph: 12.0
+  heading_to_bullet: 10.0
+  paragraph_to_paragraph: 6.0
+  paragraph_to_bullet: 8.0
+  bullet_to_bullet: 4.0
+  bullet_to_paragraph: 8.0
+  default: 6.0
