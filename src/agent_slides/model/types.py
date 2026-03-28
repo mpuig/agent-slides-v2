@@ -59,8 +59,16 @@ class ThemeColors(AgentSlidesModel):
     accent: str
     background: str
     text: str
-    heading_text: str
-    subtle_text: str
+    heading_text: str | None = None
+    subtle_text: str | None = None
+
+    @model_validator(mode="after")
+    def apply_role_defaults(self) -> ThemeColors:
+        if self.heading_text is None:
+            self.heading_text = self.primary
+        if self.subtle_text is None:
+            self.subtle_text = self.text
+        return self
 
 
 class ThemeFonts(AgentSlidesModel):
@@ -143,12 +151,10 @@ class Deck(AgentSlidesModel):
 
     def next_slide_id(self) -> str:
         self.counters.slides += 1
-        self.bump_revision()
         return f"s-{self.counters.slides}"
 
     def next_node_id(self) -> str:
         self.counters.nodes += 1
-        self.bump_revision()
         return f"n-{self.counters.nodes}"
 
     def bump_revision(self) -> None:
