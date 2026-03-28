@@ -10,10 +10,10 @@ The key idea: deck edits are structural. Add a slide, switch layouts, set slot c
 pip install agent-slides
 ```
 
-Or with chat mode (conversational UI via Anthropic API):
+For development:
 
 ```bash
-pip install agent-slides[chat]
+uv sync --group dev
 ```
 
 ## Quick Start
@@ -130,6 +130,8 @@ Three skills ship with the project in `skills/`:
 | `edit-slide` | Modify an existing deck: inspect, smallest mutation, validate. |
 | `review-deck` | Visual QA: LibreOffice-rendered screenshots scored against a checklist. |
 
+These skills are the LLM interface. Agents drive the conversation; `agent-slides` stays model-agnostic and exposes deterministic CLI commands plus the preview viewer.
+
 Symlink to `.claude/skills/` for Claude Code integration:
 
 ```bash
@@ -137,6 +139,21 @@ ln -sf $(pwd)/skills/create-deck .claude/skills/create-deck
 ln -sf $(pwd)/skills/edit-slide .claude/skills/edit-slide
 ln -sf $(pwd)/skills/review-deck .claude/skills/review-deck
 ```
+
+## Conversational Workflow
+
+The agent (Claude Code, Codex, Cursor) is the conversational interface. The preview is a slide viewer. No separate chat UI.
+
+```
+Terminal (agent)                    Browser (preview)
+  User: "make a deck about X"        agent-slides preview deck.json
+  Agent loads create-deck skill       → slides appear as agent builds
+  Agent runs CLI commands             → preview auto-updates via WebSocket
+  Agent runs validate + QA            → pixel-perfect via LibreOffice
+  Agent runs build -o deck.pptx       → user opens PPTX
+```
+
+Start the preview in one terminal, talk to the agent in another. The agent runs CLI commands, the preview updates automatically.
 
 ## Architecture
 
@@ -150,6 +167,13 @@ Scene-graph model with two-file persistence:
 Node types: `text` (structured TextBlocks with paragraph, bullet, heading types), `image`, `chart` (native editable PowerPoint charts).
 
 The LayoutProvider protocol abstracts built-in layouts from template-learned layouts, so commands work identically in both modes.
+
+## System Dependencies
+
+For pixel-perfect preview rendering (optional, falls back to SVG):
+
+- `soffice` (LibreOffice headless): `brew install libreoffice` / `apt install libreoffice-core`
+- `pdftoppm` (poppler-utils): `brew install poppler` / `apt install poppler-utils`
 
 ## Development
 

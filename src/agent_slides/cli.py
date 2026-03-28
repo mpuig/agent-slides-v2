@@ -9,7 +9,6 @@ import click
 from agent_slides import __version__
 from agent_slides.commands.batch import batch
 from agent_slides.commands.build import build_command
-from agent_slides.commands.chat import chat_command
 from agent_slides.commands.chart import chart
 from agent_slides.commands.contract import contract_command
 from agent_slides.commands.info import info_command
@@ -57,7 +56,6 @@ def cli() -> None:
 
 
 cli.add_command(batch)
-cli.add_command(chat_command)
 cli.add_command(chart)
 cli.add_command(contract_command)
 cli.add_command(init_command)
