@@ -1305,6 +1305,148 @@ def test_chart_add_invalid_chart_data_returns_json_error(tmp_path: Path) -> None
     ]
 
 
+def test_shape_add_creates_slide_level_shape_node(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "shape",
+            "add",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--type",
+            "rounded_rectangle",
+            "--x",
+            "60",
+            "--y",
+            "120",
+            "--w",
+            "280",
+            "--h",
+            "350",
+            "--fill",
+            "#F2F2F2",
+            "--line-color",
+            "#1A73E8",
+            "--line-width",
+            "2",
+            "--corner-radius",
+            "5",
+            "--shadow",
+            "--dash",
+            "dashDot",
+            "--opacity",
+            "0.75",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    shape_node = updated.slides[0].nodes[-1]
+    computed = updated.slides[0].computed[shape_node.node_id]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "node_id": "n-3",
+            "shape_type": "rounded_rectangle",
+            "x": 60.0,
+            "y": 120.0,
+            "w": 280.0,
+            "h": 350.0,
+            "fill_color": "#F2F2F2",
+            "line_color": "#1A73E8",
+            "line_width": 2.0,
+            "corner_radius": 5.0,
+            "shadow": True,
+            "dash": "dashDot",
+            "opacity": 0.75,
+            "z_index": -1,
+        },
+    }
+    assert shape_node.type == "shape"
+    assert shape_node.slot_binding is None
+    assert shape_node.shape_spec is not None
+    assert shape_node.shape_spec.shape_type == "rounded_rectangle"
+    assert shape_node.shape_spec.fill_color == "#F2F2F2"
+    assert shape_node.shape_spec.line_color == "#1A73E8"
+    assert shape_node.style_overrides == {
+        "x": 60.0,
+        "y": 120.0,
+        "width": 280.0,
+        "height": 350.0,
+        "z_index": -1,
+    }
+    assert computed.content_type == "shape"
+    assert computed.x == 60.0
+    assert computed.width == 280.0
+
+
+def test_batch_supports_shape_add(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title"}},
+                {
+                    "command": "shape_add",
+                    "args": {
+                        "slide": 0,
+                        "type": "line",
+                        "x": 60,
+                        "y": 300,
+                        "w": 600,
+                        "h": 0,
+                        "color": "#CCCCCC",
+                        "line_width": 1.5,
+                        "dash": "dash",
+                    },
+                },
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 2
+    assert payload["data"]["results"][1] == {
+        "slide_id": "s-1",
+        "node_id": "n-3",
+        "shape_type": "line",
+        "x": 60.0,
+        "y": 300.0,
+        "w": 600.0,
+        "h": 0.0,
+        "fill_color": None,
+        "line_color": "#CCCCCC",
+        "line_width": 1.5,
+        "corner_radius": 0.0,
+        "shadow": False,
+        "dash": "dash",
+        "opacity": 1.0,
+        "z_index": -1,
+    }
+
+    deck = read_deck(str(deck_path))
+    shape_node = deck.slides[0].nodes[-1]
+    assert shape_node.type == "shape"
+    assert shape_node.shape_spec is not None
+    assert shape_node.shape_spec.shape_type == "line"
+    assert shape_node.shape_spec.line_color == "#CCCCCC"
+    assert deck.slides[0].computed[shape_node.node_id].content_type == "shape"
+
+
 def test_table_add_creates_table_node_with_inline_data(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(

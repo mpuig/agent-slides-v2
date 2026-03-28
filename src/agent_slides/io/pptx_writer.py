@@ -13,6 +13,8 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
+from pptx.enum.shapes import MSO_CONNECTOR_TYPE, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
@@ -34,6 +36,18 @@ CHART_TYPE_MAP = {
     "pie": XL_CHART_TYPE.PIE,
     "area": XL_CHART_TYPE.AREA,
     "doughnut": XL_CHART_TYPE.DOUGHNUT,
+}
+SHAPE_TYPE_MAP = {
+    "rectangle": MSO_SHAPE.RECTANGLE,
+    "rounded_rectangle": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "oval": MSO_SHAPE.OVAL,
+    "arrow": MSO_SHAPE.RIGHT_ARROW,
+    "chevron": MSO_SHAPE.CHEVRON,
+}
+DASH_STYLE_MAP = {
+    "dash": MSO_LINE_DASH_STYLE.DASH,
+    "dot": MSO_LINE_DASH_STYLE.ROUND_DOT,
+    "dashDot": MSO_LINE_DASH_STYLE.DASH_DOT,
 }
 
 
@@ -352,6 +366,118 @@ def _warn_if_template_changed(template_path: Path, expected_hash: str) -> None:
     )
 
 
+def _node_z_index(node: Node) -> int:
+    z_index = node.style_overrides.get("z_index")
+    if isinstance(z_index, int):
+        return z_index
+    if node.type == "shape":
+        return -1
+    return 0
+
+
+def _iter_rendered_nodes(nodes: list[Node]) -> list[Node]:
+    return [
+        node
+        for _, node in sorted(
+            enumerate(nodes),
+            key=lambda item: (_node_z_index(item[1]), item[0]),
+        )
+    ]
+
+
+def _shape_fill_color(node: Node) -> str | None:
+    spec = node.shape_spec
+    if spec is None:
+        return None
+    if spec.fill_color is not None:
+        return spec.fill_color
+    if spec.shape_type in {"arrow", "chevron"}:
+        return spec.line_color
+    return None
+
+
+def _apply_shape_shadow(shape) -> None:
+    shape.shadow.inherit = False
+    effect_list = shape._element.spPr.get_or_add_effectLst()
+    effect_list.clear()
+    shadow = OxmlElement("a:outerShdw")
+    shadow.set("blurRad", str(points_to_emu(3.0)))
+    shadow.set("dist", str(points_to_emu(2.0)))
+    shadow.set("dir", "5400000")
+    shadow.set("algn", "ctr")
+    shadow.set("rotWithShape", "0")
+    color = OxmlElement("a:srgbClr")
+    color.set("val", "000000")
+    alpha = OxmlElement("a:alpha")
+    alpha.set("val", "18000")
+    color.append(alpha)
+    shadow.append(color)
+    effect_list.append(shadow)
+
+
+def _apply_shape_line(shape, node: Node) -> None:
+    spec = node.shape_spec
+    if spec is None:
+        return
+
+    color = spec.line_color
+    if spec.shape_type == "line":
+        color = color or spec.fill_color or "#333333"
+
+    if color is None or spec.line_width == 0:
+        shape.line.fill.background()
+        return
+
+    shape.line.color.rgb = hex_to_rgb(color)
+    shape.line.width = Pt(spec.line_width)
+    shape.line.fill.transparency = max(0.0, min(1.0, 1.0 - spec.opacity))
+    if spec.dash is not None:
+        shape.line.dash_style = DASH_STYLE_MAP[spec.dash]
+
+
+def _render_shape_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    spec = node.shape_spec
+    if spec is None:
+        return
+
+    if spec.shape_type == "line":
+        shape = slide_shape_collection.add_connector(
+            MSO_CONNECTOR_TYPE.STRAIGHT,
+            points_to_emu(computed.x),
+            points_to_emu(computed.y),
+            points_to_emu(computed.x + computed.width),
+            points_to_emu(computed.y + computed.height),
+        )
+        _apply_shape_line(shape, node)
+        if spec.shadow:
+            _apply_shape_shadow(shape)
+        return
+
+    shape = slide_shape_collection.add_shape(
+        SHAPE_TYPE_MAP[spec.shape_type],
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+    )
+
+    fill_color = _shape_fill_color(node)
+    if fill_color is None:
+        shape.fill.background()
+    else:
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = hex_to_rgb(fill_color)
+        shape.fill.transparency = max(0.0, min(1.0, 1.0 - spec.opacity))
+
+    _apply_shape_line(shape, node)
+
+    if spec.shape_type == "rounded_rectangle" and len(shape.adjustments) > 0 and computed.height > 0 and computed.width > 0:
+        shape.adjustments[0] = min(1.0, max(0.0, (spec.corner_radius * 2.0) / min(computed.width, computed.height)))
+
+    if spec.shadow:
+        _apply_shape_shadow(shape)
+
+
 def _delete_all_slides(prs: Presentation) -> None:
     """Remove every slide from a presentation while keeping masters and layouts."""
 
@@ -431,6 +557,11 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
     for slide in deck.slides:
         binding = registry.binding_for(slide.layout)
         pptx_slide = presentation.slides.add_slide(_resolve_layout(presentation, slide.layout, binding))
+        for node in _iter_rendered_nodes(slide.nodes):
+            if node.type == "shape":
+                computed = slide.computed.get(node.node_id)
+                if computed is not None:
+                    _render_shape_node(pptx_slide.shapes, node, computed)
         for node in slide.nodes:
             _fill_placeholder(node, binding.slot_mapping, pptx_slide)
 
@@ -711,15 +842,14 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
         if not slide.computed:
             continue
 
-        for node in slide.nodes:
-            if node.slot_binding is None:
-                continue
-
+        for node in _iter_rendered_nodes(slide.nodes):
             computed = slide.computed.get(node.node_id)
             if computed is None:
                 continue
 
-            if node.type == "chart":
+            if node.type == "shape":
+                _render_shape_node(pptx_slide.shapes, node, computed)
+            elif node.type == "chart":
                 _render_chart_node(pptx_slide.shapes, node, computed)
             elif node.type == "table":
                 _render_table_node(pptx_slide.shapes, node, computed, theme=theme)
@@ -730,7 +860,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
                     computed,
                     asset_base_dir=asset_base_dir,
                 )
-            else:
+            elif node.slot_binding is not None:
                 _render_text_node(pptx_slide.shapes, node, computed)
 
     presentation.save(Path(output_path))

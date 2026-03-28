@@ -613,6 +613,23 @@
 
       const chartTypeLabel = (chartType) => chartTypeLabels[chartType] ?? "Chart";
 
+      const nodeZIndex = (node) => {
+        const zIndex = node?.style_overrides?.z_index;
+        if (Number.isInteger(zIndex)) {
+          return zIndex;
+        }
+        return node?.type === "shape" ? -1 : 0;
+      };
+
+      const sortedNodes = (nodes) =>
+        [...(Array.isArray(nodes) ? nodes : [])]
+          .map((node, index) => ({ node, index }))
+          .sort((left, right) => {
+            const zDiff = nodeZIndex(left.node) - nodeZIndex(right.node);
+            return zDiff !== 0 ? zDiff : left.index - right.index;
+          })
+          .map((entry) => entry.node);
+
       const summarizeChart = (chartSpec) => {
         if (!chartSpec || typeof chartSpec !== "object") {
           return "Chart: no data";
@@ -1054,6 +1071,134 @@
         );
       };
 
+      const shapeFillColor = (shapeSpec) => {
+        if (shapeSpec?.fill_color) {
+          return shapeSpec.fill_color;
+        }
+        if (shapeSpec?.shape_type === "arrow" || shapeSpec?.shape_type === "chevron") {
+          return shapeSpec?.line_color || null;
+        }
+        return null;
+      };
+
+      const shapeOpacity = (shapeSpec) => {
+        const opacity = Number(shapeSpec?.opacity ?? 1);
+        return Math.max(0, Math.min(1, opacity));
+      };
+
+      const appendShapeShadow = (element, shapeSpec) => {
+        if (!shapeSpec?.shadow) {
+          return;
+        }
+        const shadow = element.cloneNode(false);
+        shadow.setAttribute("transform", "translate(3 4)");
+        shadow.setAttribute("fill", "#000000");
+        shadow.setAttribute("stroke", "#000000");
+        shadow.setAttribute("opacity", "0.12");
+        stage.appendChild(shadow);
+      };
+
+      const renderShapeNode = (node, computed) => {
+        const shapeSpec = node.shape_spec ?? {};
+        const x = Number(computed.x);
+        const y = Number(computed.y);
+        const width = Number(computed.width);
+        const height = Number(computed.height);
+        const lineWidth = Math.max(0, Number(shapeSpec.line_width ?? 1));
+        const dash = shapeSpec.dash === "dash"
+          ? "8 6"
+          : shapeSpec.dash === "dot"
+            ? "2 6"
+            : shapeSpec.dash === "dashDot"
+              ? "8 6 2 6"
+              : null;
+        const stroke = shapeSpec.line_color || shapeSpec.fill_color || "#333333";
+        const fill = shapeFillColor(shapeSpec);
+        const opacity = shapeOpacity(shapeSpec);
+
+        if (shapeSpec.shape_type === "line") {
+          const line = createSvgElement("line", {
+            x1: x,
+            y1: y,
+            x2: x + width,
+            y2: y + height,
+            stroke,
+            "stroke-width": Math.max(1, lineWidth),
+            "stroke-linecap": "round",
+            opacity,
+          });
+          if (dash) {
+            line.setAttribute("stroke-dasharray", dash);
+          }
+          appendShapeShadow(line, shapeSpec);
+          stage.appendChild(line);
+          return;
+        }
+
+        let shape;
+        if (shapeSpec.shape_type === "oval") {
+          shape = createSvgElement("ellipse", {
+            cx: x + (width / 2),
+            cy: y + (height / 2),
+            rx: width / 2,
+            ry: height / 2,
+          });
+        } else if (shapeSpec.shape_type === "arrow") {
+          const bodyHeight = Math.max(8, height * 0.42);
+          const shaftTop = y + ((height - bodyHeight) / 2);
+          const headWidth = Math.max(18, width * 0.24);
+          shape = createSvgElement("polygon", {
+            points: [
+              `${x},${shaftTop}`,
+              `${x + width - headWidth},${shaftTop}`,
+              `${x + width - headWidth},${y}`,
+              `${x + width},${y + height / 2}`,
+              `${x + width - headWidth},${y + height}`,
+              `${x + width - headWidth},${shaftTop + bodyHeight}`,
+              `${x},${shaftTop + bodyHeight}`,
+            ].join(" "),
+          });
+        } else if (shapeSpec.shape_type === "chevron") {
+          const inset = Math.max(12, width * 0.18);
+          shape = createSvgElement("polygon", {
+            points: [
+              `${x},${y}`,
+              `${x + width - inset},${y}`,
+              `${x + width},${y + height / 2}`,
+              `${x + width - inset},${y + height}`,
+              `${x},${y + height}`,
+              `${x + inset},${y + height / 2}`,
+            ].join(" "),
+          });
+        } else {
+          shape = createSvgElement("rect", {
+            x,
+            y,
+            width,
+            height,
+          });
+          if (shapeSpec.shape_type === "rounded_rectangle") {
+            const radius = Math.min(
+              Math.max(0, Number(shapeSpec.corner_radius ?? 0)),
+              Math.min(width, height) / 2,
+            );
+            shape.setAttribute("rx", `${radius}`);
+            shape.setAttribute("ry", `${radius}`);
+          }
+        }
+
+        appendShapeShadow(shape, shapeSpec);
+        shape.setAttribute("fill", fill || "transparent");
+        shape.setAttribute("fill-opacity", fill ? `${opacity}` : "0");
+        shape.setAttribute("stroke", stroke);
+        shape.setAttribute("stroke-opacity", `${opacity}`);
+        shape.setAttribute("stroke-width", `${lineWidth}`);
+        if (dash) {
+          shape.setAttribute("stroke-dasharray", dash);
+        }
+        stage.appendChild(shape);
+      };
+
       const renderTextBlock = ({ block, bounds, fontFamily, color, fontBold }) => {
         const text = createSvgElement("text");
         const fontSize = Number(bounds.font_size_pt ?? 18);
@@ -1359,9 +1504,14 @@
         showSurface("svg");
 
         const slide = slides[currentSlideIndex];
-        for (const node of slide.nodes ?? []) {
+        for (const node of sortedNodes(slide.nodes)) {
           const computed = slide.computed?.[node.node_id];
           if (!computed) {
+            continue;
+          }
+
+          if (node.type === "shape" || computed.content_type === "shape") {
+            renderShapeNode(node, computed);
             continue;
           }
 

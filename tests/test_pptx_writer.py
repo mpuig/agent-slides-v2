@@ -11,7 +11,8 @@ import pytest
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
+from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
 from pptx.util import Inches, Pt
 
@@ -32,6 +33,7 @@ from agent_slides.model.types import (
     NodeContent,
     ScatterPoint,
     ScatterSeries,
+    ShapeSpec,
     Slide,
     TableSpec,
     TextBlock,
@@ -162,6 +164,29 @@ def chart_computed(
     )
 
 
+def shape_computed(
+    *,
+    revision: int = 1,
+    x: float = 60.0,
+    y: float = 120.0,
+    width: float = 180.0,
+    height: float = 120.0,
+) -> ComputedNode:
+    return ComputedNode(
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        font_size_pt=0.0,
+        font_family="",
+        color="#000000",
+        bg_color=None,
+        font_bold=False,
+        revision=revision,
+        content_type="shape",
+    )
+
+
 def first_chart_shape(presentation: Presentation):
     return next(shape for shape in presentation.slides[0].shapes if shape.shape_type == MSO_SHAPE_TYPE.CHART)
 
@@ -204,6 +229,162 @@ def find_layout(manifest: dict[str, object], required_slots: Iterable[str]) -> d
             if required.issubset(slot_mapping):
                 return layout
     raise AssertionError(f"No layout found with slots {sorted(required)}")
+
+
+@pytest.mark.parametrize(
+    ("shape_type", "expected_auto_shape"),
+    [
+        ("rectangle", MSO_SHAPE.RECTANGLE),
+        ("rounded_rectangle", MSO_SHAPE.ROUNDED_RECTANGLE),
+        ("oval", MSO_SHAPE.OVAL),
+        ("arrow", MSO_SHAPE.RIGHT_ARROW),
+        ("chevron", MSO_SHAPE.CHEVRON),
+    ],
+)
+def test_write_pptx_renders_auto_shape_primitives(tmp_path: Path, shape_type: str, expected_auto_shape) -> None:
+    output_path = tmp_path / f"{shape_type}.pptx"
+    deck = Deck(
+        deck_id=f"deck-{shape_type}",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[
+                    Node(
+                        node_id="n-shape",
+                        type="shape",
+                        shape_spec=ShapeSpec(
+                            shape_type=shape_type,
+                            fill_color="#F2F2F2",
+                            line_color="#1A73E8",
+                            line_width=2.0,
+                            corner_radius=8.0,
+                            opacity=0.8,
+                        ),
+                        style_overrides={"x": 60.0, "y": 120.0, "width": 180.0, "height": 120.0, "z_index": -1},
+                    )
+                ],
+                computed={"n-shape": shape_computed()},
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    shape = presentation.slides[0].shapes[0]
+
+    assert shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+    assert shape.auto_shape_type == expected_auto_shape
+    assert shape.left == int(60.0 * EMU_PER_POINT)
+    assert shape.top == int(120.0 * EMU_PER_POINT)
+    assert shape.width == int(180.0 * EMU_PER_POINT)
+    assert shape.height == int(120.0 * EMU_PER_POINT)
+    assert shape.fill.fore_color.rgb == RGBColor.from_string("F2F2F2")
+    assert shape.line.color.rgb == RGBColor.from_string("1A73E8")
+    if shape_type == "rounded_rectangle":
+        assert shape.adjustments[0] == pytest.approx((8.0 * 2.0) / 120.0, abs=1e-4)
+
+
+def test_write_pptx_renders_line_shape_primitive(tmp_path: Path) -> None:
+    output_path = tmp_path / "line.pptx"
+    deck = Deck(
+        deck_id="deck-line",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[
+                    Node(
+                        node_id="n-line",
+                        type="shape",
+                        shape_spec=ShapeSpec(
+                            shape_type="line",
+                            line_color="#333333",
+                            line_width=1.5,
+                            dash="dash",
+                        ),
+                        style_overrides={"x": 60.0, "y": 300.0, "width": 600.0, "height": 0.0, "z_index": -1},
+                    )
+                ],
+                computed={
+                    "n-line": shape_computed(x=60.0, y=300.0, width=600.0, height=0.0),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    shape = presentation.slides[0].shapes[0]
+
+    assert shape.shape_type == MSO_SHAPE_TYPE.LINE
+    assert shape.begin_x == int(60.0 * EMU_PER_POINT)
+    assert shape.end_x == int(660.0 * EMU_PER_POINT)
+    assert shape.line.color.rgb == RGBColor.from_string("333333")
+    assert shape.line.width.pt == pytest.approx(1.5)
+    assert shape.line.dash_style == MSO_LINE_DASH_STYLE.DASH
+
+
+def test_write_pptx_renders_shapes_before_text_nodes(tmp_path: Path) -> None:
+    output_path = tmp_path / "shape-z-order.pptx"
+    deck = Deck(
+        deck_id="deck-z-order",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[
+                    Node(
+                        node_id="n-text",
+                        slot_binding="heading",
+                        type="text",
+                        content="Foreground title",
+                    ),
+                    Node(
+                        node_id="n-shape",
+                        type="shape",
+                        shape_spec=ShapeSpec(
+                            shape_type="rectangle",
+                            fill_color="#F2F2F2",
+                            line_color="#CCCCCC",
+                            shadow=True,
+                            opacity=0.9,
+                        ),
+                        style_overrides={"x": 48.0, "y": 96.0, "width": 624.0, "height": 180.0, "z_index": -1},
+                    ),
+                ],
+                computed={
+                    "n-text": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=576.0,
+                        height=80.0,
+                        font_size_pt=28.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=True,
+                        revision=1,
+                    ),
+                    "n-shape": shape_computed(x=48.0, y=96.0, width=624.0, height=180.0),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    assert presentation.slides[0].shapes[0].shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+    assert presentation.slides[0].shapes[1].has_text_frame is True
+
+    slide_xml = read_slide_xml(output_path)
+    assert slide_xml.find(".//a:effectLst/a:outerShdw", DRAWING_NS) is not None
 
 
 @pytest.mark.parametrize(
