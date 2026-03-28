@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent_slides.engine.reflow import rebind_slots, reflow_slide
 from agent_slides.model import Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.themes import load_theme
+
+
+def make_image(tmp_path: Path, name: str) -> Path:
+    image_path = tmp_path / name
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nimage-bytes")
+    return image_path
 
 
 @pytest.mark.parametrize(
@@ -36,12 +44,13 @@ def test_image_capable_layouts_are_registered_with_expected_slots(
     assert {slot_name: slot.role for slot_name, slot in layout.slots.items()} == expected_roles
 
 
-def test_reflow_image_left_computes_mixed_image_and_text_frames() -> None:
+def test_reflow_image_left_computes_mixed_image_and_text_frames(tmp_path: Path) -> None:
+    image_path = make_image(tmp_path, "example.png")
     slide = Slide(
         slide_id="s-1",
         layout="image_left",
         nodes=[
-            Node(node_id="n-1", slot_binding="image", type="image", image_path="/tmp/example.png"),
+            Node(node_id="n-1", slot_binding="image", type="image", image_path=str(image_path)),
             Node(node_id="n-2", slot_binding="heading", type="text", content="Quarterly growth"),
             Node(node_id="n-3", slot_binding="body", type="text", content="Revenue expanded across all regions."),
         ],
@@ -70,12 +79,13 @@ def test_reflow_image_left_computes_mixed_image_and_text_frames() -> None:
     assert body.height == pytest.approx(302.4)
 
 
-def test_reflow_hero_image_full_bleed_image_and_overlay_text() -> None:
+def test_reflow_hero_image_full_bleed_image_and_overlay_text(tmp_path: Path) -> None:
+    image_path = make_image(tmp_path, "hero.png")
     slide = Slide(
         slide_id="s-hero",
         layout="hero_image",
         nodes=[
-            Node(node_id="n-1", slot_binding="image", type="image", image_path="/tmp/hero.png"),
+            Node(node_id="n-1", slot_binding="image", type="image", image_path=str(image_path)),
             Node(node_id="n-2", slot_binding="heading", type="text", content="Launch day"),
             Node(node_id="n-3", slot_binding="subheading", type="text", content="A single story over a full-bleed visual."),
         ],
@@ -120,3 +130,4 @@ def test_rebind_slots_creates_image_nodes_for_image_layouts() -> None:
         ("img3", "image"),
         ("img4", "image"),
     ]
+    assert all(node.style_overrides.get("placeholder") is True for node in slide.nodes[2:])

@@ -17,7 +17,7 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = prepare_deck(tmp_path)
 
-        async with PreviewServer(str(deck_path)) as server:
+        async with make_server(deck_path) as server:
             async with connect(server.url) as websocket:
                 updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("watcher"))
                 payload = await receive_update(websocket)
@@ -36,7 +36,7 @@ def test_multiple_rapid_mutations_debounce(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = prepare_deck(tmp_path)
 
-        async with PreviewServer(str(deck_path), debounce_interval=0.05) as server:
+        async with make_server(deck_path, debounce_interval=0.05) as server:
             async with connect(server.url) as websocket:
                 for index in range(5):
                     mutate_deck(str(deck_path), apply_slot_mutation(f"rapid-{index}"))
@@ -56,7 +56,7 @@ def test_server_handles_client_disconnect_gracefully(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = prepare_deck(tmp_path)
 
-        async with PreviewServer(str(deck_path)) as server:
+        async with make_server(deck_path) as server:
             async with connect(server.url):
                 pass
 
@@ -71,7 +71,7 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
     async def scenario() -> None:
         deck_path = prepare_deck(tmp_path)
 
-        async with PreviewServer(str(deck_path)) as server:
+        async with make_server(deck_path) as server:
             async with (
                 connect(server.url) as client_one,
                 connect(server.url) as client_two,
@@ -92,6 +92,10 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
         )
 
     asyncio.run(scenario())
+
+
+def make_server(deck_path: Path, **kwargs: Any) -> PreviewServer:
+    return PreviewServer(str(deck_path), host="127.0.0.1", port=0, **kwargs)
 
 
 def prepare_deck(tmp_path: Path) -> Path:
