@@ -100,6 +100,44 @@ def test_read_deck_wrong_structure_raises_schema_error_with_details(tmp_path: Pa
     assert "slides" in exc_info.value.message
 
 
+def test_read_deck_accepts_legacy_string_content_and_version_one(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "deck_id": "deck-1",
+                "revision": 0,
+                "theme": "default",
+                "design_rules": "default",
+                "slides": [
+                    {
+                        "slide_id": "s-1",
+                        "layout": "title",
+                        "nodes": [
+                            {
+                                "node_id": "n-1",
+                                "slot_binding": "heading",
+                                "type": "text",
+                                "content": "Legacy title",
+                            }
+                        ],
+                    }
+                ],
+                "_counters": {"slides": 1, "nodes": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    deck = read_deck(str(deck_path))
+
+    assert deck.version == 1
+    assert deck.slides[0].nodes[0].content.model_dump(mode="json") == {
+        "blocks": [{"type": "paragraph", "text": "Legacy title", "level": 0}]
+    }
+
+
 def test_write_deck_uses_atomic_temp_file_and_rename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

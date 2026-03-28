@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agent_slides.engine.text_fit import fit_text
+from agent_slides.model.types import NodeContent, TextBlock
 
 
 def test_short_text_fits_at_default_size() -> None:
@@ -38,4 +39,20 @@ def test_shrinking_happens_in_two_point_steps() -> None:
     font_size, overflowed = fit_text("A" * 50, width=180, height=170, default_size=32)
 
     assert font_size == 28
+    assert overflowed is False
+
+
+def test_structured_blocks_account_for_heading_hierarchy_and_spacing() -> None:
+    content = NodeContent(
+        blocks=[
+            TextBlock(type="heading", text="Overview"),
+            TextBlock(type="bullet", text="First key point"),
+            TextBlock(type="bullet", text="Second key point"),
+            TextBlock(type="bullet", text="Third key point"),
+        ]
+    )
+
+    font_size, overflowed = fit_text(content, width=180, height=90, default_size=24)
+
+    assert font_size < 24
     assert overflowed is False

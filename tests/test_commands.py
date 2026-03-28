@@ -179,7 +179,7 @@ def test_init_creates_valid_deck_file_and_reports_success_json(tmp_path: Path) -
     assert payload["slides"] == []
     assert payload["theme"] == "default"
     assert payload["design_rules"] == "default"
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert payload["_counters"] == {"slides": 0, "nodes": 0}
     assert computed_path.exists()
     assert read_computed_deck(str(deck_path)).slides == []
@@ -512,12 +512,12 @@ def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     deck = read_deck(str(deck_path))
     assert deck.revision == 1
     assert [slide.layout for slide in deck.slides] == ["title", "two_col"]
-    assert [(node.slot_binding, node.content) for node in deck.slides[0].nodes] == [
+    assert [(node.slot_binding, node.content.to_plain_text()) for node in deck.slides[0].nodes] == [
         ("heading", "Hello"),
         ("subheading", "World"),
     ]
     assert deck.slides[0].nodes[1].style_overrides["font_size"] == 18.0
-    assert [(node.slot_binding, node.content) for node in deck.slides[1].nodes] == [
+    assert [(node.slot_binding, node.content.to_plain_text()) for node in deck.slides[1].nodes] == [
         ("heading", "Key Points"),
         ("col1", ""),
         ("col2", ""),
@@ -545,6 +545,54 @@ def test_batch_rolls_back_and_reports_operation_index_on_failure(tmp_path: Path)
     assert error["operation_index"] == 1
     assert deck_path.read_text(encoding="utf-8") == original_payload
     assert read_deck(str(deck_path)).slides == []
+
+
+def test_batch_slot_set_accepts_structured_content_objects(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "two_col"}},
+                {
+                    "command": "slot_set",
+                    "args": {
+                        "slide": 0,
+                        "slot": "left",
+                        "content": {
+                            "blocks": [
+                                {"type": "heading", "text": "Highlights"},
+                                {"type": "bullet", "text": "Point one"},
+                                {"type": "bullet", "text": "Point two", "level": 1},
+                            ]
+                        },
+                    },
+                },
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["results"][1]["content"] == {
+        "blocks": [
+            {"type": "heading", "text": "Highlights", "level": 0},
+            {"type": "bullet", "text": "Point one", "level": 0},
+            {"type": "bullet", "text": "Point two", "level": 1},
+        ]
+    }
+
+    deck = read_deck(str(deck_path))
+    assert deck.slides[0].nodes[1].slot_binding == "col1"
+    assert deck.slides[0].nodes[1].content.model_dump(mode="json") == {
+        "blocks": [
+            {"type": "heading", "text": "Highlights", "level": 0},
+            {"type": "bullet", "text": "Point one", "level": 0},
+            {"type": "bullet", "text": "Point two", "level": 1},
+        ]
+    }
 
 
 def test_batch_empty_array_is_a_successful_no_op(tmp_path: Path) -> None:
@@ -630,9 +678,9 @@ def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:
     assert len(deck.slides) == 1
     assert deck.slides[0].nodes[0].node_id == "n-1"
     assert deck.slides[0].nodes[0].slot_binding == "heading"
-    assert deck.slides[0].nodes[0].content == "Loose title"
+    assert deck.slides[0].nodes[0].content.to_plain_text() == "Loose title"
     assert deck.slides[0].nodes[1].slot_binding == "subheading"
-    assert deck.slides[0].nodes[1].content == "Intro"
+    assert deck.slides[0].nodes[1].content.to_plain_text() == "Intro"
 
 
 def test_batch_uses_single_mutate_deck_call(monkeypatch) -> None:

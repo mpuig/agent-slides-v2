@@ -12,7 +12,7 @@ from agent_slides.engine.validator import (
 )
 from agent_slides.errors import OVERFLOW, UNBOUND_NODES
 from agent_slides.model.design_rules import load_design_rules
-from agent_slides.model.types import ComputedNode, Deck, Node, Slide
+from agent_slides.model.types import ComputedNode, Deck, Node, NodeContent, Slide, TextBlock
 
 
 def make_slide(
@@ -155,11 +155,16 @@ def test_validate_slide_warns_when_slot_word_count_exceeds_limit() -> None:
 
 def test_validate_slide_warns_when_bullet_count_exceeds_limit() -> None:
     rules = load_design_rules("default")
-    bullet_text = "\n".join(f"bullet {index}" for index in range(rules.content_limits.max_bullets_per_slide + 1))
+    bullet_content = NodeContent(
+        blocks=[
+            TextBlock(type="bullet", text=f"bullet {index}")
+            for index in range(rules.content_limits.max_bullets_per_slide + 1)
+        ]
+    )
     slide = make_slide(
         "s-1",
         "content",
-        nodes=[Node(node_id="n-1", slot_binding="body", type="text", content=bullet_text)],
+        nodes=[Node(node_id="n-1", slot_binding="body", type="text", content=bullet_content)],
         computed={"n-1": make_computed_node(14.0)},
     )
 
@@ -172,6 +177,21 @@ def test_validate_slide_warns_when_bullet_count_exceeds_limit() -> None:
 
     assert bullet_constraint.severity == "warning"
     assert bullet_constraint.slide_id == "s-1"
+
+
+def test_validate_slide_does_not_treat_legacy_paragraph_lines_as_bullets() -> None:
+    rules = load_design_rules("default")
+    text = "\n\n".join(f"Paragraph {index}" for index in range(rules.content_limits.max_bullets_per_slide + 1))
+    slide = make_slide(
+        "s-1",
+        "content",
+        nodes=[Node(node_id="n-1", slot_binding="body", type="text", content=text)],
+        computed={"n-1": make_computed_node(14.0)},
+    )
+
+    constraints = validate_slide(slide, rules)
+
+    assert all(constraint.code != MAX_BULLETS_PER_SLIDE_EXCEEDED for constraint in constraints)
 
 
 def test_validate_slide_warns_when_font_size_is_outside_hierarchy_range() -> None:
