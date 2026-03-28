@@ -219,10 +219,11 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     write_raw_deck(deck_path, build_deck(revision=2))
 
     reflow_revisions: list[int] = []
+    provider_types: list[type[object]] = []
 
     def fake_reflow(deck: Deck, provider) -> None:
         reflow_revisions.append(deck.revision)
-        assert isinstance(provider, BuiltinLayoutProvider)
+        provider_types.append(type(provider))
 
     monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
@@ -237,6 +238,7 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     assert updated_deck.revision == 3
     assert updated_deck.theme == "updated"
     assert reflow_revisions == [3]
+    assert provider_types == [BuiltinLayoutProvider]
     assert read_deck(str(deck_path)).theme == "updated"
     assert computed_sidecar_path(deck_path).exists()
 

@@ -39,6 +39,9 @@ def _span_extent(
 
 def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
     slot = layout_def.slots[slot_name]
+    if None not in (slot.x, slot.y, slot.width, slot.height):
+        return float(slot.x), float(slot.y), float(slot.width), float(slot.height)
+
     grid = layout_def.grid
     margin = 0.0 if slot.full_bleed else theme.spacing.margin
     gutter = 0.0 if slot.full_bleed else theme.spacing.gutter
@@ -149,7 +152,7 @@ def reflow_deck(deck: Deck, provider: LayoutProvider | None = None) -> None:
     """Reflow every slide in the deck using the deck theme."""
 
     active_provider = provider or BuiltinLayoutProvider()
-    theme = load_theme(deck.theme)
+    theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
     for slide in deck.slides:
         layout_getter = active_provider.get_layout
         _reflow_slide(slide, layout_getter(slide.layout), theme, revision=deck.revision)
