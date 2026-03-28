@@ -34,9 +34,9 @@ def init_command(path: str, theme_name: str, rules_name: str, force: bool) -> No
             {
                 "ok": True,
                 "data": {
-                    "deck_id": deck["deck_id"],
-                    "theme": deck["theme"],
-                    "design_rules": deck["design_rules"],
+                    "deck_id": deck.deck_id,
+                    "theme": deck.theme,
+                    "design_rules": deck.design_rules,
                 },
             }
         )
