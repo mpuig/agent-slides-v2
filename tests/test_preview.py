@@ -13,7 +13,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
 from agent_slides.io import read_deck
-from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide, TableSpec
+from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, ShapeSpec, Slide, TableSpec
 from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
@@ -212,6 +212,66 @@ def make_chart_deck(*, revision: int, chart_type: str = "bar") -> Deck:
             )
         ],
         counters=Counters(slides=1, nodes=1),
+    )
+
+
+def make_shape_deck(*, revision: int) -> Deck:
+    return Deck(
+        deck_id="deck-preview-shape",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                revision=revision,
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        type="shape",
+                        shape_spec=ShapeSpec(
+                            shape_type="rectangle",
+                            fill_color="#F2F2F2",
+                            line_color="#1A73E8",
+                            line_width=2.0,
+                            shadow=True,
+                            opacity=0.8,
+                        ),
+                        style_overrides={"x": 48.0, "y": 120.0, "width": 624.0, "height": 240.0, "z_index": -1},
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="heading",
+                        type="text",
+                        content="Shape preview",
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=48.0,
+                        y=120.0,
+                        width=624.0,
+                        height=240.0,
+                        revision=revision,
+                        content_type="shape",
+                    ),
+                    "n-2": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=576.0,
+                        height=80.0,
+                        font_size_pt=28.0,
+                        font_family="Aptos",
+                        color="#333333",
+                        bg_color="#FFFFFF",
+                        font_bold=True,
+                        revision=revision,
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
     )
 
 
@@ -720,6 +780,41 @@ def test_client_html_contains_chart_preview_helpers() -> None:
     assert "renderLineChartPreview" in payload
     assert 'node.type === "chart" || computed.content_type === "chart"' in payload
     assert "Preview approximation" in payload
+
+
+def test_client_html_contains_shape_preview_helpers() -> None:
+    payload = read_client_html()
+
+    assert "renderShapeNode" in payload
+    assert "sortedNodes" in payload
+    assert "nodeZIndex" in payload
+    assert 'node.type === "shape" || computed.content_type === "shape"' in payload
+    assert 'createSvgElement("ellipse"' in payload
+    assert 'createSvgElement("polygon"' in payload
+    assert 'createSvgElement("line"' in payload
+    assert "appendShapeShadow" in payload
+
+
+def test_preview_server_serves_shape_deck_payload(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_shape_deck(revision=5))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            shape_node = payload["slides"][0]["nodes"][0]
+            assert shape_node["type"] == "shape"
+            assert shape_node["shape_spec"]["shape_type"] == "rectangle"
+            assert shape_node["shape_spec"]["fill_color"] == "#F2F2F2"
+            assert shape_node["style_overrides"]["z_index"] == -1
+            assert payload["slides"][0]["computed"]["n-1"]["content_type"] == "shape"
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
 
 
 def test_client_html_contains_table_preview_helpers() -> None:
