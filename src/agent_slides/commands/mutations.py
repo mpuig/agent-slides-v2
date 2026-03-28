@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_slides.errors import AgentSlidesError, INVALID_LAYOUT, INVALID_SLOT, SCHEMA_ERROR
-from agent_slides.model import Deck, Node, Slide
+from agent_slides.engine.reflow import rebind_slots
+from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
+from agent_slides.model import Deck, Node, Slide, get_layout
 
-SUPPORTED_LAYOUTS: dict[str, set[str]] = {
-    "title": {"title", "subtitle"},
-    "two_col": {"title", "left", "right"},
-    "content": {"title", "body"},
-    "body": {"body"},
-    "closing": {"title", "body"},
+SLOT_ALIASES = {
+    "title": "heading",
+    "subtitle": "subheading",
+    "left": "col1",
+    "right": "col2",
 }
 
 SUPPORTED_MUTATION_COMMANDS = frozenset(
@@ -29,7 +29,10 @@ SUPPORTED_MUTATION_COMMANDS = frozenset(
 
 def _normalize_slide_ref(ref: Any) -> str | int:
     if isinstance(ref, bool):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Slide reference must be an int or string, got {type(ref).__name__}")
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Slide reference must be an int or string, got {type(ref).__name__}",
+        )
     if isinstance(ref, int):
         return ref
     if isinstance(ref, str):
@@ -40,41 +43,43 @@ def _normalize_slide_ref(ref: Any) -> str | int:
             return int(stripped)
         if stripped:
             return stripped
-    raise AgentSlidesError(SCHEMA_ERROR, f"Slide reference must be an int or string, got {type(ref).__name__}")
+    raise AgentSlidesError(
+        SCHEMA_ERROR,
+        f"Slide reference must be an int or string, got {type(ref).__name__}",
+    )
 
 
 def _require_string(args: dict[str, Any], key: str) -> str:
     value = args.get(key)
     if not isinstance(value, str) or not value.strip():
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-empty string")
-    return value
+    return value.strip()
 
 
-def _require_layout(layout: str) -> str:
-    normalized = layout.strip()
-    if normalized not in SUPPORTED_LAYOUTS:
-        supported = ", ".join(sorted(SUPPORTED_LAYOUTS))
-        raise AgentSlidesError(
-            INVALID_LAYOUT,
-            f"Unsupported layout {normalized!r}. Supported layouts: {supported}",
-        )
-    return normalized
+def _create_slot_nodes(deck: Deck, layout_name: str) -> Slide:
+    layout = get_layout(layout_name)
+    return Slide(
+        slide_id=deck.next_slide_id(),
+        layout=layout.name,
+        nodes=[
+            Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="text",
+            )
+            for slot_name in layout.slots
+        ],
+    )
 
 
-def _slide_index(deck: Deck, slide: Slide) -> int:
-    return deck.slides.index(slide)
-
-
-def _require_slot(slide: Slide, slot: str) -> str:
-    normalized = slot.strip()
-    allowed = SUPPORTED_LAYOUTS.get(slide.layout)
-    if allowed is None:
-        raise AgentSlidesError(INVALID_LAYOUT, f"Slide {slide.slide_id!r} uses unsupported layout {slide.layout!r}")
-    if normalized not in allowed:
-        allowed_slots = ", ".join(sorted(allowed))
+def _resolve_slot_name(slide: Slide, slot: str) -> str:
+    layout = get_layout(slide.layout)
+    normalized = SLOT_ALIASES.get(slot.strip(), slot.strip())
+    if normalized not in layout.slots:
+        allowed = ", ".join(layout.slots)
         raise AgentSlidesError(
             INVALID_SLOT,
-            f"Slot {normalized!r} is not valid for layout {slide.layout!r}. Allowed slots: {allowed_slots}",
+            f"Slot {slot!r} is not valid for layout {slide.layout!r}. Allowed slots: {allowed}",
         )
     return normalized
 
@@ -103,51 +108,40 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
     """Apply one supported mutation and return its structured result."""
 
     if command == "slide_add":
-        layout = _require_layout(_require_string(args, "layout"))
-        slide = Slide(slide_id=deck.next_slide_id(), layout=layout)
+        slide = _create_slot_nodes(deck, _require_string(args, "layout"))
         deck.slides.append(slide)
         return {
-            "command": command,
+            "slide_index": len(deck.slides) - 1,
             "slide_id": slide.slide_id,
-            "slide_index": _slide_index(deck, slide),
             "layout": slide.layout,
         }
 
     if command == "slide_remove":
-        slide_ref = _normalize_slide_ref(args.get("slide"))
-        slide = deck.get_slide(slide_ref)
-        removed_index = _slide_index(deck, slide)
-        deck.slides.pop(removed_index)
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        deck.slides.remove(slide)
         return {
-            "command": command,
-            "slide_id": slide.slide_id,
-            "slide_index": removed_index,
-            "layout": slide.layout,
+            "removed": slide.slide_id,
+            "slide_count": len(deck.slides),
         }
 
     if command == "slide_set_layout":
-        slide_ref = _normalize_slide_ref(args.get("slide"))
-        layout = _require_layout(_require_string(args, "layout"))
-        slide = deck.get_slide(slide_ref)
-        slide.layout = layout
+        layout = get_layout(_require_string(args, "layout"))
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        unbound_nodes = rebind_slots(deck, slide, layout)
         return {
-            "command": command,
             "slide_id": slide.slide_id,
-            "slide_index": _slide_index(deck, slide),
             "layout": slide.layout,
+            "unbound_nodes": unbound_nodes,
         }
 
     if command == "slot_set":
-        slide_ref = _normalize_slide_ref(args.get("slide"))
-        slot = _require_string(args, "slot")
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
         text = args.get("text")
         if not isinstance(text, str):
             raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
 
-        slide = deck.get_slide(slide_ref)
-        slot_name = _require_slot(slide, slot)
         slot_nodes = _find_slot_nodes(slide, slot_name)
-
         if slot_nodes:
             node = slot_nodes[0]
             _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
@@ -172,9 +166,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
                 node.style_overrides["font_size"] = float(font_size)
 
         return {
-            "command": command,
             "slide_id": slide.slide_id,
-            "slide_index": _slide_index(deck, slide),
             "slot": slot_name,
             "node_id": node.node_id,
             "text": node.content,
@@ -182,26 +174,20 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
         }
 
     if command == "slot_clear":
-        slide_ref = _normalize_slide_ref(args.get("slide"))
-        slot = _require_string(args, "slot")
-        slide = deck.get_slide(slide_ref)
-        slot_name = _require_slot(slide, slot)
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
         removed_ids = [node.node_id for node in _find_slot_nodes(slide, slot_name)]
         _prune_nodes(slide, set(removed_ids))
         return {
-            "command": command,
             "slide_id": slide.slide_id,
-            "slide_index": _slide_index(deck, slide),
             "slot": slot_name,
             "removed_node_ids": removed_ids,
         }
 
     if command == "slot_bind":
         node_id = _require_string(args, "node")
-        slot = _require_string(args, "slot")
         slide, node = _find_node(deck, node_id)
-        slot_name = _require_slot(slide, slot)
-
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
         conflicting_nodes = [
             candidate
             for candidate in _find_slot_nodes(slide, slot_name)
@@ -209,16 +195,16 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
         ]
         _prune_nodes(slide, {candidate.node_id for candidate in conflicting_nodes})
         node.slot_binding = slot_name
-
         return {
-            "command": command,
             "slide_id": slide.slide_id,
-            "slide_index": _slide_index(deck, slide),
             "slot": slot_name,
             "node_id": node.node_id,
         }
 
     raise AgentSlidesError(
         SCHEMA_ERROR,
-        f"Unsupported mutation command {command!r}. Supported commands: {', '.join(sorted(SUPPORTED_MUTATION_COMMANDS))}",
+        (
+            f"Unsupported mutation command {command!r}. "
+            f"Supported commands: {', '.join(sorted(SUPPORTED_MUTATION_COMMANDS))}"
+        ),
     )
