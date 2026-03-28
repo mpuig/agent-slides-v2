@@ -56,6 +56,28 @@ class LayoutHints(BaseModel):
     short_text_threshold: int = 10
 
 
+class BlockSpacingRules(BaseModel):
+    """Spacing between consecutive structured text block types."""
+
+    heading_to_paragraph: float = 12.0
+    heading_to_bullet: float = 10.0
+    paragraph_to_paragraph: float = 6.0
+    paragraph_to_bullet: float = 8.0
+    bullet_to_bullet: float = 4.0
+    bullet_to_paragraph: float = 8.0
+    default: float = 6.0
+
+    def between(self, previous: str, current: str) -> float:
+        return {
+            ("heading", "paragraph"): self.heading_to_paragraph,
+            ("heading", "bullet"): self.heading_to_bullet,
+            ("paragraph", "paragraph"): self.paragraph_to_paragraph,
+            ("paragraph", "bullet"): self.paragraph_to_bullet,
+            ("bullet", "bullet"): self.bullet_to_bullet,
+            ("bullet", "paragraph"): self.bullet_to_paragraph,
+        }.get((previous, current), self.default)
+
+
 class DesignRules(BaseModel):
     """Complete design-rules profile."""
 
@@ -65,6 +87,7 @@ class DesignRules(BaseModel):
     overflow_policy: OverflowPolicy
     deck_structure: DeckStructureRules
     layout_hints: LayoutHints = Field(default_factory=LayoutHints)
+    block_spacing: BlockSpacingRules = Field(default_factory=BlockSpacingRules)
 
 
 def _design_rules_dir() -> resources.abc.Traversable:

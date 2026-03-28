@@ -47,6 +47,7 @@ def _text_slot(
     grid_row: int | list[int],
     grid_col: int | list[int],
     role: str,
+    peer_group: str | None = None,
     bg_color: str | None = None,
     bg_transparency: float = 0.0,
 ) -> SlotDef:
@@ -54,6 +55,7 @@ def _text_slot(
         grid_row=grid_row,
         grid_col=grid_col,
         role=role,
+        peer_group=peer_group,
         bg_color=bg_color,
         bg_transparency=bg_transparency,
     )
@@ -84,10 +86,10 @@ LAYOUTS: dict[str, LayoutDef] = {
         name="comparison",
         slots={
             "heading": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
-            "left_header": SlotDef(grid_row=2, grid_col=1, role="heading"),
-            "left_body": SlotDef(grid_row=3, grid_col=1, role="body"),
-            "right_header": SlotDef(grid_row=2, grid_col=2, role="heading"),
-            "right_body": SlotDef(grid_row=3, grid_col=2, role="body"),
+            "left_header": SlotDef(grid_row=2, grid_col=1, role="heading", peer_group="comparison_headers"),
+            "left_body": SlotDef(grid_row=3, grid_col=1, role="body", peer_group="comparison_bodies"),
+            "right_header": SlotDef(grid_row=2, grid_col=2, role="heading", peer_group="comparison_headers"),
+            "right_body": SlotDef(grid_row=3, grid_col=2, role="body", peer_group="comparison_bodies"),
         },
         grid=_grid(columns=2, rows=3, row_heights=[0.12, 0.18, 0.70], col_widths=[0.5, 0.5]),
         text_fitting=DEFAULT_TEXT_FITTING,
@@ -108,9 +110,9 @@ LAYOUTS: dict[str, LayoutDef] = {
         name="three_col",
         slots={
             "heading": SlotDef(grid_row=1, grid_col=[1, 2, 3], role="heading"),
-            "col1": SlotDef(grid_row=2, grid_col=1, role="body"),
-            "col2": SlotDef(grid_row=2, grid_col=2, role="body"),
-            "col3": SlotDef(grid_row=2, grid_col=3, role="body"),
+            "col1": SlotDef(grid_row=2, grid_col=1, role="body", peer_group="three_columns"),
+            "col2": SlotDef(grid_row=2, grid_col=2, role="body", peer_group="three_columns"),
+            "col3": SlotDef(grid_row=2, grid_col=3, role="body", peer_group="three_columns"),
         },
         grid=_grid(
             columns=3,
@@ -142,8 +144,8 @@ LAYOUTS: dict[str, LayoutDef] = {
         name="two_col",
         slots={
             "heading": SlotDef(grid_row=1, grid_col=[1, 2], role="heading"),
-            "col1": SlotDef(grid_row=2, grid_col=1, role="body"),
-            "col2": SlotDef(grid_row=2, grid_col=2, role="body"),
+            "col1": SlotDef(grid_row=2, grid_col=1, role="body", peer_group="two_columns"),
+            "col2": SlotDef(grid_row=2, grid_col=2, role="body", peer_group="two_columns"),
         },
         grid=_grid(columns=2, rows=2, row_heights=[0.12, 0.88], col_widths=[0.5, 0.5]),
         text_fitting=DEFAULT_TEXT_FITTING,
