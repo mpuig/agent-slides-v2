@@ -105,8 +105,8 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
                 assert updated_one["revision"] == 2
                 assert updated_two["revision"] == 2
-                assert updated_one["deck"]["slides"][0]["nodes"][0]["content"] == "Updated"
-                assert updated_two["deck"]["slides"][0]["nodes"][0]["content"] == "Updated"
+                assert updated_one["deck"]["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Updated"
+                assert updated_two["deck"]["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Updated"
 
         finally:
             await server.stop()
