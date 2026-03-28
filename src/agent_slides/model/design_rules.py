@@ -7,9 +7,16 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
+
+DEFAULT_TYPE_LADDERS = {
+    "heading": [36.0, 32.0, 28.0, 24.0],
+    "body": [18.0, 16.0, 14.0, 12.0, 10.0],
+    "quote": [28.0, 24.0, 20.0, 18.0],
+    "attribution": [16.0, 14.0, 12.0, 10.0],
+}
 
 
 class ContentLimits(BaseModel):
@@ -88,6 +95,23 @@ class DesignRules(BaseModel):
     deck_structure: DeckStructureRules
     layout_hints: LayoutHints = Field(default_factory=LayoutHints)
     block_spacing: BlockSpacingRules = Field(default_factory=BlockSpacingRules)
+    normalize_font_sizes: bool = True
+    type_ladders: dict[str, list[float]] = Field(
+        default_factory=lambda: {role: list(sizes) for role, sizes in DEFAULT_TYPE_LADDERS.items()}
+    )
+
+    @field_validator("type_ladders")
+    @classmethod
+    def validate_type_ladders(cls, value: dict[str, list[float]]) -> dict[str, list[float]]:
+        normalized: dict[str, list[float]] = {}
+        for role, sizes in value.items():
+            if not sizes:
+                raise ValueError(f"type ladder for role '{role}' cannot be empty")
+            ladder = [float(size) for size in sizes]
+            if any(size <= 0 for size in ladder):
+                raise ValueError(f"type ladder for role '{role}' must contain positive sizes")
+            normalized[role] = ladder
+        return normalized
 
 
 def _design_rules_dir() -> resources.abc.Traversable:

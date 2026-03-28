@@ -25,6 +25,7 @@ from agent_slides.model.types import (
     Slide,
     SlotDef,
     TextBlock,
+    TextFitting,
 )
 
 
@@ -264,6 +265,12 @@ def test_computed_node_defaults_support_image_nodes() -> None:
 
     assert computed.image_fit == "stretch"
     assert computed.font_size_pt == 0.0
+
+
+def test_text_fitting_supports_custom_ladders() -> None:
+    fitting = TextFitting(default_size=20, min_size=10, ladder=[20, 16, 12])
+
+    assert fitting.ladder == [20, 16, 12]
 
 
 def test_computed_deck_round_trip_applies_only_matching_revision() -> None:

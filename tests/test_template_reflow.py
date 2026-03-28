@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import importlib
 import json
 from pathlib import Path
 
+from agent_slides.engine.reflow import reflow_deck
 from agent_slides.io.sidecar import mutate_deck
 from agent_slides.model import Counters, Deck, Node, Slide, TemplateLayoutRegistry
 
@@ -67,23 +67,34 @@ def make_manifest() -> dict[str, object]:
     }
 
 
-def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
+def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     tmp_path: Path, monkeypatch
 ) -> None:
-    template_reflow_module = importlib.import_module("agent_slides.engine.template_reflow")
     manifest_path = tmp_path / "template.manifest.json"
     (tmp_path / "template.pptx").write_bytes(b"pptx")
     write_json(manifest_path, make_manifest())
     image_path = tmp_path / "hero.png"
     image_path.write_bytes(b"png")
 
-    fit_calls: list[tuple[float, float, float, float]] = []
+    fit_calls: list[tuple[float, float, float, float, str, str, list[float] | None]] = []
 
-    def fake_fit_text(*, text, width: float, height: float, default_size: float, min_size: float):
-        fit_calls.append((width, height, default_size, min_size))
+    def fake_fit_text(
+        *,
+        text,
+        width: float,
+        height: float,
+        default_size: float,
+        min_size: float,
+        role: str,
+        font_family: str | None = None,
+        ladder: list[float] | None = None,
+        use_precise: bool = False,
+    ):
+        assert use_precise is False
+        fit_calls.append((width, height, default_size, min_size, role, font_family or "", ladder))
         return (26.0, False) if default_size == 32.0 else (14.0, True)
 
-    monkeypatch.setattr(template_reflow_module, "fit_text", fake_fit_text)
+    monkeypatch.setattr("agent_slides.engine.reflow.fit_text", fake_fit_text)
 
     deck = Deck(
         deck_id="deck-template",
@@ -108,7 +119,7 @@ def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
 
     registry = TemplateLayoutRegistry(manifest_path)
 
-    template_reflow_module.template_reflow(deck, registry)
+    reflow_deck(deck, registry)
 
     computed = deck.slides[0].computed
     assert set(computed) == {"n-1", "n-2", "n-3"}
@@ -138,16 +149,14 @@ def test_template_reflow_uses_manifest_bounds_theme_and_text_fitting(
     assert image.color == "#101010"
 
     assert fit_calls == [
-        (280.0, 48.0, 32.0, 24.0),
-        (260.0, 160.0, 18.0, 10.0),
+        (280.0, 48.0, 32.0, 24.0, "heading", "Aptos Display", [32.0, 28.0, 24.0]),
+        (260.0, 160.0, 18.0, 10.0, "body", "Aptos", [18.0, 16.0, 14.0, 12.0, 10.0]),
     ]
 
 
-def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
+def test_mutate_deck_reflows_template_manifests_with_unified_reflow(
     tmp_path: Path, monkeypatch
 ) -> None:
-    reflow_module = importlib.import_module("agent_slides.engine.reflow")
-    template_reflow_module = importlib.import_module("agent_slides.engine.template_reflow")
     manifest_path = tmp_path / "template.manifest.json"
     (tmp_path / "template.pptx").write_bytes(b"pptx")
     write_json(manifest_path, make_manifest())
@@ -171,18 +180,12 @@ def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
         ),
     )
 
-    reflow_calls: list[int] = []
-    template_calls: list[int] = []
+    reflow_calls: list[tuple[int, str]] = []
 
     def fake_reflow(deck: Deck, provider, **_: object) -> None:
-        reflow_calls.append(deck.revision)
+        reflow_calls.append((deck.revision, provider.source_path))
 
-    def fake_template_reflow(deck: Deck, registry: TemplateLayoutRegistry, **_: object) -> None:
-        template_calls.append(deck.revision)
-        assert registry.source_path == str((tmp_path / "template.pptx").resolve())
-
-    monkeypatch.setattr(reflow_module, "reflow_deck", fake_reflow)
-    monkeypatch.setattr(template_reflow_module, "template_reflow", fake_template_reflow)
+    monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
     def mutate(deck: Deck, provider) -> str:
         assert isinstance(provider, TemplateLayoutRegistry)
@@ -194,5 +197,4 @@ def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
     assert result == "ok"
     assert updated_deck.revision == 3
     assert updated_deck.theme == "corporate"
-    assert template_calls == [3]
-    assert reflow_calls == []
+    assert reflow_calls == [(3, str((tmp_path / "template.pptx").resolve()))]

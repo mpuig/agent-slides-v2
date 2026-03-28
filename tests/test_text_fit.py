@@ -1,45 +1,77 @@
 from __future__ import annotations
 
+from PIL import ImageFont
+
 from agent_slides.engine.text_fit import BlockFit, compose_blocks, fit_blocks, fit_text
 from agent_slides.model.design_rules import BlockSpacingRules
 from agent_slides.model.types import NodeContent, TextBlock, TextFitting
 
 
 def test_short_text_fits_at_default_size() -> None:
-    assert fit_text("Hello world", width=200, height=80, default_size=32) == (32, False)
+    assert fit_text("Hello world", width=200, height=80, default_size=32, role="heading") == (32, False)
 
 
-def test_medium_text_shrinks_until_it_fits() -> None:
-    font_size, overflowed = fit_text("A" * 60, width=180, height=100, default_size=32)
+def test_body_text_uses_discrete_ladder_steps() -> None:
+    font_size, overflowed = fit_text("A" * 60, width=96, height=140, default_size=18, role="body")
 
-    assert font_size == 20
+    assert font_size == 16
     assert overflowed is False
 
 
 def test_long_text_overflows_at_min_size() -> None:
-    assert fit_text("A" * 500, width=120, height=60, default_size=24) == (10.0, True)
+    assert fit_text("A" * 500, width=120, height=60, default_size=24, role="body") == (10.0, True)
 
 
-def test_empty_text_returns_default_size() -> None:
-    assert fit_text("", width=120, height=60, default_size=24) == (24, False)
+def test_empty_text_returns_largest_ladder_size() -> None:
+    assert fit_text("", width=120, height=60, role="quote") == (28.0, False)
 
 
 def test_single_character_returns_default_size() -> None:
-    assert fit_text("A", width=20, height=20, default_size=32) == (32, False)
+    assert fit_text("A", width=20, height=20, default_size=32, role="heading") == (32, False)
 
 
 def test_very_long_text_shrinks_to_min_size_and_overflows() -> None:
-    assert fit_text("A" * 10_000, width=500, height=200, default_size=24) == (10.0, True)
+    assert fit_text("A" * 10_000, width=500, height=200, default_size=24, role="body") == (10.0, True)
 
 
-def test_zero_width_returns_min_size_with_overflow() -> None:
-    assert fit_text("Hello", width=0, height=60, default_size=24) == (10.0, True)
+def test_zero_width_returns_smallest_ladder_size_with_overflow() -> None:
+    assert fit_text("Hello", width=0, height=60, default_size=24, role="body") == (10.0, True)
 
 
-def test_shrinking_happens_in_two_point_steps() -> None:
-    font_size, overflowed = fit_text("A" * 50, width=180, height=170, default_size=32)
+def test_font_family_width_factors_change_selected_size() -> None:
+    calibri_size, calibri_overflow = fit_text(
+        "A" * 60,
+        width=96,
+        height=140,
+        default_size=18,
+        role="body",
+        font_family="Calibri",
+    )
+    georgia_size, georgia_overflow = fit_text(
+        "A" * 60,
+        width=96,
+        height=140,
+        default_size=18,
+        role="body",
+        font_family="Georgia",
+    )
 
-    assert font_size == 28
+    assert (calibri_size, calibri_overflow) == (18, False)
+    assert (georgia_size, georgia_overflow) == (16, False)
+
+
+def test_custom_ladder_overrides_default_and_minimum_sizes() -> None:
+    font_size, overflowed = fit_text(
+        "A" * 60,
+        width=90,
+        height=90,
+        default_size=18,
+        min_size=10,
+        role="body",
+        ladder=[18, 12],
+    )
+
+    assert font_size == 12
     assert overflowed is False
 
 
@@ -53,10 +85,47 @@ def test_structured_blocks_account_for_heading_hierarchy_and_spacing() -> None:
         ]
     )
 
-    font_size, overflowed = fit_text(content, width=180, height=90, default_size=24)
+    font_size, overflowed = fit_text(content, width=180, height=90, default_size=24, role="body")
 
-    assert font_size < 24
+    assert font_size == 14
     assert overflowed is False
+
+
+def test_precise_measurement_uses_pillow_truetype(monkeypatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    class FakeFont:
+        def __init__(self, size: int) -> None:
+            self.size = size
+
+        def getlength(self, text: str) -> float:
+            return len(text) * self.size * 0.9
+
+        def getbbox(self, text: str) -> tuple[int, int, int, int]:
+            width = max(int(len(text) * self.size * 0.9), 1)
+            return (0, 0, width, self.size)
+
+    def fake_truetype(font: str, size: int) -> FakeFont:
+        calls.append((font, size))
+        return FakeFont(size)
+
+    monkeypatch.setattr(ImageFont, "truetype", fake_truetype)
+    monkeypatch.setattr(ImageFont, "load_default", lambda: FakeFont(10))
+
+    font_size, overflowed = fit_text(
+        "A" * 18,
+        width=60,
+        height=60,
+        default_size=18,
+        role="body",
+        font_family="DejaVuSans.ttf",
+        ladder=[18, 12],
+        use_precise=True,
+    )
+
+    assert font_size == 12
+    assert overflowed is False
+    assert calls == [("DejaVuSans.ttf", 18), ("DejaVuSans.ttf", 12)]
 
 
 def test_fit_blocks_uses_heading_and_body_ladders_per_block() -> None:
@@ -74,6 +143,10 @@ def test_fit_blocks_uses_heading_and_body_ladders_per_block() -> None:
             "body": TextFitting(default_size=18, min_size=10),
         },
         spacing_rules=BlockSpacingRules(),
+        type_ladders={
+            "heading": [36.0, 32.0, 28.0, 24.0],
+            "body": [18.0, 16.0, 14.0, 12.0, 10.0],
+        },
     )
 
     assert [fit.font_size_pt for fit in fits] == [32.0, 18.0, 18.0]
