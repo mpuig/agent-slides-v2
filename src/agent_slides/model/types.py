@@ -343,6 +343,16 @@ class SlotDef(AgentSlidesModel):
     grid_row: int | list[int]
     grid_col: int | list[int]
     role: SlotRole
+    peer_group: str | None = None
+    alignment_group: str | None = None
+    reading_order: int = 0
+    size_policy: str = "fixed"
+    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart"])
+    min_font: float | None = None
+    max_font: float | None = None
+    preferred_font: float | None = None
+    text_align: str = "left"
+    vertical_align: str = "top"
     full_bleed: bool = False
     x: float | None = None
     y: float | None = None
@@ -350,8 +360,6 @@ class SlotDef(AgentSlidesModel):
     height: float | None = None
     bg_color: str | None = None
     bg_transparency: float = 0.0
-    alignment_group: str | None = None
-    reading_order: int | None = None
     height_mode: ConstraintHeightMode = "fixed"
     width_mode: ConstraintWidthMode = "fixed"
 
@@ -387,6 +395,7 @@ class GridDef(AgentSlidesModel):
 class TextFitting(AgentSlidesModel):
     default_size: float
     min_size: float = 10.0
+    ladder: list[float] | None = None
 
 
 class LayoutDef(AgentSlidesModel):
