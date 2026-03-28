@@ -8,6 +8,7 @@ description: Build consulting-grade presentations from a natural-language brief 
 Use this skill when the user asks for a new presentation, deck, or slide narrative from scratch.
 
 In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
+Use `uv run agent-slides contract` as the canonical source for command semantics, mutation names, JSON outputs, and error codes.
 Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
 Story structure rules live in `${CLAUDE_SKILL_DIR}/references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
 
@@ -272,11 +273,13 @@ Read `${CLAUDE_SKILL_DIR}/references/content-density.md` before building so the 
 ### Practical build sequence
 
 1. `uv run agent-slides init deck.json --theme <theme> --rules default`
-2. Add the opener and closer with explicit layouts.
-3. Add content slides with `--auto-layout` or explicit `--layout` according to the approved plan.
-4. Prefer one atomic `batch` payload for multi-slide creation and cleanup when possible.
-5. If a slide needs a chart, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
-6. Build only after the deck content is complete and validated.
+2. Start preview before content build so the user can watch the deck appear live: `uv run agent-slides preview deck.json --background`
+3. Read the returned JSON, extract the `url`, and open that URL for the user immediately.
+4. Add the opener and closer with explicit layouts.
+5. Add content slides with `--auto-layout` or explicit `--layout` according to the approved plan.
+6. Prefer one atomic `batch` payload for multi-slide creation and cleanup when possible.
+7. If a slide needs a chart, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
+8. Build only after the deck content is complete and validated.
 
 ### Layout guidance during build
 

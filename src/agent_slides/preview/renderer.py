@@ -6,6 +6,7 @@ import asyncio
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from agent_slides.io import read_deck, resolve_manifest_path, write_pptx
@@ -45,7 +46,12 @@ class SlideRenderer:
             return None
         return cached
 
-    async def render_slide(self, slide_index: int) -> Path:
+    async def render_slide(
+        self,
+        slide_index: int,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> Path:
         deck = self._load_deck()
         slide = deck.slides[slide_index]
         slide_revision = self._slide_revision(slide, deck.revision)
@@ -53,13 +59,17 @@ class SlideRenderer:
         if cached is not None:
             return cached
 
-        await self._render_indices(deck, [slide_index])
+        await self._render_indices(deck, [slide_index], progress_callback=progress_callback)
         rendered = self.get_cached(slide.slide_id, slide_revision)
         if rendered is None:
             raise SlideRenderError(f"Renderer did not produce a PNG for slide index {slide_index}.")
         return rendered
 
-    async def render_all(self) -> list[Path]:
+    async def render_all(
+        self,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[Path]:
         deck = self._load_deck()
         missing_indices = [
             index
@@ -67,14 +77,19 @@ class SlideRenderer:
             if self.get_cached(slide.slide_id, self._slide_revision(slide, deck.revision)) is None
         ]
         if missing_indices:
-            await self._render_indices(deck, missing_indices)
+            await self._render_indices(deck, missing_indices, progress_callback=progress_callback)
 
         return [
             self.get_cached(slide.slide_id, self._slide_revision(slide, deck.revision))
             for slide in deck.slides
         ]
 
-    async def render_indices(self, slide_indices: list[int]) -> list[Path]:
+    async def render_indices(
+        self,
+        slide_indices: list[int],
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[Path]:
         deck = self._load_deck()
         missing_indices = [
             index
@@ -86,7 +101,7 @@ class SlideRenderer:
             is None
         ]
         if missing_indices:
-            await self._render_indices(deck, missing_indices)
+            await self._render_indices(deck, missing_indices, progress_callback=progress_callback)
 
         rendered_paths: list[Path] = []
         for index in slide_indices:
@@ -110,16 +125,27 @@ class SlideRenderer:
     def _cache_key(self, slide_id: str, revision: int) -> str:
         return f"{slide_id}:{revision}"
 
-    async def _render_indices(self, deck: Deck, slide_indices: list[int]) -> None:
+    async def _render_indices(
+        self,
+        deck: Deck,
+        slide_indices: list[int],
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> None:
         if not self.is_available:
             raise SlideRenderError("LibreOffice preview dependencies are not available.")
         if not slide_indices:
             return
 
         async with self._lock:
-            await asyncio.to_thread(self._render_indices_sync, deck, slide_indices)
+            await asyncio.to_thread(self._render_indices_sync, deck, slide_indices, progress_callback)
 
-    def _render_indices_sync(self, deck: Deck, slide_indices: list[int]) -> None:
+    def _render_indices_sync(
+        self,
+        deck: Deck,
+        slide_indices: list[int],
+        progress_callback: Callable[[int, int], None] | None,
+    ) -> None:
         assert self.soffice_path is not None
         assert self.pdftoppm_path is not None
 
@@ -154,6 +180,9 @@ class SlideRenderer:
                 )
 
             for slide_index in slide_indices:
+                if progress_callback is not None:
+                    progress_callback(slide_index, len(deck.slides))
+
                 slide = deck.slides[slide_index]
                 slide_revision = self._slide_revision(slide, deck.revision)
                 output_prefix = tmp_dir / f"slide-{slide_index + 1}"

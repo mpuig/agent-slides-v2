@@ -32,3 +32,5 @@ def test_create_deck_skill_covers_storyline_review_and_qa_outputs() -> None:
     assert "references/content-density.md" in skill_text
     assert "references/chart-guide.md" in skill_text
     assert "references/common-mistakes.md" in skill_text
+    assert "uv run agent-slides preview deck.json --background" in skill_text
+    assert "open that URL for the user immediately" in skill_text
