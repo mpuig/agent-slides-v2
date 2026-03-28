@@ -16,6 +16,9 @@ def test_load_default_design_rules() -> None:
     assert rules.name == "default"
     assert rules.content_limits.max_bullets_per_slide == 6
     assert rules.overflow_policy.strategy == "shrink"
+    assert rules.layout_hints.max_bullets_for_single_column == 5
+    assert rules.layout_hints.equal_length_threshold == 0.4
+    assert rules.layout_hints.short_text_threshold == 10
 
 
 def test_load_nonexistent_design_rules_raises() -> None:

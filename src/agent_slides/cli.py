@@ -9,6 +9,7 @@ import click
 from agent_slides import __version__
 from agent_slides.commands.batch import batch
 from agent_slides.commands.build import build_command
+from agent_slides.commands.chart import chart
 from agent_slides.commands.info import info_command
 from agent_slides.commands.inspect_cmd import inspect_command
 from agent_slides.commands.init import init_command
@@ -16,6 +17,7 @@ from agent_slides.commands.learn import learn_command
 from agent_slides.commands.preview import preview_command
 from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
+from agent_slides.commands.suggest_layout import suggest_layout_command
 from agent_slides.commands.theme import theme
 from agent_slides.commands.validate_cmd import validate_command
 from agent_slides.errors import AgentSlidesError
@@ -54,6 +56,7 @@ def cli() -> None:
 cli.add_command(batch)
 cli.add_command(init_command)
 cli.add_command(preview_command)
+cli.add_command(chart)
 cli.add_command(slide)
 cli.add_command(slot)
 cli.add_command(theme)
@@ -61,6 +64,7 @@ cli.add_command(info_command)
 cli.add_command(learn_command)
 cli.add_command(inspect_command)
 cli.add_command(build_command)
+cli.add_command(suggest_layout_command, name="suggest-layout")
 cli.add_command(preview_command, name="preview")
 cli.add_command(validate_command, name="validate")
 cli.add_command(info_command, name="info")
