@@ -15,6 +15,7 @@ MAX_BULLETS_PER_SLIDE_EXCEEDED = "MAX_BULLETS_PER_SLIDE_EXCEEDED"
 FONT_SIZE_OUT_OF_RANGE = "FONT_SIZE_OUT_OF_RANGE"
 MISSING_TITLE_SLIDE = "MISSING_TITLE_SLIDE"
 MISSING_CLOSING_SLIDE = "MISSING_CLOSING_SLIDE"
+LAYOUT_FALLBACK = "LAYOUT_FALLBACK"
 
 
 def _count_words(content: NodeContent) -> int:
@@ -42,10 +43,23 @@ def _font_range_for_node(node: Node, rules: DesignRules) -> FontSizeRange:
     return rules.hierarchy.body
 
 
+def _fallback_metadata(slide: Slide) -> tuple[str | None, str | None, str | None]:
+    for computed in slide.computed.values():
+        if computed.layout_used is None and computed.layout_overflow_reason is None:
+            continue
+        return (
+            computed.layout_used,
+            computed.layout_fallback_reason,
+            computed.layout_overflow_reason,
+        )
+    return (None, None, None)
+
+
 def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
     """Validate a single slide against the provided design rules."""
 
     constraints: list[Constraint] = []
+    layout_used, fallback_reason, overflow_reason = _fallback_metadata(slide)
     unbound_node_ids = [node.node_id for node in slide.nodes if node.slot_binding is None]
     if unbound_node_ids:
         constraints.append(
@@ -90,14 +104,23 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
             rel_tol=0.0,
             abs_tol=1e-6,
         ):
+            severity = "warning" if overflow_reason else "error"
+            if overflow_reason:
+                message = (
+                    f"Node '{node.node_id}' still overflows at the minimum font size "
+                    f"of {rules.overflow_policy.min_font_size}pt after trying layout variants; "
+                    f"{overflow_reason}."
+                )
+            else:
+                message = (
+                    f"Node '{node.node_id}' still overflows at the minimum font size "
+                    f"of {rules.overflow_policy.min_font_size}pt."
+                )
             constraints.append(
                 Constraint(
                     code=OVERFLOW,
-                    severity="error",
-                    message=(
-                        f"Node '{node.node_id}' still overflows at the minimum font size "
-                        f"of {rules.overflow_policy.min_font_size}pt."
-                    ),
+                    severity=severity,
+                    message=message,
                     slide_id=slide.slide_id,
                     node_id=node.node_id,
                 )
@@ -127,6 +150,20 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
                 message=(
                     f"Slide has {total_bullets} bullets; "
                     f"max is {rules.content_limits.max_bullets_per_slide}."
+                ),
+                slide_id=slide.slide_id,
+            )
+        )
+
+    if layout_used and layout_used != slide.layout:
+        suffix = f": {fallback_reason}" if fallback_reason else "."
+        constraints.append(
+            Constraint(
+                code=LAYOUT_FALLBACK,
+                severity="warning",
+                message=(
+                    f"Slide used fallback layout '{layout_used}' instead of "
+                    f"'{slide.layout}'{suffix}"
                 ),
                 slide_id=slide.slide_id,
             )
