@@ -86,10 +86,16 @@
       }
 
       .toolbar-top {
-        text-align: center;
         padding: 8px 20px;
         border-bottom: 1px solid rgba(70, 50, 25, 0.08);
         background: rgba(255, 252, 247, 0.78);
+      }
+
+      .toolbar-top-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
       }
 
       .toolbar-bottom {
@@ -161,6 +167,23 @@
         color: #6a5841;
       }
 
+      .preview-banner {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(196, 111, 46, 0.12);
+        border: 1px solid rgba(196, 111, 46, 0.2);
+        color: #7a4c1f;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .preview-banner[hidden] {
+        display: none;
+      }
+
       .stage-shell {
         flex: 1;
         min-height: 0;
@@ -207,7 +230,10 @@
           </span>
         </header>
         <div class="toolbar-top">
-          <div class="meta" id="slide-count">Slide 0 of 0</div>
+          <div class="toolbar-top-inner">
+            <div class="meta" id="slide-count">Slide 0 of 0</div>
+            <div class="preview-banner" id="preview-banner" hidden>Approximate preview (LibreOffice unavailable)</div>
+          </div>
         </div>
         <div class="stage-shell">
           <img id="stage-image" alt="Slide preview" hidden>
@@ -232,7 +258,9 @@
       const nextButton = document.getElementById("next-slide");
       const dots = document.getElementById("slide-dots");
       const slideCount = document.getElementById("slide-count");
+      const previewBanner = document.getElementById("preview-banner");
       const measureContext = document.createElement("canvas").getContext("2d");
+      const APPROXIMATE_PREVIEW_NOTICE = "Approximate preview (LibreOffice unavailable)";
       const chartPalette = ["#c98e48", "#6e8ca7", "#8f9b5f", "#c56f5e", "#8672b8"];
       const chartTypeLabels = {
         area: "Area Chart",
@@ -247,6 +275,7 @@
       let currentDeck = null;
       let currentSlideIndex = 0;
       let previewBackend = "svg";
+      let previewLoadToken = 0;
       let reconnectDelayMs = 250;
       let reconnectTimer = null;
 
@@ -257,8 +286,22 @@
 
       const setPreviewBackend = (backend) => {
         previewBackend = backend === "png" ? "png" : "svg";
-        stageImage.hidden = previewBackend !== "png";
-        stage.hidden = previewBackend === "png";
+      };
+
+      const showSurface = (surface) => {
+        if (surface === "png") {
+          stageImage.hidden = false;
+          stage.hidden = true;
+          return;
+        }
+        stageImage.hidden = true;
+        stage.hidden = false;
+      };
+
+      const setPreviewBanner = (message = "") => {
+        const normalized = String(message || "").trim();
+        previewBanner.hidden = normalized.length === 0;
+        previewBanner.textContent = normalized || APPROXIMATE_PREVIEW_NOTICE;
       };
 
       const imageHref = (imagePath) => {
@@ -813,6 +856,34 @@
         return currentDeck.slide_previews[index] ?? null;
       };
 
+      const loadSlidePreview = (url) => {
+        const requestToken = ++previewLoadToken;
+        const probe = new Image();
+
+        showSurface("svg");
+        stageImage.removeAttribute("src");
+
+        probe.addEventListener("load", () => {
+          if (requestToken !== previewLoadToken) {
+            return;
+          }
+          stageImage.src = url;
+          showSurface("png");
+        });
+
+        probe.addEventListener("error", () => {
+          if (requestToken !== previewLoadToken) {
+            return;
+          }
+          stageImage.removeAttribute("src");
+          setPreviewBackend("svg");
+          showSurface("svg");
+          setPreviewBanner(currentDeck?.preview_notice || APPROXIMATE_PREVIEW_NOTICE);
+        });
+
+        probe.src = url;
+      };
+
       const renderDeck = (deck) => {
         currentDeck = deck && typeof deck === "object" ? deck : { slides: [] };
         const slides = Array.isArray(currentDeck.slides) ? currentDeck.slides : [];
@@ -820,26 +891,20 @@
         currentSlideIndex = clampSlideIndex(currentSlideIndex, slides.length);
         stage.replaceChildren();
         updateNavigation(slides);
+        previewLoadToken += 1;
 
         if (slides.length === 0) {
           setPreviewBackend("svg");
           stageImage.removeAttribute("src");
+          showSurface("svg");
+          setPreviewBanner("");
           renderEmptyState();
           return;
         }
 
-        if (previewBackend === "png") {
-          const preview = slidePreview(currentSlideIndex);
-          if (preview?.url) {
-            stageImage.src = preview.url;
-            stageImage.alt = `Slide ${currentSlideIndex + 1} preview`;
-            return;
-          }
-          setPreviewBackend("svg");
-        }
-
         renderStageBackground();
         stageImage.removeAttribute("src");
+        showSurface("svg");
 
         const slide = slides[currentSlideIndex];
         for (const node of slide.nodes ?? []) {
@@ -860,6 +925,19 @@
 
           renderTextNode(node, computed);
         }
+
+        if (previewBackend === "png") {
+          const preview = slidePreview(currentSlideIndex);
+          if (preview?.url) {
+            setPreviewBanner("");
+            stageImage.alt = `Slide ${currentSlideIndex + 1} preview`;
+            loadSlidePreview(preview.url);
+            return;
+          }
+          setPreviewBackend("svg");
+        }
+
+        setPreviewBanner(currentDeck.preview_notice || APPROXIMATE_PREVIEW_NOTICE);
       };
 
       const showRelativeSlide = (delta) => {
