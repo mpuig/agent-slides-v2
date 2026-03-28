@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 
@@ -48,6 +48,14 @@ class DeckStructureRules(BaseModel):
     recommend_closing_slide: bool
 
 
+class LayoutHints(BaseModel):
+    """Thresholds used by automatic layout suggestion heuristics."""
+
+    max_bullets_for_single_column: int = 5
+    equal_length_threshold: float = 0.4
+    short_text_threshold: int = 10
+
+
 class DesignRules(BaseModel):
     """Complete design-rules profile."""
 
@@ -56,6 +64,7 @@ class DesignRules(BaseModel):
     hierarchy: HierarchyRules
     overflow_policy: OverflowPolicy
     deck_structure: DeckStructureRules
+    layout_hints: LayoutHints = Field(default_factory=LayoutHints)
 
 
 def _design_rules_dir() -> resources.abc.Traversable:
