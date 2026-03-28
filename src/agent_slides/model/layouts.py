@@ -1,4 +1,4 @@
-"""Built-in layout definitions for v0."""
+"""Built-in layout definitions."""
 
 from __future__ import annotations
 
@@ -119,20 +119,20 @@ LAYOUTS: dict[str, LayoutDef] = {
 }
 
 
-def get_layout(name: str) -> LayoutDef:
-    """Return a built-in layout definition by name."""
+def list_layouts() -> list[str]:
+    """Return the available built-in layout names."""
 
-    try:
-        return LAYOUTS[name]
-    except KeyError as exc:
+    return sorted(LAYOUTS)
+
+
+def get_layout(name: str) -> LayoutDef:
+    """Return a built-in layout or raise a uniform domain error."""
+
+    layout = LAYOUTS.get(name)
+    if layout is None:
         available = ", ".join(list_layouts())
         raise AgentSlidesError(
             INVALID_LAYOUT,
-            f"Unknown layout '{name}'. Available layouts: {available}",
-        ) from exc
-
-
-def list_layouts() -> list[str]:
-    """Return the sorted list of available built-in layouts."""
-
-    return sorted(LAYOUTS)
+            f"Layout {name!r} is invalid. Available layouts: {available}",
+        )
+    return layout

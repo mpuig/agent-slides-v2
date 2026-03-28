@@ -1,5 +1,6 @@
 """Scene graph model package."""
 
+from .layouts import get_layout, list_layouts
 from .types import (
     ComputedNode,
     Counters,
@@ -17,7 +18,6 @@ from .types import (
 )
 from agent_slides.model.constraints import Constraint
 from agent_slides.model.design_rules import DesignRules, list_design_rules, load_design_rules
-from agent_slides.model.layouts import get_layout, list_layouts
 
 __all__ = [
     "ComputedNode",
@@ -36,7 +36,7 @@ __all__ = [
     "ThemeFonts",
     "ThemeSpacing",
     "get_layout",
-    "list_layouts",
     "list_design_rules",
+    "list_layouts",
     "load_design_rules",
 ]

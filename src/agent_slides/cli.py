@@ -8,6 +8,7 @@ import click
 
 from agent_slides import __version__
 from agent_slides.commands.init import init_command
+from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
 from agent_slides.errors import AgentSlidesError
 
@@ -41,4 +42,5 @@ def cli() -> None:
 
 
 cli.add_command(init_command)
+cli.add_command(slide)
 cli.add_command(slot)
