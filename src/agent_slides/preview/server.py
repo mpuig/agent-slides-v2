@@ -28,7 +28,9 @@ LOGGER = logging.getLogger(__name__)
 CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
     encoding="utf-8"
 )
-CHAT_HTML = resources.files("agent_slides.preview").joinpath("chat.html").read_text(encoding="utf-8")
+CHAT_HTML = resources.files("agent_slides.preview").joinpath("chat.html").read_text(
+    encoding="utf-8"
+)
 
 ChatEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 ChatMessageHandler = Callable[[dict[str, Any], ChatEmitter], Awaitable[None] | None]
@@ -209,8 +211,18 @@ class PreviewServer:
                 return None
             return self._not_found_response(connection)
 
+        if request.path == "/client.html":
+            response = connection.respond(HTTPStatus.OK, CLIENT_HTML)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+
         if request.path == "/":
             response = connection.respond(HTTPStatus.OK, CHAT_HTML if self.mode == "chat" else CLIENT_HTML)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+
+        if request.path in {"/chat", "/chat.html"}:
+            response = connection.respond(HTTPStatus.OK, CHAT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 
