@@ -15,6 +15,7 @@ from agent_slides.commands.info import info_command
 from agent_slides.commands.inspect_cmd import inspect_command
 from agent_slides.commands.init import init_command
 from agent_slides.commands.learn import learn_command
+from agent_slides.commands.pattern import pattern
 from agent_slides.commands.preview import preview_command
 from agent_slides.commands.review import review_command
 from agent_slides.commands.shape import shape
@@ -71,6 +72,7 @@ cli.add_command(table)
 cli.add_command(theme)
 cli.add_command(info_command)
 cli.add_command(learn_command)
+cli.add_command(pattern)
 cli.add_command(inspect_command)
 cli.add_command(build_command)
 cli.add_command(suggest_layout_command, name="suggest-layout")
