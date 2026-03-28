@@ -108,6 +108,8 @@ def write_pptx(deck: Deck, output_path: str) -> None:
         for node in slide.nodes:
             if node.slot_binding is None:
                 continue
+            if node.type != "text":
+                continue
 
             computed = slide.computed.get(node.node_id)
             if computed is None:
