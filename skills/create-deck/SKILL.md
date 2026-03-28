@@ -13,8 +13,8 @@ Keep this skill focused on orchestration. Do not restate or invent design rules 
 
 1. Plan a 5-10 slide outline from the brief.
 2. Choose a theme and initialize the deck.
-3. Add slides with the right built-in layouts.
-4. Fill slots, preferably with one `batch` call.
+3. Add title and closing slides with explicit layouts, then create content slides with `--auto-layout`.
+4. Fill any remaining explicit-layout slots, preferably with one `batch` call.
 5. Run `validate`, fix warnings, then validate again.
 6. Build the `.pptx`.
 7. Optionally run `preview`.
@@ -40,6 +40,13 @@ Good default 5-slide structure:
 4. Proof, quote, or example
 5. Closing / takeaway
 
+Decide which slides are fixed-structure versus content-shaped before generating commands:
+
+- Usually keep slide 1 explicit as `title`.
+- Usually keep the last slide explicit as `closing`.
+- Default every middle content slide to `--auto-layout` so the engine can choose from the actual content shape.
+- Reach for explicit `--layout` on a content slide only when the structure is already obvious before generation or when you are correcting a bad auto pick.
+
 ## Choose Layouts From Content Shape
 
 Use only built-in layouts that exist:
@@ -61,6 +68,14 @@ Layout selection heuristics:
 - Three pillars / three steps -> `three_col`
 - Testimonial / key quote -> `quote`
 - Final takeaway / thank-you / CTA -> `closing`
+
+Default creation strategy:
+
+- Use explicit `--layout title` for the opener.
+- Use explicit `--layout closing` for the last slide.
+- For content slides, prefer `agent-slides slide add deck.json --auto-layout --content '...'`.
+- `--auto-layout` and `--layout` are mutually exclusive. Do not pass both on the same command.
+- Keep explicit layout selection in reserve for slides where the structure is predetermined or where auto-layout chose poorly.
 
 ## Choose a Theme
 
@@ -94,10 +109,33 @@ Create slides in outline order:
 
 ```bash
 agent-slides slide add deck.json --layout title
-agent-slides slide add deck.json --layout title_content
-agent-slides slide add deck.json --layout comparison
-agent-slides slide add deck.json --layout quote
+agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Why teams are experimenting now"},{"type":"bullet","text":"Faster drafting"},{"type":"bullet","text":"Better repetitive-task coverage"},{"type":"bullet","text":"Lower cost to test ideas"}]}'
+agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Human-only vs agent-assisted"},{"type":"paragraph","text":"Human-only: Strong judgment and slower first pass."},{"type":"paragraph","text":"Agent-assisted: Faster iteration but needs review."}]}'
+agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Adoption rule"},{"type":"paragraph","text":"Use agents to widen the first draft, then review with human judgment."}]}'
 agent-slides slide add deck.json --layout closing
+```
+
+When `--auto-layout` succeeds, it both selects the layout and pre-fills matching slots. Use that as the default for slide 2 onward unless the slide has an obvious fixed role such as `title` or `closing`.
+
+## Fallback When Auto-Layout Picks Wrong
+
+Treat auto-layout as the first pass, not the last word:
+
+1. Create the content slide with `--auto-layout --content '...'`.
+2. Read the command output to see the chosen `layout`, `auto_selected: true`, and selection `reason`.
+3. Validate or preview the deck.
+4. If the structure is wrong, switch the slide explicitly with `slide set-layout`.
+5. Re-check for `UNBOUND_NODES`, then refill or rebind any slots that no longer map cleanly.
+
+Example fallback:
+
+```bash
+agent-slides slide add deck.json --auto-layout --content '{"blocks":[{"type":"heading","text":"Human-only vs agent-assisted"},{"type":"paragraph","text":"Human-only: Strong judgment and slower first pass."},{"type":"paragraph","text":"Agent-assisted: Faster iteration but needs review."}]}'
+agent-slides slide set-layout deck.json --slide 2 --layout comparison
+agent-slides slot set deck.json --slide 2 --slot left_header --text "Human-only"
+agent-slides slot set deck.json --slide 2 --slot left_body --text "- Strong judgment\n- Slower first pass"
+agent-slides slot set deck.json --slide 2 --slot right_header --text "Agent-assisted"
+agent-slides slot set deck.json --slide 2 --slot right_body --text "- Faster iteration\n- Needs review"
 ```
 
 ## Fill Content
@@ -119,23 +157,25 @@ Example 5-slide batch that validates cleanly:
 cat <<'JSON' | agent-slides batch deck.json
 [
   {"command": "slide_add", "args": {"layout": "title"}},
-  {"command": "slide_add", "args": {"layout": "title_content"}},
-  {"command": "slide_add", "args": {"layout": "two_col"}},
-  {"command": "slide_add", "args": {"layout": "title_content"}},
+  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
+    {"type": "heading", "text": "Why teams are experimenting now"},
+    {"type": "bullet", "text": "Faster drafting"},
+    {"type": "bullet", "text": "Better repetitive-task coverage"},
+    {"type": "bullet", "text": "Lower cost to test ideas"}
+  ]}}},
+  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
+    {"type": "heading", "text": "Human-only vs agent-assisted"},
+    {"type": "paragraph", "text": "Human-only: Strong judgment and slower first pass."},
+    {"type": "paragraph", "text": "Agent-assisted: Faster iteration but needs review."}
+  ]}}},
+  {"command": "slide_add", "args": {"auto_layout": true, "content": {"blocks": [
+    {"type": "heading", "text": "Adoption rule"},
+    {"type": "paragraph", "text": "Use agents to widen the first draft, then review with human judgment."}
+  ]}}},
   {"command": "slide_add", "args": {"layout": "closing"}},
 
   {"command": "slot_set", "args": {"slide": 0, "slot": "title", "text": "AI Agents for Product Teams"}},
   {"command": "slot_clear", "args": {"slide": 0, "slot": "subtitle"}},
-
-  {"command": "slot_set", "args": {"slide": 1, "slot": "heading", "text": "Why teams are experimenting now"}},
-  {"command": "slot_set", "args": {"slide": 1, "slot": "body", "text": "- Faster drafting\n- Better repetitive-task coverage\n- Lower cost to test ideas"}},
-
-  {"command": "slot_set", "args": {"slide": 2, "slot": "heading", "text": "Human-only vs agent-assisted"}},
-  {"command": "slot_set", "args": {"slide": 2, "slot": "left", "text": "- Strong judgment\n- Slower first pass"}},
-  {"command": "slot_set", "args": {"slide": 2, "slot": "right", "text": "- Faster iteration\n- Needs review"}},
-
-  {"command": "slot_set", "args": {"slide": 3, "slot": "heading", "text": "Adoption rule"}},
-  {"command": "slot_set", "args": {"slide": 3, "slot": "body", "text": "Use agents to widen the first draft, then review with human judgment."}},
 
   {"command": "slot_set", "args": {"slide": 4, "slot": "body", "text": "Start with one workflow, measure quality and speed, then expand."}}
 ]
@@ -147,6 +187,7 @@ Batch payload rules:
 - The stdin payload must be a JSON array.
 - Each item must be `{"command": "...", "args": {...}}`.
 - Use supported mutation commands only: `slide_add`, `slide_remove`, `slide_set_layout`, `slot_set`, `slot_clear`, `slot_bind`.
+- `slide_add` can either take an explicit `layout` or an auto-layout payload such as `{"auto_layout": true, "content": {"blocks": [...]}}`.
 - If one operation is invalid, the batch fails and the deck write is rolled back. Fix the bad operation and rerun the whole batch.
 - `slot_clear` is useful when a layout includes a slot you do not want to keep, for example removing the unused `subtitle` from a title slide.
 
@@ -173,6 +214,7 @@ Common validation outcomes and what to do:
 - `FONT_SIZE_OUT_OF_RANGE`: usually a sign the slide is too dense or an override is too aggressive. Remove the override or simplify content.
 - `MISSING_TITLE_SLIDE`: make the first slide `title` unless the user intentionally wants a different opening.
 - `MISSING_CLOSING_SLIDE`: add a `closing` slide when the deck needs a clear ending.
+- Auto-layout picked a valid but weak structure: use `slide set-layout` to correct it, then refill any slots the new layout needs.
 - `UNBOUND_NODES`: most often caused by `slide set-layout` when the old layout had slots the new layout does not support. Either move the content into valid slots or choose a layout that matches the content shape better.
 
 If a slide keeps failing validation, do not keep squeezing text. Change the outline.
@@ -205,6 +247,7 @@ agent-slides preview deck.json --no-open --port 8765
 - Keep headings short and specific.
 - Prefer 3-5 bullets over dense paragraphs.
 - Use sentence fragments for bullets.
+- For content slides, let `--auto-layout` make the first layout choice before reaching for manual `--layout`.
 - Reserve `quote` for one memorable statement, not an entire paragraph.
 - Use `comparison` and `three_col` only when each column can stay concise.
 - When the topic is broad, split it into multiple `title_content` slides instead of overloading one slide.
