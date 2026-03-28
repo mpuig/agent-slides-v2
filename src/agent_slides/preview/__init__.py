@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib.resources import files
 from pathlib import Path
 
+from agent_slides.preview.orchestrator import ChatResponse, DeckOrchestrator
 from agent_slides.preview.server import PreviewServer, run_preview_server
 from agent_slides.preview.watcher import SidecarWatcher
 
@@ -22,6 +23,8 @@ def read_client_html() -> str:
 
 
 __all__ = [
+    "ChatResponse",
+    "DeckOrchestrator",
     "PreviewServer",
     "SidecarWatcher",
     "client_html_path",
