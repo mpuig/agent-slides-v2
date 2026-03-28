@@ -41,6 +41,27 @@ def _content_by_slot(slide: Slide) -> dict[str, Node]:
     }
 
 
+def _shape_dimension(node: Node, key: str) -> float:
+    value = node.style_overrides[key]
+    assert isinstance(value, int | float)
+    return float(value)
+
+
+def _shape_geometry(node: Node) -> tuple[float, float, float, float]:
+    x = _shape_dimension(node, "x")
+    y = _shape_dimension(node, "y")
+    width = _shape_dimension(node, "width")
+    height = _shape_dimension(node, "height")
+    spec = node.shape_spec
+    if spec is not None and spec.shape_type != "line":
+        min_visible = max(12.0, spec.line_width * 6.0)
+        if width == 0.0:
+            width = min_visible
+        if height == 0.0:
+            height = min_visible
+    return x, y, width, height
+
+
 def _measure_slot_height_factory(layout_def: LayoutDef, provider: LayoutProvider) -> Callable[[str, object | None, float], float]:
     def measure(slot_name: str, content: object | None, width: float) -> float:
         node = content if isinstance(content, Node) else None
@@ -133,6 +154,25 @@ def _reflow_slide(
     rects = solve(slot_constraints, content_by_slot, _measure_slot_height_factory(layout_def, active_provider))
 
     for node in slide.nodes:
+        if node.type == "shape":
+            x, y, width, height = _shape_geometry(node)
+            computed[node.node_id] = ComputedNode(
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                font_size_pt=0.0,
+                font_family="",
+                color="#000000",
+                bg_color=None,
+                bg_transparency=0.0,
+                font_bold=False,
+                text_overflow=False,
+                revision=revision,
+                content_type="shape",
+            )
+            continue
+
         if node.slot_binding is None:
             continue
         if node.slot_binding not in layout_def.slots:
