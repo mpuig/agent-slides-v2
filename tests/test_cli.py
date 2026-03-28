@@ -19,6 +19,7 @@ from agent_slides.errors import (
     REVISION_CONFLICT,
     SCHEMA_ERROR,
     SLOT_OCCUPIED,
+    TEMPLATE_CHANGED,
     UNBOUND_NODES,
 )
 
@@ -84,6 +85,7 @@ def test_all_error_codes_are_defined() -> None:
         REVISION_CONFLICT,
         SLOT_OCCUPIED,
         FILE_EXISTS,
+        TEMPLATE_CHANGED,
     } == {
         "INVALID_SLIDE",
         "INVALID_SLOT",
@@ -96,4 +98,5 @@ def test_all_error_codes_are_defined() -> None:
         "REVISION_CONFLICT",
         "SLOT_OCCUPIED",
         "FILE_EXISTS",
+        "TEMPLATE_CHANGED",
     }

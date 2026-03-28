@@ -17,14 +17,14 @@ from agent_slides.model.themes import load_theme
 @click.command("init")
 @click.argument("path", type=click.Path(dir_okay=False, path_type=str))
 @click.option("--theme", "theme_name")
-@click.option("--template", "template_manifest", type=click.Path(dir_okay=False, path_type=str))
+@click.option("--template", "template_manifest", type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--rules", "rules_name", default="default", show_default=True)
 @click.option("--force", is_flag=True, default=False)
 def init_command(
     path: str,
     theme_name: str | None,
-    template_manifest: str | None,
     rules_name: str,
+    template_manifest: Path | None,
     force: bool,
 ) -> None:
     """Create a new deck JSON file."""
@@ -33,19 +33,18 @@ def init_command(
         raise AgentSlidesError(SCHEMA_ERROR, "`--theme` and `--template` are mutually exclusive.")
 
     load_design_rules(rules_name)
-    response_template: str | None = None
+    response_template: Path | None = None
 
     if template_manifest is not None:
-        manifest_path = Path(template_manifest)
-        registry = TemplateLayoutRegistry(str(manifest_path))
+        registry = TemplateLayoutRegistry(str(template_manifest))
         deck = init_deck(
             path,
             theme=registry.theme.name,
             design_rules=rules_name,
             force=force,
-            template_manifest=str(manifest_path),
+            template_manifest=template_manifest,
         )
-        response_template = deck.template_manifest
+        response_template = template_manifest
     else:
         resolved_theme = theme_name or "default"
         load_theme(resolved_theme)
@@ -62,7 +61,8 @@ def init_command(
         "design_rules": deck.design_rules,
     }
     if response_template is not None:
-        response_data["template"] = response_template
+        response_data["template"] = deck.template_manifest
+        response_data["template_manifest"] = deck.template_manifest
 
     click.echo(
         json.dumps(

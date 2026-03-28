@@ -168,6 +168,15 @@ def resolve_manifest_path(deck_path: str, deck: Deck) -> str | None:
     return os.path.join(deck_dir, deck.template_manifest)
 
 
+def _relative_manifest_path(deck_path: Path, manifest_path: str | Path | None) -> str | None:
+    if manifest_path is None:
+        return None
+
+    resolved_manifest = Path(manifest_path).expanduser().resolve(strict=False)
+    deck_dir = deck_path.parent.resolve(strict=False)
+    return os.path.relpath(resolved_manifest, deck_dir)
+
+
 def read_computed_deck(path: str) -> ComputedDeck:
     """Load, parse, and validate a computed deck sidecar."""
 
@@ -231,7 +240,7 @@ def init_deck(
     design_rules: str,
     force: bool,
     *,
-    template_manifest: str | None = None,
+    template_manifest: str | Path | None = None,
 ) -> Deck:
     """Create a new sidecar deck file."""
 
@@ -239,16 +248,12 @@ def init_deck(
     if deck_path.exists() and not force:
         raise AgentSlidesError(FILE_EXISTS, f"Deck file already exists: {deck_path}")
 
-    relative_manifest: str | None = None
-    if template_manifest is not None:
-        relative_manifest = os.path.relpath(template_manifest, start=deck_path.resolve().parent)
-
     deck = Deck(
         deck_id=str(uuid4()),
         revision=0,
         theme=theme,
         design_rules=design_rules,
-        template_manifest=relative_manifest,
+        template_manifest=_relative_manifest_path(deck_path, template_manifest),
     )
     _write_bundle_atomic(deck_path, deck)
     return deck

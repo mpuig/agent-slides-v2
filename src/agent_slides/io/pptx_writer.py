@@ -15,12 +15,11 @@ from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
-from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
-TEMPLATE_CHANGED = "TEMPLATE_CHANGED"
 
 
 @dataclass(frozen=True)
@@ -177,8 +176,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _emit_warning(code: str, message: str) -> None:
-    payload = {"warning": {"code": code, "message": message}}
+def _emit_warning(payload: dict[str, object]) -> None:
     sys.stderr.write(f"{json.dumps(payload)}\n")
 
 
@@ -188,8 +186,17 @@ def _warn_if_template_changed(template_path: Path, expected_hash: str) -> None:
         return
 
     _emit_warning(
-        TEMPLATE_CHANGED,
-        f"Template source hash mismatch for {template_path}: manifest={expected_hash} actual={actual_hash}",
+        {
+            "warning": {
+                "code": TEMPLATE_CHANGED,
+                "message": "Template source file changed since the manifest was learned.",
+            },
+            "data": {
+                "template": str(template_path),
+                "expected_hash": expected_hash,
+                "actual_hash": actual_hash,
+            },
+        }
     )
 
 
