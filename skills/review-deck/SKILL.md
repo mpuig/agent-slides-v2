@@ -72,14 +72,52 @@ For each slide, inspect:
 
 Use the rendered PNG as the source of truth for what the slide actually looks like.
 
-The checklist categories are:
+Use this 38-item checklist directly during the audit:
 
 1. Visual Hierarchy
+- Title visually dominates (largest text, distinct from body)
+- Clear reading order (title -> subheader -> body -> source)
+- One focal point per slide
+- White space is intentional
+- Squint test: hierarchy visible when blurred
+- Content doesn't touch slide edges
 2. Typography
+- Heading 24-44pt, body 10-18pt
+- Sizes consistent across slides
+- No more than 2 font families
+- Bold used sparingly
+- Text not truncated or overflowing
+- Font readable at projection distance
 3. Layout Quality
+- Layout matches content relationship (isomorphism)
+- Columns balanced in density
+- Charts within slot bounds
+- No excessive empty space
+- Grid alignment consistent
+- Image slots filled or intentionally empty
 4. Content Quality
+- Action title (complete sentence with "so what")
+- NOT a topic label ("Market Overview" = fail)
+- Body proves title
+- No more than 6 bullets per slide
+- Bullets concise (not paragraphs)
+- Source lines for data claims
+- Charts have title and labels
+- Numbers rounded and readable
 5. Deck-Level Patterns
+- Layout variety (2+ layouts in 6+ slide decks)
+- No 3+ consecutive same layout
+- Title slide present
+- Closing slide present
+- Visual rhythm (mix of content types)
+- Consistent theme throughout
 6. AI Slop Detection
+- Every slide same layout (no variety)
+- Generic titles ("Introduction", "Overview", "Summary")
+- Bullet walls on every slide
+- Empty image/chart slots
+- Inconsistent capitalization
+- Repetitive auto-generated structure
 
 Treat `report.json` as the machine baseline and the slide PNGs as the visual evidence.
 
@@ -91,6 +129,25 @@ Your output should summarize:
 - overall grade
 - the top issues with screenshot evidence
 - specific fixes that will materially improve the deck
+
+Use this rubric for each category:
+
+```text
+A  = 0 failures in category
+A- = 1 minor failure
+B+ = 1 failure
+B  = 2 failures
+C+ = 3 failures
+C  = 4+ failures
+D  = majority of items fail
+F  = category completely ignored
+```
+
+Calculate overall grade as a weighted average:
+
+- Content Quality counts 2x
+- AI Slop Detection counts 1.5x
+- Visual Hierarchy, Typography, Layout Quality, and Deck-Level Patterns count 1x each
 
 Prefer pointing to concrete slide files such as:
 
@@ -108,12 +165,37 @@ Only use auto-fix when the user explicitly wants fixes applied. The explicit app
 uv run agent-slides review deck.json --fix
 ```
 
-Current auto-fixes target common mechanical issues:
+Use an iterative fix loop, not a single cleanup pass:
+
+```text
+Fix Loop (max 3 passes):
+  Pass N:
+    -> Fix top issue
+    -> Re-render affected slide via LibreOffice
+    -> Re-evaluate against checklist
+    -> Pass? -> next issue
+    -> Still failing after 2 attempts? -> flag as unresolvable, move on
+
+  Stop early when: all categories B+ or above, or 3 passes complete
+  Each fix produces a before/after PNG pair as evidence
+```
+
+Apply fixes in this priority order:
+
+1. Content quality (action titles, body proves title)
+2. Bullet count (split slides >6 bullets)
+3. Missing elements (chart titles, source lines)
+4. Layout variety (swap repeated layouts)
+5. Visual issues (spacing, alignment)
+
+Within that loop, prefer these common mechanical fixes when they match the top issue:
 
 - rewrite generic topic-label titles using slide evidence when possible
 - add missing chart titles
+- add missing source lines for quantified claims
 - split bullet-heavy `title_content` slides into a follow-up slide
-- rerender the deck and produce before/after comparison output
+- swap repeated layouts when deck-level monotony is dragging the grade
+- rerender the deck and produce before/after comparison output for each fix
 
 After `--fix`, inspect the new `after/` screenshots and compare the `before` and `after` grades in `report.json`.
 
