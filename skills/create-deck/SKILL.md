@@ -20,6 +20,7 @@ Load these references at the point they matter:
 - Phase 0: no extra references required beyond asking the questions cleanly
 - Before Phase 1, read `${CLAUDE_SKILL_DIR}/references/storytelling.md`
 - Before locking or overriding layouts in Phase 1 or Phase 2, read `${CLAUDE_SKILL_DIR}/references/layout-selection.md`
+- Before Phase 2, read `${CLAUDE_SKILL_DIR}/references/content-density.md`
 - Before adding a chart in Phase 2, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md`
 - Before Phase 3, read `${CLAUDE_SKILL_DIR}/references/common-mistakes.md`
 
@@ -248,6 +249,7 @@ GAPS: 1 (migration proof)
 ## Phase 2: Build
 
 After the plan is approved, execute it through the CLI.
+Read `${CLAUDE_SKILL_DIR}/references/content-density.md` before building so the slide structures, typography, spacing, and source treatment stay professional instead of defaulting to plain text blocks.
 
 ### Build rules
 

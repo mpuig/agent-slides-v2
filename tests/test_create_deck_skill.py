@@ -27,7 +27,8 @@ def test_create_deck_skill_covers_storyline_review_and_qa_outputs() -> None:
     assert "Equal pillars or themes -> `three_col`" in skill_text
     assert "A chart without a takeaway title and annotation" in skill_text
     assert "Deck QA Summary:" in skill_text
-    assert "`references/storytelling.md`" in skill_text
-    assert "`references/layout-selection.md`" in skill_text
-    assert "`references/chart-guide.md`" in skill_text
-    assert "`references/common-mistakes.md`" in skill_text
+    assert "references/storytelling.md" in skill_text
+    assert "references/layout-selection.md" in skill_text
+    assert "references/content-density.md" in skill_text
+    assert "references/chart-guide.md" in skill_text
+    assert "references/common-mistakes.md" in skill_text
