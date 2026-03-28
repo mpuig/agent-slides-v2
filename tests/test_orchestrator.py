@@ -12,11 +12,12 @@ from agent_slides.preview import orchestrator as orchestrator_module
 from agent_slides.preview.orchestrator import DeckOrchestrator, SYSTEM_PROMPT
 
 
-def test_orchestrator_system_prompt_references_storytelling_guide() -> None:
-    assert "references/storytelling.md" in SYSTEM_PROMPT
-    assert "references/layout-selection.md" in SYSTEM_PROMPT
-    assert "references/chart-guide.md" in SYSTEM_PROMPT
-    assert "references/common-mistakes.md" in SYSTEM_PROMPT
+def test_orchestrator_system_prompt_is_self_contained() -> None:
+    assert "references/" not in SYSTEM_PROMPT
+    assert "Phase 0 Pre-flight Questioning" in SYSTEM_PROMPT
+    assert "Phase 1 Storyline Review" in SYSTEM_PROMPT
+    assert "Phase 2 Build" in SYSTEM_PROMPT
+    assert "Phase 3 QA Review" in SYSTEM_PROMPT
     assert "recommendation-first story" in SYSTEM_PROMPT
     assert "SCQA" in SYSTEM_PROMPT
     assert "objective and recommendation first" in SYSTEM_PROMPT
@@ -24,6 +25,8 @@ def test_orchestrator_system_prompt_references_storytelling_guide() -> None:
     assert "core answer, and 2-4 supporting arguments with slide coverage" in SYSTEM_PROMPT
     assert "section by section" in SYSTEM_PROMPT
     assert "Choose layouts isomorphically" in SYSTEM_PROMPT
+    assert "equal pillars or themes should use `three_col`" in SYSTEM_PROMPT
+    assert "bullet overload" in SYSTEM_PROMPT
     assert "chart clarity" in SYSTEM_PROMPT
 
 
@@ -82,7 +85,10 @@ def test_orchestrator_executes_tool_calls_and_preserves_conversation_history(
     deck = read_deck(str(deck_path))
     assert len(deck.slides) == 1
     assert api_calls[0]["messages"] == [{"role": "user", "content": "Create the first slide."}]
-    assert "three phases: Plan, Build, QA" in api_calls[0]["system"]
+    assert "Phase 0 Pre-flight Questioning" in api_calls[0]["system"]
+    assert "Phase 1 Storyline Review" in api_calls[0]["system"]
+    assert "Phase 2 Build" in api_calls[0]["system"]
+    assert "Phase 3 QA Review" in api_calls[0]["system"]
     assert "Pyramid Principle" in api_calls[0]["system"]
     assert "action title" in api_calls[0]["system"]
     assert {tool["name"] for tool in api_calls[0]["tools"]} == {
