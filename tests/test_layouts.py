@@ -131,3 +131,23 @@ def test_rebind_slots_creates_image_nodes_for_image_layouts() -> None:
         ("img4", "image"),
     ]
     assert all(node.style_overrides.get("placeholder") is True for node in slide.nodes[2:])
+
+
+@pytest.mark.parametrize("layout_name", [name for name in list_layouts() if name != "blank"])
+def test_builtin_layout_slots_include_semantic_metadata(layout_name: str) -> None:
+    layout = get_layout(layout_name)
+
+    assert all(slot.alignment_group is not None for slot in layout.slots.values())
+    assert sorted(slot.reading_order for slot in layout.slots.values()) == list(range(len(layout.slots)))
+
+    if layout_name == "two_col":
+        assert layout.slots["heading"].alignment_group == "top"
+        assert layout.slots["heading"].size_policy == "fit_content"
+        assert layout.slots["col1"].peer_group == "columns"
+        assert layout.slots["col1"].alignment_group == "content"
+        assert layout.slots["col2"].peer_group == "columns"
+
+    if layout_name == "gallery":
+        assert layout.slots["img1"].peer_group == "gallery"
+        assert layout.slots["img2"].alignment_group == "gallery_row_1"
+        assert layout.slots["img4"].alignment_group == "gallery_row_2"
