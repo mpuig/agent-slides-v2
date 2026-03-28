@@ -771,6 +771,75 @@ def test_slide_add_invalid_layout_returns_json_error_with_available_layouts(tmp_
         assert layout_name in payload["error"]["message"]
 
 
+def test_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=False)
+
+    content = json.dumps(
+        {
+            "blocks": [
+                {"type": "heading", "text": "Highlights"},
+                {"type": "paragraph", "text": "Left column summary"},
+                {"type": "paragraph", "text": "Right column summary"},
+            ]
+        }
+    )
+
+    result = invoke_cli(["slide", "add", str(deck_path), "--auto-layout", "--content", content])
+    payload = json.loads(result.stdout)
+    deck = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_index": 0,
+            "slide_id": "s-1",
+            "layout": "two_col",
+            "auto_selected": True,
+            "reason": "Two balanced content blocks",
+        },
+    }
+    assert deck.slides[0].layout == "two_col"
+    assert [
+        (node.slot_binding, node.content.model_dump(mode="json"))
+        for node in deck.slides[0].nodes
+        if node.type == "text"
+    ] == [
+        ("heading", {"blocks": [{"type": "heading", "text": "Highlights", "level": 0}]}),
+        ("col1", {"blocks": [{"type": "paragraph", "text": "Left column summary", "level": 0}]}),
+        ("col2", {"blocks": [{"type": "paragraph", "text": "Right column summary", "level": 0}]}),
+    ]
+
+
+def test_slide_add_auto_layout_rejects_layout_override(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=False)
+
+    result = invoke_cli(
+        [
+            "slide",
+            "add",
+            str(deck_path),
+            "--layout",
+            "title",
+            "--auto-layout",
+            "--content",
+            json.dumps({"blocks": [{"type": "heading", "text": "Conflicting"}]}),
+        ]
+    )
+    payload = json.loads(result.stderr)
+
+    assert result.exit_code == 1
+    assert payload == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "`--auto-layout` and `--layout` are mutually exclusive.",
+        },
+    }
+
+
 def test_slide_remove_by_index_shifts_remaining_slides(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
@@ -1063,6 +1132,62 @@ def test_batch_slot_set_accepts_structured_content_objects(tmp_path: Path) -> No
             {"type": "bullet", "text": "Point two", "level": 1},
         ]
     }
+
+
+def test_batch_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {
+                    "command": "slide_add",
+                    "args": {
+                        "auto_layout": True,
+                        "content": {
+                            "blocks": [
+                                {"type": "heading", "text": "Highlights"},
+                                {"type": "paragraph", "text": "Left column summary"},
+                                {"type": "paragraph", "text": "Right column summary"},
+                            ]
+                        },
+                    },
+                }
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "ok": True,
+        "data": {
+            "operations": 1,
+            "results": [
+                {
+                    "slide_index": 0,
+                    "slide_id": "s-1",
+                    "layout": "two_col",
+                    "auto_selected": True,
+                    "reason": "Two balanced content blocks",
+                }
+            ],
+        },
+    }
+
+    deck = read_deck(str(deck_path))
+    assert deck.slides[0].layout == "two_col"
+    assert [
+        (node.slot_binding, node.content.to_plain_text())
+        for node in deck.slides[0].nodes
+        if node.type == "text"
+    ] == [
+        ("heading", "Highlights"),
+        ("col1", "Left column summary"),
+        ("col2", "Right column summary"),
+    ]
 
 
 def test_batch_empty_array_is_a_successful_no_op(tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from agent_slides.engine.reflow import reflow_slide
-from agent_slides.model import ChartSeries, ChartSpec, Node, ScatterPoint, ScatterSeries, Slide, get_layout
+from agent_slides.model import Node, Slide, get_layout
 from agent_slides.model.themes import load_theme
 
 
@@ -25,11 +25,11 @@ def test_reflow_chart_nodes_use_grid_geometry_without_text_fitting() -> None:
                 node_id="n-2",
                 slot_binding="body",
                 type="chart",
-                chart_spec=ChartSpec(
-                    chart_type="column",
-                    categories=["Q1", "Q2", "Q3"],
-                    series=[ChartSeries(name="Revenue", values=[12.0, 15.0, 18.0])],
-                ),
+                chart_spec={
+                    "chart_type": "bar",
+                    "categories": ["Q1", "Q2", "Q3"],
+                    "series": [{"name": "Revenue", "values": [1.0, 2.0, 3.0]}],
+                },
             ),
         ],
     )
@@ -61,15 +61,15 @@ def test_reflow_scatter_chart_nodes_keep_chart_content_type() -> None:
                 node_id="n-2",
                 slot_binding="body",
                 type="chart",
-                chart_spec=ChartSpec(
-                    chart_type="scatter",
-                    scatter_series=[
-                        ScatterSeries(
-                            name="Observations",
-                            points=[ScatterPoint(x=1.0, y=2.0), ScatterPoint(x=2.5, y=3.5)],
-                        )
+                chart_spec={
+                    "chart_type": "scatter",
+                    "scatter_series": [
+                        {
+                            "name": "Observations",
+                            "points": [{"x": 1.0, "y": 2.0}, {"x": 2.5, "y": 3.5}],
+                        }
                     ],
-                ),
+                },
             ),
         ],
     )
