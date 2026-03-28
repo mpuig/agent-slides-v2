@@ -35,7 +35,7 @@ class BuiltinLayoutProvider:
         return get_text_fitting(slug, role)
 
 
-def resolve_layout_provider(template_manifest: object | None) -> LayoutProvider:
+def resolve_layout_provider(template_manifest: str | None) -> LayoutProvider:
     """Resolve the active layout provider for a deck."""
 
     if template_manifest is None:
