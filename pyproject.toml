@@ -14,7 +14,7 @@ dependencies = [
   "pydantic>=2.0",
   "PyYAML>=6.0",
   "watchdog>=6.0",
-  "websockets>=15.0",
+  "websockets>=16.0",
 ]
 
 [project.scripts]
@@ -30,7 +30,7 @@ dev = [
 packages = ["src/agent_slides"]
 include = [
   "src/agent_slides/config/design_rules/*.yaml",
-  "src/agent_slides/preview/*.html",
+  "src/agent_slides/preview_runtime/*.html",
   "src/agent_slides/themes/*.json",
 ]
 
