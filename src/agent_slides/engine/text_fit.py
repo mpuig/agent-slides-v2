@@ -90,7 +90,13 @@ def _estimate_lines(text: str, width: float, font_size: float) -> int:
     return max(sum(ceil(len(line) / chars_per_line) or 1 for line in text.splitlines()), 1)
 
 
-def _fits(content: NodeContent, width: float, height: float, font_size: float) -> bool:
+def measure_text_height(text: str | NodeContent, width: float, font_size: float) -> float:
+    """Estimate the rendered height for text at a fixed font size."""
+
+    content = _normalize_content(text)
+    if width <= 0:
+        return 0.0
+
     lines_height = 0.0
     blocks = content.blocks or [TextBlock(type="paragraph", text="")]
     for index, block in enumerate(blocks):
@@ -100,5 +106,8 @@ def _fits(content: NodeContent, width: float, height: float, font_size: float) -
         lines_height += lines * block_font_size * _line_height_factor(block)
         if index < len(blocks) - 1:
             lines_height += font_size * BLOCK_SPACING_FACTOR
+    return lines_height
 
-    return lines_height <= height
+
+def _fits(content: NodeContent, width: float, height: float, font_size: float) -> bool:
+    return measure_text_height(content, width, font_size) <= height
