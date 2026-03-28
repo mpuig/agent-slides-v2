@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from math import isclose
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,11 +23,32 @@ EMU_PER_POINT = 12_700
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
-NodeType = Literal["text", "image", "chart"]
+TableAlign = Literal["left", "center", "right"]
+NodeType = Literal["text", "image", "chart", "table"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
 ConstraintWidthMode = Literal["fixed", "equal_share"]
+
+
+TABLE_ALIGN_VALUES = ("left", "center", "right")
+_HEX_COLOR_PATTERN = re.compile(r"^#?[0-9A-Fa-f]{6}$")
+_NUMERIC_TABLE_VALUE_PATTERN = re.compile(
+    r"^\s*[\(\-+]?\s*(?:[$€£¥]\s*)?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\d*\.\d+)\s*(?:[KMBT]|bn|mm)?\s*%?\s*\)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_hex_color(value: str) -> str:
+    normalized = value.strip()
+    if not _HEX_COLOR_PATTERN.match(normalized):
+        raise ValueError("header_color must use #RRGGBB or RRGGBB format")
+    return normalized if normalized.startswith("#") else f"#{normalized}"
+
+
+def _looks_numeric_table_value(value: str) -> bool:
+    stripped = value.strip()
+    return bool(stripped) and bool(_NUMERIC_TABLE_VALUE_PATTERN.match(stripped))
 
 
 class AgentSlidesModel(BaseModel):
@@ -217,6 +239,101 @@ class ChartSpec(AgentSlidesModel):
         return self
 
 
+class TableSpec(AgentSlidesModel):
+    headers: list[str]
+    rows: list[list[str]]
+    col_widths: list[float] | None = None
+    col_align: list[TableAlign] | None = None
+    header_color: str | None = None
+    stripe: bool = True
+    font_size: float = 11.0
+    header_font_size: float = 12.0
+
+    @field_validator("headers")
+    @classmethod
+    def validate_headers(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("headers must contain at least one column")
+        normalized = [header.strip() for header in value]
+        if any(not header for header in normalized):
+            raise ValueError("headers cannot contain empty values")
+        return normalized
+
+    @field_validator("col_widths")
+    @classmethod
+    def validate_col_widths(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("col_widths must contain at least one value when provided")
+        if any(width <= 0 for width in value):
+            raise ValueError("col_widths entries must be greater than 0")
+        return [float(width) for width in value]
+
+    @field_validator("col_align")
+    @classmethod
+    def validate_col_align(cls, value: list[TableAlign] | None) -> list[TableAlign] | None:
+        if value is None:
+            return value
+        return [alignment.strip().lower() for alignment in value]
+
+    @field_validator("header_color")
+    @classmethod
+    def validate_header_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _normalize_hex_color(value)
+
+    @field_validator("font_size", "header_font_size")
+    @classmethod
+    def validate_font_sizes(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("font sizes must be greater than 0")
+        return float(value)
+
+    @model_validator(mode="after")
+    def validate_table_shape(self) -> TableSpec:
+        column_count = len(self.headers)
+        for row_index, row in enumerate(self.rows):
+            if len(row) != column_count:
+                raise ValueError(
+                    f"rows[{row_index}] has {len(row)} values for {column_count} headers"
+                )
+        if self.col_widths is not None and len(self.col_widths) != column_count:
+            raise ValueError("col_widths length must match headers")
+        if self.col_align is not None and len(self.col_align) != column_count:
+            raise ValueError("col_align length must match headers")
+        return self
+
+    def infer_numeric_columns(self) -> list[bool]:
+        inferred: list[bool] = []
+        for column_index in range(len(self.headers)):
+            values = [row[column_index] for row in self.rows if row[column_index].strip()]
+            inferred.append(bool(values) and all(_looks_numeric_table_value(value) for value in values))
+        return inferred
+
+    def resolved_col_align(self) -> list[TableAlign]:
+        if self.col_align is not None:
+            return list(self.col_align)
+        numeric_columns = self.infer_numeric_columns()
+        return ["right" if is_numeric else "left" for is_numeric in numeric_columns]
+
+    def resolved_col_widths(self) -> list[float]:
+        if self.col_widths is not None:
+            return list(self.col_widths)
+
+        weights: list[float] = []
+        numeric_columns = self.infer_numeric_columns()
+        for column_index, header in enumerate(self.headers):
+            values = [header, *(row[column_index] for row in self.rows)]
+            max_length = max(len(value.strip()) for value in values if value is not None)
+            weight = max(1.0, float(max_length))
+            if not numeric_columns[column_index]:
+                weight += 2.0
+            weights.append(weight)
+        return weights
+
+
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
@@ -225,6 +342,7 @@ class Node(AgentSlidesModel):
     image_path: str | None = None
     image_fit: ImageFit = "contain"
     chart_spec: ChartSpec | None = None
+    table_spec: TableSpec | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -256,6 +374,23 @@ class Node(AgentSlidesModel):
                 data["content"] = NodeContent.model_validate(content)
             if data.get("chart_spec") is not None:
                 data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"]).model_dump(mode="json")
+        elif node_type == "table":
+            if data.get("table_spec") is None and content not in (None, "", {"blocks": []}):
+                raw_table_spec = content
+                if isinstance(raw_table_spec, str):
+                    raw_table_spec = TableSpec.model_validate_json(raw_table_spec)
+                else:
+                    raw_table_spec = TableSpec.model_validate(raw_table_spec)
+                data["table_spec"] = (
+                    raw_table_spec.model_dump(mode="json")
+                    if isinstance(raw_table_spec, TableSpec)
+                    else raw_table_spec
+                )
+                data["content"] = NodeContent().model_dump(mode="json")
+            else:
+                data["content"] = NodeContent.model_validate(content)
+            if data.get("table_spec") is not None:
+                data["table_spec"] = TableSpec.model_validate(data["table_spec"]).model_dump(mode="json")
         else:
             data["content"] = NodeContent.model_validate(content)
 
@@ -270,11 +405,15 @@ class Node(AgentSlidesModel):
                 raise ValueError("text nodes cannot define image_path")
             if self.chart_spec is not None:
                 raise ValueError("text nodes cannot define chart_spec")
+            if self.table_spec is not None:
+                raise ValueError("text nodes cannot define table_spec")
             return self
 
         if self.type == "image":
             if self.chart_spec is not None:
                 raise ValueError("image nodes cannot define chart_spec")
+            if self.table_spec is not None:
+                raise ValueError("image nodes cannot define table_spec")
             if not self.image_path:
                 if self.style_overrides.get("placeholder"):
                     return self
@@ -286,12 +425,27 @@ class Node(AgentSlidesModel):
             self.image_path = self.image_path.strip()
             return self
 
+        if self.type == "chart":
+            if self.image_path is not None:
+                raise ValueError("chart nodes cannot define image_path")
+            if self.table_spec is not None:
+                raise ValueError("chart nodes cannot define table_spec")
+            if self.chart_spec is None:
+                raise ValueError("chart nodes require chart_spec")
+            if not isinstance(self.content, NodeContent):
+                self.content = NodeContent.model_validate(self.content)
+            return self
+
         if self.image_path is not None:
-            raise ValueError("chart nodes cannot define image_path")
-        if self.chart_spec is None:
-            raise ValueError("chart nodes require chart_spec")
+            raise ValueError("table nodes cannot define image_path")
+        if self.chart_spec is not None:
+            raise ValueError("table nodes cannot define chart_spec")
+        if self.table_spec is None:
+            raise ValueError("table nodes require table_spec")
         if not isinstance(self.content, NodeContent):
             self.content = NodeContent.model_validate(self.content)
+        if not self.content.is_empty():
+            raise ValueError("table nodes cannot define text content")
         return self
 
 
@@ -347,7 +501,7 @@ class SlotDef(AgentSlidesModel):
     alignment_group: str | None = None
     reading_order: int = 0
     size_policy: str = "fixed"
-    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart"])
+    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart", "table"])
     min_font: float | None = None
     max_font: float | None = None
     preferred_font: float | None = None

@@ -13,7 +13,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
@@ -21,6 +21,7 @@ from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
 from agent_slides.io.assets import resolve_image_path
+from agent_slides.model.themes import load_theme
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
@@ -94,6 +95,30 @@ def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
 def _block_lines(block: TextBlock) -> list[str]:
     lines = block.text.splitlines()
     return lines or [""]
+
+
+def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
+    base_rgb = [int(base.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    overlay_rgb = [int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    blended = [
+        int(round((1.0 - ratio) * base_channel + ratio * overlay_channel))
+        for base_channel, overlay_channel in zip(base_rgb, overlay_rgb, strict=True)
+    ]
+    return "#" + "".join(f"{channel:02X}" for channel in blended)
+
+
+def _is_dark_color(value: str) -> bool:
+    red, green, blue = [int(value.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+    return luminance < 160.0
+
+
+def _table_alignment(value: str) -> PP_ALIGN:
+    if value == "center":
+        return PP_ALIGN.CENTER
+    if value == "right":
+        return PP_ALIGN.RIGHT
+    return PP_ALIGN.LEFT
 
 
 def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
@@ -445,6 +470,122 @@ def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed
         fill.fore_color.rgb = hex_to_rgb(color)
 
 
+def _write_table_cell(
+    cell,
+    text: str,
+    *,
+    font_family: str,
+    font_size: float,
+    font_bold: bool,
+    font_color: str,
+    fill_color: str,
+    alignment: str,
+) -> None:
+    cell.fill.solid()
+    cell.fill.fore_color.rgb = hex_to_rgb(fill_color)
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+    text_frame = cell.text_frame
+    text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
+    text_frame.margin_left = points_to_emu(4.0)
+    text_frame.margin_right = points_to_emu(4.0)
+    text_frame.margin_top = points_to_emu(2.0)
+    text_frame.margin_bottom = points_to_emu(2.0)
+
+    paragraph = text_frame.paragraphs[0]
+    paragraph.alignment = _table_alignment(alignment)
+    run = paragraph.add_run()
+    run.text = text
+    run.font.name = font_family
+    run.font.size = Pt(font_size)
+    run.font.bold = font_bold
+    run.font.color.rgb = hex_to_rgb(font_color)
+
+
+def _render_table_node(
+    slide_shape_collection: SlideShapes,
+    node: Node,
+    computed: ComputedNode,
+    *,
+    theme,
+) -> None:
+    """Render a single table node as a native editable PowerPoint table."""
+
+    spec = node.table_spec
+    if spec is None:
+        return
+
+    row_count = len(spec.rows) + 1
+    column_count = len(spec.headers)
+    table = slide_shape_collection.add_table(
+        row_count,
+        column_count,
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+    ).table
+
+    total_width = int(points_to_emu(computed.width))
+    width_weights = spec.resolved_col_widths()
+    weight_total = sum(width_weights) or float(column_count)
+    width_allocated = 0
+    for column_index, weight in enumerate(width_weights):
+        if column_index == column_count - 1:
+            column_width = total_width - width_allocated
+        else:
+            column_width = int(round(total_width * (weight / weight_total)))
+            width_allocated += column_width
+        table.columns[column_index].width = Emu(column_width)
+
+    total_height = int(points_to_emu(computed.height))
+    row_height = total_height // row_count
+    height_allocated = 0
+    for row_index in range(row_count):
+        if row_index == row_count - 1:
+            height = total_height - height_allocated
+        else:
+            height = row_height
+            height_allocated += height
+        table.rows[row_index].height = Emu(height)
+
+    header_fill = spec.header_color or theme.colors.primary
+    header_text_color = "#FFFFFF" if _is_dark_color(header_fill) else theme.colors.text
+    stripe_fill = _mix_hex_colors(theme.colors.background, theme.colors.secondary, 0.08)
+    alignments = spec.resolved_col_align()
+
+    table.first_row = True
+    table.horz_banding = spec.stripe
+
+    for column_index, header in enumerate(spec.headers):
+        _write_table_cell(
+            table.cell(0, column_index),
+            header,
+            font_family=computed.font_family,
+            font_size=spec.header_font_size,
+            font_bold=True,
+            font_color=header_text_color,
+            fill_color=header_fill,
+            alignment="center",
+        )
+
+    for row_index, row in enumerate(spec.rows, start=1):
+        fill_color = stripe_fill if spec.stripe and row_index % 2 == 0 else theme.colors.background
+        for column_index, value in enumerate(row):
+            _write_table_cell(
+                table.cell(row_index, column_index),
+                value,
+                font_family=computed.font_family,
+                font_size=spec.font_size,
+                font_bold=False,
+                font_color=computed.color,
+                fill_color=fill_color,
+                alignment=alignments[column_index],
+            )
+
+
 render_text_node = _render_text_node
 render_image_node = _render_image_node
 
@@ -454,6 +595,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
     presentation.slide_width = Inches(10)
     presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[BLANK_LAYOUT_INDEX]
+    theme = load_theme(deck.theme)
 
     for slide in deck.slides:
         pptx_slide = presentation.slides.add_slide(blank_layout)
@@ -470,6 +612,8 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
 
             if node.type == "chart":
                 _render_chart_node(pptx_slide.shapes, node, computed)
+            elif node.type == "table":
+                _render_table_node(pptx_slide.shapes, node, computed, theme=theme)
             elif node.type == "image":
                 _render_image_node(
                     pptx_slide.shapes,
