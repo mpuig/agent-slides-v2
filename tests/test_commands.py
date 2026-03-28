@@ -12,9 +12,11 @@ from agent_slides.errors import (
     FILE_EXISTS,
     FILE_NOT_FOUND,
     INVALID_LAYOUT,
+    INVALID_NODE,
     INVALID_SLIDE,
     INVALID_SLOT,
     SCHEMA_ERROR,
+    SLOT_OCCUPIED,
     THEME_NOT_FOUND,
     UNBOUND_NODES,
 )
@@ -48,15 +50,22 @@ def build_slide(slide_id: str, layout: str, slots: list[str], *, start_node: int
     )
 
 
-def make_empty_deck() -> Deck:
+def build_deck(*slides: Slide, revision: int = 2, node_count: int | None = None) -> Deck:
     return Deck(
         deck_id="deck-1",
-        revision=0,
+        revision=revision,
         theme="default",
         design_rules="default",
-        slides=[],
-        counters=Counters(),
+        slides=list(slides),
+        counters=Counters(
+            slides=len(slides),
+            nodes=node_count if node_count is not None else sum(len(slide.nodes) for slide in slides),
+        ),
     )
+
+
+def make_empty_deck() -> Deck:
+    return build_deck(revision=0, node_count=0)
 
 
 def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
@@ -256,6 +265,7 @@ def test_init_returns_rules_validation_error_for_invalid_rules(tmp_path: Path) -
     }
     assert not deck_path.exists()
 
+
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
@@ -297,8 +307,8 @@ def test_slide_remove_by_index_shifts_remaining_slides(tmp_path: Path) -> None:
     deck = Deck(
         deck_id="deck-1",
         slides=[
-            build_slide("s-1", "title", ["heading", "subheading"], start_node=1),
-            build_slide("s-2", "title", ["heading", "subheading"], start_node=3),
+            build_slide("s-1", "title", ["title", "subtitle"], start_node=1),
+            build_slide("s-2", "title", ["title", "subtitle"], start_node=3),
         ],
         counters=Counters(slides=2, nodes=4),
     )
@@ -324,7 +334,7 @@ def test_slide_remove_last_slide_leaves_empty_deck(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
         deck_id="deck-1",
-        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        slides=[build_slide("s-1", "title", ["title", "subtitle"], start_node=1)],
         counters=Counters(slides=1, nodes=2),
     )
     write_deck(deck_path, deck)
@@ -355,8 +365,8 @@ def test_slide_remove_accepts_slide_id_reference(tmp_path: Path) -> None:
     deck = Deck(
         deck_id="deck-1",
         slides=[
-            build_slide("s-1", "title", ["heading", "subheading"], start_node=1),
-            build_slide("s-2", "title", ["heading", "subheading"], start_node=3),
+            build_slide("s-1", "title", ["title", "subtitle"], start_node=1),
+            build_slide("s-2", "title", ["title", "subtitle"], start_node=3),
         ],
         counters=Counters(slides=2, nodes=4),
     )
@@ -373,7 +383,7 @@ def test_slide_remove_accepts_slide_id_reference(tmp_path: Path) -> None:
 
 def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    slide = build_slide("s-1", "three_col", ["heading", "col1", "col2", "col3"], start_node=1)
+    slide = build_slide("s-1", "three_col", ["title", "col1", "col2", "col3"], start_node=1)
     deck = Deck(
         deck_id="deck-1",
         slides=[slide],
@@ -410,7 +420,7 @@ def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: P
     }
     assert updated.slides[0].layout == "two_col"
     assert [node.slot_binding for node in updated.slides[0].nodes] == [
-        "heading",
+        "title",
         "col1",
         "col2",
         None,
@@ -419,7 +429,7 @@ def test_slide_set_layout_rebinds_content_and_warns_on_unbound_nodes(tmp_path: P
 
 def test_slide_set_layout_to_same_layout_has_no_unbound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    slide = build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)
+    slide = build_slide("s-1", "two_col", ["title", "col1", "col2"], start_node=1)
     deck = Deck(
         deck_id="deck-1",
         slides=[slide],
@@ -470,6 +480,223 @@ def test_slide_set_layout_invalid_layout_returns_invalid_layout(tmp_path: Path) 
     assert result.exit_code == 1
     assert payload["error"]["code"] == INVALID_LAYOUT
 
+
+def test_slot_set_sets_text_content_by_index(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[Node(node_id="n-1", slot_binding="title", type="text", content="Old title")],
+            )
+        ),
+    )
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "title", "--text", "Quarterly update"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "ok": True,
+        "data": {"slide_id": "s-1", "slot": "title", "text": "Quarterly update"},
+    }
+    assert read_deck(str(deck_path)).slides[0].nodes[0].content == "Quarterly update"
+
+
+def test_slot_set_overwrites_existing_content_by_slide_id(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[Node(node_id="n-1", slot_binding="title", type="text", content="Old content")],
+            )
+        ),
+    )
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "title", "--text", "New content"]
+    )
+
+    deck = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert deck.slides[0].nodes[0].content == "New content"
+
+
+def test_slot_set_creates_node_and_stores_font_size_override(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(slide_id="s-1", layout="title", nodes=[]),
+            node_count=0,
+        ),
+    )
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "title",
+            "--text",
+            "Created title",
+            "--font-size",
+            "30",
+        ]
+    )
+
+    deck = read_deck(str(deck_path))
+    created = deck.slides[0].nodes[0]
+
+    assert result.exit_code == 0
+    assert created.node_id == "n-1"
+    assert created.slot_binding == "title"
+    assert created.content == "Created title"
+    assert created.style_overrides["font_size"] == 30.0
+    assert created.style_overrides["font_size_pt"] == 30.0
+    assert created.style_overrides["text_fit_disabled"] is True
+
+
+def test_slot_set_invalid_slide_returns_invalid_slide_error(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, build_deck(Slide(slide_id="s-1", layout="title", nodes=[]), node_count=0))
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-9", "--slot", "title", "--text", "Missing slide"]
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"]["code"] == INVALID_SLIDE
+
+
+def test_slot_set_invalid_slot_lists_valid_slots(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, build_deck(Slide(slide_id="s-1", layout="title", nodes=[]), node_count=0))
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "bogus", "--text", "Nope"]
+    )
+
+    payload = json.loads(result.stderr)
+
+    assert result.exit_code == 1
+    assert payload["error"]["code"] == INVALID_SLOT
+    assert "title" in payload["error"]["message"]
+    assert "subtitle" in payload["error"]["message"]
+
+
+def test_slot_clear_clears_content_to_empty_string(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[Node(node_id="n-1", slot_binding="title", type="text", content="Clear me")],
+            )
+        ),
+    )
+
+    result = invoke_cli(["slot", "clear", str(deck_path), "--slide", "s-1", "--slot", "title"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "ok": True,
+        "data": {"slide_id": "s-1", "slot": "title", "cleared": True},
+    }
+    assert read_deck(str(deck_path)).slides[0].nodes[0].content == ""
+
+
+def test_slot_clear_on_already_empty_slot_is_success(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[Node(node_id="n-1", slot_binding="title", type="text", content="")],
+            )
+        ),
+    )
+
+    result = invoke_cli(["slot", "clear", str(deck_path), "--slide", "s-1", "--slot", "title"])
+
+    assert result.exit_code == 0
+    assert read_deck(str(deck_path)).slides[0].nodes[0].content == ""
+
+
+def test_slot_bind_rebinds_unbound_node_to_slot(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="two_col",
+                nodes=[Node(node_id="n-1", slot_binding=None, type="text", content="Body")],
+            )
+        ),
+    )
+
+    result = invoke_cli(["slot", "bind", str(deck_path), "--node", "n-1", "--slot", "col2"])
+
+    deck = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "ok": True,
+        "data": {"node_id": "n-1", "slot": "col2", "bound": True},
+    }
+    assert deck.slides[0].nodes[0].slot_binding == "col2"
+
+
+def test_slot_bind_to_occupied_slot_returns_slot_occupied_error(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(
+            Slide(
+                slide_id="s-1",
+                layout="two_col",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="col2", type="text", content="Taken"),
+                    Node(node_id="n-2", slot_binding=None, type="text", content="Candidate"),
+                ],
+            )
+        ),
+    )
+
+    result = invoke_cli(["slot", "bind", str(deck_path), "--node", "n-2", "--slot", "col2"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"]["code"] == SLOT_OCCUPIED
+
+
+def test_slot_bind_invalid_node_id_returns_error(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        build_deck(Slide(slide_id="s-1", layout="two_col", nodes=[]), node_count=0),
+    )
+
+    result = invoke_cli(["slot", "bind", str(deck_path), "--node", "n-404", "--slot", "col2"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"]["code"] == INVALID_NODE
+
+
 def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(deck_path, make_empty_deck())
@@ -504,12 +731,13 @@ def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     assert deck.revision == 1
     assert [slide.layout for slide in deck.slides] == ["title", "two_col"]
     assert [(node.slot_binding, node.content) for node in deck.slides[0].nodes] == [
-        ("heading", "Hello"),
-        ("subheading", "World"),
+        ("title", "Hello"),
+        ("subtitle", "World"),
     ]
     assert deck.slides[0].nodes[1].style_overrides["font_size"] == 18.0
+    assert deck.slides[0].nodes[1].style_overrides["font_size_pt"] == 18.0
     assert [(node.slot_binding, node.content) for node in deck.slides[1].nodes] == [
-        ("heading", "Key Points"),
+        ("title", "Key Points"),
         ("col1", ""),
         ("col2", ""),
     ]
@@ -604,8 +832,9 @@ def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:
     assert payload["data"]["operations"] == 7
     assert payload["data"]["results"][0] == {
         "slide_id": "s-1",
-        "slot": "heading",
+        "slot": "title",
         "node_id": "n-1",
+        "bound": True,
     }
     assert payload["data"]["results"][5] == {
         "slide_id": "s-2",
@@ -620,9 +849,9 @@ def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:
     deck = read_deck(str(deck_path))
     assert len(deck.slides) == 1
     assert deck.slides[0].nodes[0].node_id == "n-1"
-    assert deck.slides[0].nodes[0].slot_binding == "heading"
+    assert deck.slides[0].nodes[0].slot_binding == "title"
     assert deck.slides[0].nodes[0].content == "Loose title"
-    assert deck.slides[0].nodes[1].slot_binding == "subheading"
+    assert deck.slides[0].nodes[1].slot_binding == "subtitle"
     assert deck.slides[0].nodes[1].content == "Intro"
 
 

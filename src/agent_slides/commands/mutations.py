@@ -5,15 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from agent_slides.engine.reflow import rebind_slots
-from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
+from agent_slides.errors import (
+    AgentSlidesError,
+    INVALID_NODE,
+    INVALID_SLOT,
+    SCHEMA_ERROR,
+    SLOT_OCCUPIED,
+)
 from agent_slides.model import Deck, Node, Slide, get_layout
 
-SLOT_ALIASES = {
-    "title": "heading",
-    "subtitle": "subheading",
-    "left": "col1",
-    "right": "col2",
-}
+SLOT_ALIASES = {"left": "col1", "right": "col2"}
 
 SUPPORTED_MUTATION_COMMANDS = frozenset(
     {
@@ -101,7 +102,7 @@ def _find_node(deck: Deck, node_id: str) -> tuple[Slide, Node]:
         for node in slide.nodes:
             if node.node_id == node_id:
                 return slide, node
-    raise AgentSlidesError(SCHEMA_ERROR, f"Node {node_id!r} does not exist")
+    raise AgentSlidesError(INVALID_NODE, f"Node {node_id!r} does not exist")
 
 
 def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -155,33 +156,42 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
 
         node.slot_binding = slot_name
         node.content = text
+        node.style_overrides["role"] = get_layout(slide.layout).slots[slot_name].role
 
         if "font_size" in args:
             font_size = args["font_size"]
             if font_size is None:
                 node.style_overrides.pop("font_size", None)
+                node.style_overrides.pop("font_size_pt", None)
+                node.style_overrides.pop("text_fit_disabled", None)
             elif isinstance(font_size, bool) or not isinstance(font_size, int | float):
                 raise AgentSlidesError(SCHEMA_ERROR, "Argument 'font_size' must be a number")
             else:
-                node.style_overrides["font_size"] = float(font_size)
+                fixed_font_size = float(font_size)
+                node.style_overrides["font_size"] = fixed_font_size
+                node.style_overrides["font_size_pt"] = fixed_font_size
+                node.style_overrides["text_fit_disabled"] = True
 
         return {
             "slide_id": slide.slide_id,
             "slot": slot_name,
             "node_id": node.node_id,
             "text": node.content,
-            "font_size": node.style_overrides.get("font_size"),
+            "font_size": node.style_overrides.get("font_size_pt"),
         }
 
     if command == "slot_clear":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
-        removed_ids = [node.node_id for node in _find_slot_nodes(slide, slot_name)]
-        _prune_nodes(slide, set(removed_ids))
+        slot_nodes = _find_slot_nodes(slide, slot_name)
+        if slot_nodes:
+            primary = slot_nodes[0]
+            primary.content = ""
+            _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
         return {
             "slide_id": slide.slide_id,
             "slot": slot_name,
-            "removed_node_ids": removed_ids,
+            "cleared": True,
         }
 
     if command == "slot_bind":
@@ -193,12 +203,21 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
             for candidate in _find_slot_nodes(slide, slot_name)
             if candidate.node_id != node.node_id
         ]
-        _prune_nodes(slide, {candidate.node_id for candidate in conflicting_nodes})
+        if conflicting_nodes:
+            raise AgentSlidesError(
+                SLOT_OCCUPIED,
+                (
+                    f"Slot {slot_name!r} on slide {slide.slide_id!r} is already occupied "
+                    f"by node {conflicting_nodes[0].node_id!r}"
+                ),
+            )
         node.slot_binding = slot_name
+        node.style_overrides["role"] = get_layout(slide.layout).slots[slot_name].role
         return {
             "slide_id": slide.slide_id,
             "slot": slot_name,
             "node_id": node.node_id,
+            "bound": True,
         }
 
     raise AgentSlidesError(
