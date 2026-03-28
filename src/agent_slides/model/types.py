@@ -8,16 +8,24 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
-from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
+from agent_slides.errors import (
+    AgentSlidesError,
+    CHART_DATA_ERROR,
+    INVALID_CHART_TYPE,
+    INVALID_SLIDE,
+)
 
 STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
 MAX_IMAGE_SIZE_WARNING_BYTES = 5 * 1024 * 1024
 SUPPORTED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".svg"})
+CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
 
-NodeType = Literal["text", "image"]
+ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
+NodeType = Literal["text", "image", "chart"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 
@@ -95,17 +103,119 @@ class NodeContent(AgentSlidesModel):
         return not self.blocks or all(block.text == "" for block in self.blocks)
 
 
+class ChartSeries(AgentSlidesModel):
+    name: str
+    values: list[float]
+
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[float]) -> list[float]:
+        if not value:
+            raise PydanticCustomError(CHART_DATA_ERROR, "chart series values cannot be empty")
+        return value
+
+
+class ScatterPoint(AgentSlidesModel):
+    x: float
+    y: float
+
+
+class ScatterSeries(AgentSlidesModel):
+    name: str
+    points: list[ScatterPoint]
+
+    @field_validator("points")
+    @classmethod
+    def validate_points(cls, value: list[ScatterPoint]) -> list[ScatterPoint]:
+        if not value:
+            raise PydanticCustomError(CHART_DATA_ERROR, "scatter series points cannot be empty")
+        return value
+
+
+class ChartStyle(AgentSlidesModel):
+    has_legend: bool = True
+    has_data_labels: bool = False
+    series_colors: list[str] | None = None
+
+
+class ChartSpec(AgentSlidesModel):
+    chart_type: ChartType
+    title: str | None = None
+    categories: list[str] | None = None
+    series: list[ChartSeries] | None = None
+    scatter_series: list[ScatterSeries] | None = None
+    style: ChartStyle = Field(default_factory=ChartStyle)
+
+    @field_validator("chart_type", mode="before")
+    @classmethod
+    def validate_chart_type(cls, value: object) -> object:
+        if not isinstance(value, str) or value not in CHART_TYPE_VALUES:
+            raise PydanticCustomError(INVALID_CHART_TYPE, "unknown chart type: {chart_type}", {"chart_type": value})
+        return value
+
+    @model_validator(mode="after")
+    def validate_chart_data(self) -> ChartSpec:
+        if self.chart_type == "scatter":
+            if not self.scatter_series:
+                raise PydanticCustomError(CHART_DATA_ERROR, "scatter charts require scatter_series")
+            if len(self.scatter_series) > 10:
+                warnings.warn(
+                    "Chart spec contains more than 10 series and may be difficult to read.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            return self
+
+        if not self.categories:
+            raise PydanticCustomError(CHART_DATA_ERROR, "category charts require categories")
+        if not self.series:
+            raise PydanticCustomError(CHART_DATA_ERROR, "category charts require series")
+
+        category_count = len(self.categories)
+        for series in self.series:
+            if len(series.values) != category_count:
+                raise PydanticCustomError(
+                    CHART_DATA_ERROR,
+                    "series '{series_name}' has {value_count} values for {category_count} categories",
+                    {
+                        "series_name": series.name,
+                        "value_count": len(series.values),
+                        "category_count": category_count,
+                    },
+                )
+
+        if self.chart_type == "pie":
+            if len(self.series) > 1:
+                raise PydanticCustomError(CHART_DATA_ERROR, "pie charts support exactly one series")
+            if any(value < 0 for value in self.series[0].values):
+                warnings.warn(
+                    "Pie charts contain negative values; PowerPoint may render them unexpectedly.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        if len(self.series) > 10:
+            warnings.warn(
+                "Chart spec contains more than 10 series and may be difficult to read.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        return self
+
+
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
     type: NodeType
     content: NodeContent | str = Field(default_factory=NodeContent)
     image_path: str | None = None
+    chart_spec: ChartSpec | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_content_by_type(cls, value: object) -> object:
+    def validate_node_payload(cls, value: object) -> object:
         if not isinstance(value, dict):
             return value
 
@@ -117,6 +227,10 @@ class Node(AgentSlidesModel):
             data["content"] = NodeContent.model_validate(content)
         elif node_type == "image" and (content is None or content == "") and data.get("image_path") is not None:
             data["content"] = data["image_path"]
+        elif node_type == "chart":
+            data["content"] = NodeContent.model_validate(content)
+            if data.get("chart_spec") is not None:
+                data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"])
 
         return data
 
@@ -127,17 +241,30 @@ class Node(AgentSlidesModel):
                 self.content = NodeContent.model_validate(self.content)
             if self.image_path is not None:
                 raise ValueError("text nodes cannot define image_path")
+            if self.chart_spec is not None:
+                raise ValueError("text nodes cannot define chart_spec")
             return self
 
-        if not self.image_path:
-            if self.style_overrides.get("placeholder"):
-                self.content = ""
-                return self
-            raise ValueError("image nodes require image_path")
-        if not isinstance(self.content, str):
-            raise ValueError("image nodes must serialize content as a file path string")
+        if self.type == "image":
+            if self.chart_spec is not None:
+                raise ValueError("image nodes cannot define chart_spec")
+            if not self.image_path:
+                if self.style_overrides.get("placeholder"):
+                    self.content = ""
+                    return self
+                raise ValueError("image nodes require image_path")
+            if not isinstance(self.content, str):
+                raise ValueError("image nodes must serialize content as a file path string")
 
-        self.image_path = _validate_and_resolve_image_path(self.image_path)
+            self.image_path = _validate_and_resolve_image_path(self.image_path)
+            return self
+
+        if self.image_path is not None:
+            raise ValueError("chart nodes cannot define image_path")
+        if self.chart_spec is None:
+            raise ValueError("chart nodes require chart_spec")
+        if not isinstance(self.content, NodeContent):
+            self.content = NodeContent.model_validate(self.content)
         return self
 
 
