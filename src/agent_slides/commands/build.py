@@ -25,12 +25,8 @@ def build_command(path: Path, output_path: Path) -> None:
     """Build a PPTX file from a deck sidecar."""
 
     deck = read_deck(str(path))
-    manifest_path = resolve_manifest_path(str(path), deck)
-    provider = resolve_layout_provider(manifest_path)
-    if manifest_path is None:
-        reflow_deck(deck, provider)
-    else:
-        reflow_deck(deck, provider, manifest_path=manifest_path)
+    provider = resolve_layout_provider(resolve_manifest_path(str(path), deck))
+    reflow_deck(deck, provider)
     write_computed_deck(str(path), deck)
     write_pptx(deck, str(output_path))
     payload = {
