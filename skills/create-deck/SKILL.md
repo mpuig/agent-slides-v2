@@ -9,7 +9,7 @@ Use this skill when the user asks for a new presentation, deck, or slide narrati
 
 In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
 Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
-Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
+Story structure rules live in `skills/references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
 
 This skill is not just CLI orchestration. It is responsible for presentation quality, storyline quality, and final QA.
 
@@ -18,10 +18,10 @@ This skill is not just CLI orchestration. It is responsible for presentation qua
 Load these references at the point they matter:
 
 - Phase 0: no extra references required beyond asking the questions cleanly
-- Before Phase 1, read `references/storytelling.md`
-- Before locking or overriding layouts in Phase 1 or Phase 2, read `references/layout-selection.md`
-- Before adding a chart in Phase 2, read `references/chart-guide.md`
-- Before Phase 3, read `references/common-mistakes.md`
+- Before Phase 1, read `skills/references/storytelling.md`
+- Before locking or overriding layouts in Phase 1 or Phase 2, read `skills/references/layout-selection.md`
+- Before adding a chart in Phase 2, read `skills/references/chart-guide.md`
+- Before Phase 3, read `skills/references/common-mistakes.md`
 
 Treat those references as part of the operating instructions for both this skill and the conversational deck orchestrator.
 
@@ -64,7 +64,7 @@ Questioning rules:
 
 ### Step 1: Build the storyline with the Pyramid Principle
 
-Read `references/storytelling.md` and `references/layout-selection.md`, then draft the narrative in this order:
+Read `skills/references/storytelling.md` and `skills/references/layout-selection.md`, then draft the narrative in this order:
 
 ```text
 Title: [Deck title]
@@ -96,7 +96,7 @@ For each slide, define:
 - whether the slide should use `--auto-layout` or an explicit layout
 - whether the slide needs a chart or image
 
-Apply the Isomorphism Principle from `references/layout-selection.md`:
+Apply the Isomorphism Principle from `skills/references/layout-selection.md`:
 
 - Equal pillars or themes -> `three_col`
 - Two contrasting approaches -> `two_col` or `comparison`
@@ -255,7 +255,7 @@ After the plan is approved, execute it through the CLI.
 - Use `slide add`, `slot set`, `slot clear`, `slot bind`, `chart add`, and `batch` as appropriate.
 - Use `--auto-layout` where the content shape is clear from the payload and the layout does not need to be predetermined.
 - Use explicit layouts for fixed-role slides such as `title`, `closing`, or when the structure is known in advance.
-- Follow the layout variety rule from `references/layout-selection.md`.
+- Follow the layout variety rule from `skills/references/layout-selection.md`.
 - Fill all planned content, including charts, images, and sources.
 - Do not leave placeholder thinking in the deck. Finish the slide content fully.
 
@@ -265,7 +265,7 @@ After the plan is approved, execute it through the CLI.
 2. Add the opener and closer with explicit layouts.
 3. Add content slides with `--auto-layout` or explicit `--layout` according to the approved plan.
 4. Prefer one atomic `batch` payload for multi-slide creation and cleanup when possible.
-5. If a slide needs a chart, read `references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
+5. If a slide needs a chart, read `skills/references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
 6. Build only after the deck content is complete and validated.
 
 ### Layout guidance during build
@@ -281,7 +281,7 @@ If auto-layout chooses a weak structure, correct it with `slide set-layout`, the
 
 ## Phase 3: QA Review
 
-Before QA, read `references/common-mistakes.md`.
+Before QA, read `skills/references/common-mistakes.md`.
 
 ### Required QA loop
 
@@ -332,7 +332,7 @@ Prefer the shipped repo commands rather than inventing alternate entry points:
 ## Operational Defaults
 
 - Start with the recommendation or answer, not the background.
-- If the brief is under-specified, ask or infer the five pre-flight inputs from `references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
+- If the brief is under-specified, ask or infer the five pre-flight inputs from `skills/references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
 - Organize the deck as answer -> 2-4 supporting arguments -> evidence.
 - Give each content slide one message and an action title that states the takeaway.
 - Default to 5 slides for a simple topic.
