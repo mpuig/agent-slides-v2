@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
+import signal
 import socket
 import threading
 import time
@@ -2154,6 +2156,39 @@ def test_preview_command_supports_custom_port_and_no_open(
         "watching": "deck.json",
     }
     assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_preview_command_supports_background_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_clean_deck())
+    browser_calls: list[str] = []
+    port = find_free_port()
+
+    monkeypatch.setattr(
+        "agent_slides.commands.preview.webbrowser.open",
+        lambda url: browser_calls.append(url),
+    )
+
+    result = invoke_cli(["preview", str(deck_path), "--port", str(port), "--background"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert browser_calls == [f"http://localhost:{port}"]
+
+    payload = json.loads(result.output.strip())
+    assert payload["ok"] is True
+    assert payload["data"]["url"] == f"http://localhost:{port}"
+    assert isinstance(payload["data"]["pid"], int)
+
+    status, body = wait_for_http(f"http://127.0.0.1:{port}/api/deck")
+    assert status == 200
+    assert json.loads(body)["deck_id"] == "deck-clean"
+
+    os.kill(int(payload["data"]["pid"]), signal.SIGTERM)
+    os.waitpid(int(payload["data"]["pid"]), 0)
 
 
 def test_preview_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
