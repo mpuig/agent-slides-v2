@@ -50,6 +50,7 @@ def cli() -> None:
 
 cli.add_command(batch)
 cli.add_command(init_command)
+cli.add_command(preview_command)
 cli.add_command(slide)
 cli.add_command(slot)
 cli.add_command(info_command)

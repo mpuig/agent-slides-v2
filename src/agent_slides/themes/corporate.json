@@ -1,0 +1,21 @@
+{
+  "name": "corporate",
+  "colors": {
+    "primary": "#16324F",
+    "secondary": "#5B6C7D",
+    "accent": "#C48F3A",
+    "background": "#F7F8FA",
+    "text": "#23313F",
+    "heading_text": "#16324F",
+    "subtle_text": "#51606E"
+  },
+  "fonts": {
+    "heading": "Georgia",
+    "body": "Arial"
+  },
+  "spacing": {
+    "base_unit": 10,
+    "margin": 64,
+    "gutter": 20
+  }
+}
