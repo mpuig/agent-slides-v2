@@ -209,13 +209,19 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     """Run the shared read-mutate-reflow-lock-write pipeline."""
 
     from agent_slides.engine.reflow import reflow_deck
+    from agent_slides.engine.template_reflow import template_reflow
+    from agent_slides.model.layout_provider import TemplateLayoutRegistry
 
     deck = read_deck(path)
-    provider = resolve_layout_provider(deck.template_manifest)
+    resolved_manifest = resolve_manifest_path(path, deck)
+    provider = resolve_layout_provider(resolved_manifest)
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
-    reflow_deck(deck, provider)
+    if isinstance(provider, TemplateLayoutRegistry):
+        template_reflow(deck, provider)
+    else:
+        reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 
