@@ -11,6 +11,7 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
+from agent_slides.io import read_deck
 from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide
 from agent_slides.preview import chat_html_path, client_html_path, read_chat_html, read_client_html
 from agent_slides.preview.server import PreviewServer
@@ -50,6 +51,7 @@ def make_deck(*, revision: int, content: str = "Hello preview") -> Deck:
             Slide(
                 slide_id="s-1",
                 layout="title",
+                revision=revision,
                 nodes=[
                     Node(
                         node_id="n-1",
@@ -82,6 +84,37 @@ def write_deck(path: Path, deck: Deck) -> None:
     path.write_text(f"{deck.model_dump_json(indent=2)}\n", encoding="utf-8")
 
 
+class FakeSlideRenderer:
+    def __init__(self, deck_path: Path, output_dir: Path, *, available: bool = True) -> None:
+        self.deck_path = deck_path
+        self.cache_dir = output_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.is_available = available
+        self.render_all_calls = 0
+        self.render_indices_calls: list[list[int]] = []
+
+    def get_cached(self, slide_id: str, revision: int) -> Path | None:
+        path = self.cache_dir / f"{slide_id}-{revision}.png"
+        return path if path.exists() else None
+
+    async def render_all(self) -> list[Path]:
+        self.render_all_calls += 1
+        deck = read_deck(str(self.deck_path))
+        return [self._render_slide(slide.slide_id, slide.revision or deck.revision) for slide in deck.slides]
+
+    async def render_indices(self, slide_indices: list[int]) -> list[Path]:
+        self.render_indices_calls.append(list(slide_indices))
+        deck = read_deck(str(self.deck_path))
+        rendered: list[Path] = []
+        for index in slide_indices:
+            slide = deck.slides[index]
+            rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+        return rendered
+
+    def _render_slide(self, slide_id: str, revision: int) -> Path:
+        return write_png(self.cache_dir / f"{slide_id}-{revision}.png", width=48, height=36)
+
+
 def make_image_deck(image_path: str, *, revision: int) -> Deck:
     return Deck(
         deck_id="deck-preview-image",
@@ -92,6 +125,7 @@ def make_image_deck(image_path: str, *, revision: int) -> Deck:
             Slide(
                 slide_id="s-1",
                 layout="title_content",
+                revision=revision,
                 nodes=[
                     Node(
                         node_id="n-1",
@@ -126,6 +160,7 @@ def make_chart_deck(*, revision: int, chart_type: str = "bar") -> Deck:
             Slide(
                 slide_id="s-1",
                 layout="title_content",
+                revision=revision,
                 nodes=[
                     Node(
                         node_id="n-1",
@@ -191,16 +226,25 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
         write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        renderer = FakeSlideRenderer(deck_path, tmp_path / "rendered")
 
-        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            debounce_ms=20,
+            slide_renderer=renderer,
+        )
         await server.start()
 
         try:
             html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
             chat_html = await asyncio.to_thread(_fetch_text, f"{server.origin}/chat")
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            slide_png = await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png?rev=1")
 
             assert "<svg" in html
+            assert '<img id="stage-image"' in html
             assert "<svg" in chat_html
             assert 'id="prev-slide"' in html
             assert 'id="chat-messages"' in chat_html
@@ -210,9 +254,16 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
             assert 'id="slide-dots"' in html
             assert 'id="slide-count"' in html
             assert 'id="status-dot"' in html
+            assert 'preview_backend' in payload
             assert "wrapText" in html
             assert "preserveAspectRatio" in html
             assert payload["revision"] == 1
+            assert payload["preview_backend"] == "png"
+            assert payload["slide_previews"] == [
+                {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+            ]
+            assert slide_png.startswith(b"\x89PNG\r\n\x1a\n")
+            assert renderer.render_all_calls == 1
 
             async with (
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_one,
@@ -223,13 +274,16 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                 updated_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
                 updated_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
 
+                assert renderer.render_indices_calls == [[0]]
+                assert updated_one["type"] == "slides_updated"
+                assert updated_two["type"] == "slides_updated"
                 assert updated_one["revision"] == 2
                 assert updated_two["revision"] == 2
-                assert updated_one["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
-                    {"type": "paragraph", "text": "Updated", "level": 0}
+                assert updated_one["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}
                 ]
-                assert updated_two["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
-                    {"type": "paragraph", "text": "Updated", "level": 0}
+                assert updated_two["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}
                 ]
 
         finally:
@@ -262,6 +316,39 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
             await server.stop()
 
     asyncio.run(scenario())
+
+
+def test_preview_server_falls_back_to_svg_when_renderer_unavailable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        renderer = FakeSlideRenderer(deck_path, tmp_path / "rendered", available=False)
+
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            debounce_ms=20,
+            slide_renderer=renderer,
+        )
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            assert payload["preview_backend"] == "svg"
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png")
+            assert exc_info.value.code == 404
+        finally:
+            await server.stop()
+
+    caplog.set_level("WARNING")
+    asyncio.run(scenario())
+
+    messages = [record.message for record in caplog.records]
+    assert any("LibreOffice not found. Using approximate SVG preview." in message for message in messages)
 
 
 def test_preview_server_chat_mode_serves_chat_client_and_messages(tmp_path: Path) -> None:
@@ -399,6 +486,7 @@ def test_client_html_contains_required_preview_surface() -> None:
 
     assert 'viewBox="0 0 720 540"' in payload
     assert 'id="stage"' in payload
+    assert 'id="stage-image"' in payload
     assert 'id="prev-slide"' in payload
     assert 'id="next-slide"' in payload
     assert 'id="slide-dots"' in payload
@@ -408,6 +496,8 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert "Reconnecting in" in payload
     assert "ArrowLeft" in payload
     assert "ArrowRight" in payload
+    assert '"slides_updated"' in payload
+    assert 'fetch("/api/deck")' in payload
     assert "preserveAspectRatio" in payload
 
 

@@ -22,6 +22,7 @@ from websockets.asyncio.server import Server, ServerConnection, broadcast, serve
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
 from agent_slides.io.assets import resolve_image_path
+from agent_slides.preview.renderer import SlideRenderError, SlideRenderer
 from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 
 LOGGER = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class PreviewServer:
         port: int = 8765,
         mode: str = "preview",
         chat_message_handler: ChatMessageHandler | None = None,
+        slide_renderer: SlideRenderer | None = None,
         debounce_ms: int | None = None,
         debounce_interval: float | None = None,
         logger: logging.Logger | None = None,
@@ -73,6 +75,13 @@ class PreviewServer:
         self._server: Server | None = None
         self._preview_clients: set[ServerConnection] = set()
         self._chat_clients: set[ServerConnection] = set()
+        self._preview_backend = "svg"
+        self._preview_payload: dict[str, Any] | None = None
+        self._slide_previews: list[dict[str, Any]] = []
+        self._renderer = slide_renderer if mode == "preview" else None
+        if mode == "preview" and self._renderer is None:
+            self._renderer = SlideRenderer(self.sidecar_path)
+        self._logged_png_fallback_warning = False
 
     @property
     def origin(self) -> str:
@@ -108,6 +117,7 @@ class PreviewServer:
             self.port = int(socket.getsockname()[1])
 
         await self._watcher.start()
+        await self._prime_preview_state()
         return self
 
     async def stop(self) -> None:
@@ -148,8 +158,134 @@ class PreviewServer:
 
         broadcast(self._chat_clients, json.dumps(payload))
 
+    @property
+    def _png_preview_enabled(self) -> bool:
+        return bool(
+            self.mode == "preview"
+            and self._renderer is not None
+            and self._renderer.is_available
+            and self._preview_backend == "png"
+        )
+
+    async def _prime_preview_state(self) -> None:
+        try:
+            _, payload = load_deck_payload(self.sidecar_path)
+        except AgentSlidesError:
+            self._preview_backend = "svg"
+            self._preview_payload = None
+            self._slide_previews = []
+            return
+
+        self._preview_payload = payload
+        if self.mode != "preview" or self._renderer is None:
+            self._preview_backend = "svg"
+            self._slide_previews = []
+            return
+
+        if not self._renderer.is_available:
+            self._preview_backend = "svg"
+            self._slide_previews = []
+            self._log_png_fallback_warning()
+            return
+
+        try:
+            await self._renderer.render_all()
+        except SlideRenderError as exc:
+            self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
+            self._preview_backend = "svg"
+            self._slide_previews = []
+            return
+
+        self._preview_backend = "png"
+        self._slide_previews = self._build_slide_previews(payload)
+
+    def _log_png_fallback_warning(self) -> None:
+        if self._logged_png_fallback_warning:
+            return
+        self._logged_png_fallback_warning = True
+        self._logger.warning(
+            "LibreOffice not found. Using approximate SVG preview. Install LibreOffice for pixel-perfect rendering."
+        )
+
+    async def _render_changed_slides(
+        self,
+        payload: dict[str, Any],
+        changed_indices: list[int],
+    ) -> None:
+        if self._renderer is None or not changed_indices:
+            return
+
+        await self._renderer.render_indices(changed_indices)
+        self._preview_backend = "png"
+
+    def _slide_revision(self, slide_payload: dict[str, Any], deck_revision: int) -> int:
+        return int(slide_payload.get("revision", deck_revision))
+
+    def _slide_signature(self, payload: dict[str, Any]) -> list[tuple[str, int]]:
+        deck_revision = int(payload["revision"])
+        return [
+            (str(slide["slide_id"]), self._slide_revision(slide, deck_revision))
+            for slide in payload.get("slides", [])
+        ]
+
+    def _changed_slide_indices(
+        self,
+        previous_payload: dict[str, Any] | None,
+        payload: dict[str, Any],
+    ) -> list[int]:
+        slides = payload.get("slides", [])
+        if previous_payload is None:
+            return list(range(len(slides)))
+
+        previous_signature = self._slide_signature(previous_payload)
+        current_signature = self._slide_signature(payload)
+        if len(previous_signature) != len(current_signature):
+            return list(range(len(slides)))
+        if any(previous_id != current_id for (previous_id, _), (current_id, _) in zip(previous_signature, current_signature)):
+            return list(range(len(slides)))
+        return [
+            index
+            for index, ((_, previous_revision), (_, current_revision)) in enumerate(
+                zip(previous_signature, current_signature)
+            )
+            if previous_revision != current_revision
+        ]
+
+    def _build_slide_previews(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        deck_revision = int(payload["revision"])
+        return [
+            {
+                "index": index,
+                "url": f"/slides/{index}.png?rev={self._slide_revision(slide, deck_revision)}",
+                "revision": self._slide_revision(slide, deck_revision),
+            }
+            for index, slide in enumerate(payload.get("slides", []))
+        ]
+
     async def _broadcast_update(self, payload: dict[str, Any]) -> None:
-        await self.broadcast_payload(self._build_update_message(payload))
+        previous_payload = self._preview_payload
+        self._preview_payload = payload
+
+        if self.mode != "preview":
+            await self.broadcast_payload(self._build_update_message(payload))
+            return
+
+        if not self._png_preview_enabled:
+            await self.broadcast_payload(self._build_update_message(payload))
+            return
+
+        changed_indices = self._changed_slide_indices(previous_payload, payload)
+        try:
+            if changed_indices:
+                await self._render_changed_slides(payload, changed_indices)
+            self._slide_previews = self._build_slide_previews(payload)
+        except SlideRenderError as exc:
+            self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
+            self._preview_backend = "svg"
+            await self.broadcast_payload(self._build_update_message(payload))
+            return
+
+        await self.broadcast_payload(self._build_update_message(payload, changed_indices=changed_indices))
 
     async def _handle_websocket(self, websocket: ServerConnection) -> None:
         if websocket.request.path == "/ws":
@@ -203,30 +339,32 @@ class PreviewServer:
             await result
 
     def _process_request(self, connection: ServerConnection, request: Any) -> Any:
-        if request.path == "/ws":
+        request_path = request.path.partition("?")[0]
+
+        if request_path == "/ws":
             return None
 
-        if request.path == "/chat/ws":
+        if request_path == "/chat/ws":
             if self.mode == "chat":
                 return None
             return self._not_found_response(connection)
 
-        if request.path == "/client.html":
+        if request_path == "/client.html":
             response = connection.respond(HTTPStatus.OK, CLIENT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 
-        if request.path == "/":
+        if request_path == "/":
             response = connection.respond(HTTPStatus.OK, CHAT_HTML if self.mode == "chat" else CLIENT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 
-        if request.path in {"/chat", "/chat.html"}:
+        if request_path in {"/chat", "/chat.html"}:
             response = connection.respond(HTTPStatus.OK, CHAT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 
-        if request.path == "/api/deck":
+        if request_path == "/api/deck":
             try:
                 payload = self._read_deck_json()
             except AgentSlidesError as exc:
@@ -239,8 +377,31 @@ class PreviewServer:
             response.headers["Content-Type"] = "application/json; charset=utf-8"
             return response
 
-        if request.path.startswith("/api/images/"):
-            relative_path = unquote(request.path.removeprefix("/api/images/"))
+        if request_path.startswith("/slides/") and request_path.endswith(".png"):
+            index_text = request_path.removeprefix("/slides/").removesuffix(".png")
+
+            try:
+                payload, content_type = self._read_slide_png_bytes(index_text)
+            except AgentSlidesError as exc:
+                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                response = connection.respond(status, f"{exc.message}\n")
+                response.headers["Content-Type"] = "text/plain; charset=utf-8"
+                return response
+
+            return Response(
+                HTTPStatus.OK.value,
+                HTTPStatus.OK.phrase,
+                Headers(
+                    {
+                        "Content-Type": content_type,
+                        "Content-Length": str(len(payload)),
+                    }
+                ),
+                payload,
+            )
+
+        if request_path.startswith("/api/images/"):
+            relative_path = unquote(request_path.removeprefix("/api/images/"))
 
             try:
                 payload, content_type = self._read_image_bytes(relative_path)
@@ -262,8 +423,8 @@ class PreviewServer:
                 payload,
             )
 
-        if request.path.startswith("/download/"):
-            filename = unquote(request.path.removeprefix("/download/"))
+        if request_path.startswith("/download/"):
+            filename = unquote(request_path.removeprefix("/download/"))
 
             try:
                 payload, content_type, download_name = self._read_download_bytes(filename)
@@ -289,13 +450,40 @@ class PreviewServer:
         return self._not_found_response(connection)
 
     def _read_deck_json(self) -> str:
-        _, payload = load_deck_payload(self.sidecar_path)
+        if self._preview_payload is None:
+            _, self._preview_payload = load_deck_payload(self.sidecar_path)
+        payload = dict(self._preview_payload)
+        payload["preview_backend"] = self._preview_backend
+        if self._preview_backend == "png":
+            payload["slide_previews"] = list(self._slide_previews)
         return json.dumps(payload)
 
     def _read_image_bytes(self, image_path: str) -> tuple[bytes, str]:
         resolved = resolve_image_path(image_path, base_dir=self.sidecar_path.parent)
         content_type, _ = mimetypes.guess_type(resolved.name)
         return resolved.read_bytes(), content_type or "application/octet-stream"
+
+    def _read_slide_png_bytes(self, slide_index_text: str) -> tuple[bytes, str]:
+        if self._preview_backend != "png" or self._renderer is None or self._preview_payload is None:
+            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+
+        try:
+            slide_index = int(slide_index_text)
+        except ValueError as exc:
+            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}") from exc
+
+        slides = self._preview_payload.get("slides", [])
+        if slide_index < 0 or slide_index >= len(slides):
+            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+
+        slide = slides[slide_index]
+        slide_id = str(slide["slide_id"])
+        slide_revision = self._slide_revision(slide, int(self._preview_payload["revision"]))
+        rendered = self._renderer.get_cached(slide_id, slide_revision)
+        if rendered is None:
+            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+
+        return rendered.read_bytes(), "image/png"
 
     def _read_download_bytes(self, filename: str) -> tuple[bytes, str, str]:
         requested = Path(filename)
@@ -317,7 +505,25 @@ class PreviewServer:
             resolved.name,
         )
 
-    def _build_update_message(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _build_update_message(
+        self,
+        payload: dict[str, Any],
+        *,
+        changed_indices: list[int] | None = None,
+    ) -> dict[str, Any]:
+        if self.mode == "preview" and self._preview_backend == "png":
+            previews = self._build_slide_previews(payload)
+            return {
+                "type": "slides_updated",
+                "path": str(self.sidecar_path),
+                "revision": payload["revision"],
+                "slide_count": len(payload.get("slides", [])),
+                "slides": [
+                    previews[index]
+                    for index in (changed_indices or list(range(len(previews))))
+                ],
+            }
+
         return {
             "event": "deck.updated",
             "path": str(self.sidecar_path),

@@ -174,10 +174,10 @@ def test_mutate_deck_switches_to_template_reflow_for_template_manifests(
     reflow_calls: list[int] = []
     template_calls: list[int] = []
 
-    def fake_reflow(deck: Deck, provider) -> None:
+    def fake_reflow(deck: Deck, provider, **_: object) -> None:
         reflow_calls.append(deck.revision)
 
-    def fake_template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
+    def fake_template_reflow(deck: Deck, registry: TemplateLayoutRegistry, **_: object) -> None:
         template_calls.append(deck.revision)
         assert registry.source_path == str((tmp_path / "template.pptx").resolve())
 

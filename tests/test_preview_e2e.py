@@ -12,6 +12,7 @@ from agent_slides.io.sidecar import init_deck, mutate_deck
 from agent_slides.model import Deck
 from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.preview import PreviewServer
+from tests.test_preview import FakeSlideRenderer
 
 
 def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
@@ -23,11 +24,10 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
                 updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("watcher"))
                 payload = await receive_update(websocket)
 
-        assert payload["event"] == "deck.updated"
+        assert payload["type"] == "slides_updated"
         assert payload["revision"] == updated_deck.revision
-        assert payload["deck"]["revision"] == updated_deck.revision
-        assert payload["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
-            {"type": "paragraph", "text": "watcher", "level": 0}
+        assert payload["slides"] == [
+            {"index": 0, "url": "/slides/0.png?rev=3", "revision": 3}
         ]
 
     asyncio.run(scenario())
@@ -45,9 +45,8 @@ def test_multiple_rapid_mutations_debounce(tmp_path: Path) -> None:
                 updates = await collect_updates(websocket, timeout=0.25)
 
         assert 1 <= len(updates) <= 2
-        assert updates[-1]["deck"]["slides"][0]["nodes"][0]["content"]["blocks"] == [
-            {"type": "paragraph", "text": "rapid-4", "level": 0}
-        ]
+        assert updates[-1]["type"] == "slides_updated"
+        assert updates[-1]["slides"] == [{"index": 0, "url": "/slides/0.png?rev=7", "revision": 7}]
         assert updates[-1]["revision"] >= 7
 
     asyncio.run(scenario())
@@ -87,8 +86,7 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
 
         assert all(update["revision"] == updated_deck.revision for update in updates)
         assert all(
-            update["deck"]["slides"][0]["nodes"][0]["content"]["blocks"]
-            == [{"type": "paragraph", "text": "fanout", "level": 0}]
+            update["slides"] == [{"index": 0, "url": "/slides/0.png?rev=3", "revision": 3}]
             for update in updates
         )
 
@@ -96,7 +94,8 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
 
 
 def make_server(deck_path: Path, **kwargs: Any) -> PreviewServer:
-    return PreviewServer(str(deck_path), host="127.0.0.1", port=0, **kwargs)
+    renderer = kwargs.pop("slide_renderer", FakeSlideRenderer(deck_path, deck_path.parent / "rendered"))
+    return PreviewServer(str(deck_path), host="127.0.0.1", port=0, slide_renderer=renderer, **kwargs)
 
 
 def prepare_deck(tmp_path: Path) -> Path:
