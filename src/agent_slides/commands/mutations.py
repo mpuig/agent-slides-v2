@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from math import ceil
 from typing import Any
 
+from agent_slides.engine.layout_suggestions import suggest_layouts
 from agent_slides.engine.reflow import rebind_slots
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
 from agent_slides.model import Deck, Node, NodeContent, Slide
@@ -55,6 +57,20 @@ def _require_string(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-empty string")
     return value.strip()
+
+
+def _require_bool(args: dict[str, Any], key: str, *, default: bool = False) -> bool:
+    value = args.get(key, default)
+    if not isinstance(value, bool):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a boolean")
+    return value
+
+
+def _require_non_negative_int(args: dict[str, Any], key: str, *, default: int = 0) -> int:
+    value = args.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative integer")
+    return value
 
 
 def _create_slot_nodes(deck: Deck, layout_name: str, provider: LayoutProvider) -> Slide:
@@ -121,6 +137,90 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
     return NodeContent.from_text(text)
 
 
+def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
+    slot_nodes = _find_slot_nodes(slide, slot_name)
+    if slot_nodes:
+        node = slot_nodes[0]
+        _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+    else:
+        node = Node(
+            node_id=deck.next_node_id(),
+            slot_binding=slot_name,
+            type="text",
+        )
+        slide.nodes.append(node)
+
+    node.slot_binding = slot_name
+    node.type = "text"
+    node.content = content
+
+
+def _chunk_blocks(blocks: list[Any], chunk_count: int) -> list[list[Any]]:
+    if chunk_count <= 0 or not blocks:
+        return []
+    if chunk_count == 1:
+        return [blocks]
+    if len(blocks) <= chunk_count:
+        return [[block] for block in blocks]
+
+    chunks: list[list[Any]] = []
+    index = 0
+    remaining_blocks = len(blocks)
+    remaining_chunks = chunk_count
+    while remaining_chunks > 0 and index < len(blocks):
+        size = ceil(remaining_blocks / remaining_chunks)
+        chunks.append(blocks[index : index + size])
+        index += size
+        remaining_blocks = len(blocks) - index
+        remaining_chunks -= 1
+    return chunks
+
+
+def _populate_auto_layout_slide(
+    deck: Deck,
+    slide: Slide,
+    content: NodeContent,
+    provider: LayoutProvider,
+) -> None:
+    layout = provider.get_layout(slide.layout)
+    blocks = [block for block in content.blocks if block.text.strip()]
+    if not blocks:
+        return
+
+    heading_slot = next(
+        (slot_name for slot_name, slot in layout.slots.items() if slot.role == "heading"),
+        None,
+    )
+    heading_index = next((index for index, block in enumerate(blocks) if block.type == "heading"), None)
+    if heading_slot is not None:
+        if heading_index is None:
+            heading_index = 0
+        heading_block = blocks.pop(heading_index)
+        _set_slot_content(deck, slide, heading_slot, NodeContent(blocks=[heading_block]))
+
+    target_slots = [
+        slot_name
+        for slot_name, slot in layout.slots.items()
+        if slot.role != "image" and slot_name != heading_slot
+    ]
+    for slot_name, block_group in zip(target_slots, _chunk_blocks(blocks, len(target_slots)), strict=False):
+        _set_slot_content(deck, slide, slot_name, NodeContent(blocks=block_group))
+
+
+def _summarize_auto_layout_reason(reason: str) -> str:
+    prefixes = (
+        "Heading-focused content",
+        "Single supporting content block",
+        "Two balanced content blocks",
+        "Three balanced content blocks",
+        "Image-led layout with supporting content",
+    )
+    for prefix in prefixes:
+        if reason.startswith(prefix):
+            return prefix
+    return reason.rstrip(".")
+
+
 def apply_mutation(
     deck: Deck,
     command: str,
@@ -130,6 +230,40 @@ def apply_mutation(
     """Apply one supported mutation and return its structured result."""
 
     if command == "slide_add":
+        auto_layout = _require_bool(args, "auto_layout", default=False)
+        if auto_layout:
+            if isinstance(args.get("layout"), str) and args["layout"].strip():
+                raise AgentSlidesError(
+                    SCHEMA_ERROR,
+                    "Arguments 'auto_layout' and 'layout' are mutually exclusive",
+                )
+
+            content = _coerce_content(args)
+            if content.is_empty():
+                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must include at least one text block")
+
+            image_count = _require_non_negative_int(args, "image_count", default=0)
+            suggestions = suggest_layouts(content, image_count=image_count, limit=1)
+            if not suggestions:
+                raise AgentSlidesError(SCHEMA_ERROR, "No suitable layout found for the provided content")
+
+            suggestion = suggestions[0]
+            slide = _create_slot_nodes(deck, suggestion.layout, provider)
+            _populate_auto_layout_slide(deck, slide, content, provider)
+            deck.slides.append(slide)
+            return {
+                "slide_index": len(deck.slides) - 1,
+                "slide_id": slide.slide_id,
+                "layout": slide.layout,
+                "auto_selected": True,
+                "reason": _summarize_auto_layout_reason(suggestion.reason),
+            }
+
+        if "content" in args:
+            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' requires 'auto_layout' to be true")
+        if "image_count" in args:
+            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'image_count' requires 'auto_layout' to be true")
+
         slide = _create_slot_nodes(deck, _require_string(args, "layout"), provider)
         deck.slides.append(slide)
         return {
