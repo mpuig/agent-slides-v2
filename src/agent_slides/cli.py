@@ -21,6 +21,7 @@ from agent_slides.commands.review import review_command
 from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
 from agent_slides.commands.suggest_layout import suggest_layout_command
+from agent_slides.commands.table import table
 from agent_slides.commands.theme import theme
 from agent_slides.commands.validate_cmd import validate_command
 from agent_slides.errors import AgentSlidesError
@@ -63,9 +64,9 @@ cli.add_command(icon)
 cli.add_command(init_command)
 cli.add_command(preview_command)
 cli.add_command(review_command)
-cli.add_command(chart)
 cli.add_command(slide)
 cli.add_command(slot)
+cli.add_command(table)
 cli.add_command(theme)
 cli.add_command(info_command)
 cli.add_command(learn_command)

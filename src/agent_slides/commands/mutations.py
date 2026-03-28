@@ -19,9 +19,9 @@ from agent_slides.errors import (
     SCHEMA_ERROR,
 )
 from agent_slides.icons import normalize_hex_color, require_icon
-from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide, TableSpec
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model.types import CHART_TYPE_VALUES
+from agent_slides.model.types import CHART_TYPE_VALUES, TextBlock, parse_inline_markdown_runs
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -152,6 +152,9 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
     text = args.get("text")
     if not isinstance(text, str):
         raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
+    runs = parse_inline_markdown_runs(text)
+    if runs is not None:
+        return NodeContent(blocks=[TextBlock(type="paragraph", text=text, runs=runs)])
     return NodeContent.from_text(text)
 
 
@@ -214,6 +217,16 @@ def _raise_chart_validation_error(exc: ValidationError) -> None:
     ) from exc
 
 
+def _raise_table_validation_error(exc: ValidationError) -> None:
+    errors = exc.errors(include_url=False)
+    first_error = errors[0] if errors else {"msg": "invalid table data"}
+    raise AgentSlidesError(
+        SCHEMA_ERROR,
+        f"Invalid table data: {first_error['msg']}",
+        details={"validation_errors": errors},
+    ) from exc
+
+
 def _build_chart_spec(
     raw_data: object,
     *,
@@ -235,6 +248,16 @@ def _build_chart_spec(
         return ChartSpec.model_validate(payload)
     except ValidationError as exc:
         _raise_chart_validation_error(exc)
+
+
+def _build_table_spec(raw_data: object) -> TableSpec:
+    if not isinstance(raw_data, dict):
+        raise AgentSlidesError(SCHEMA_ERROR, "Argument 'data' must be an object")
+
+    try:
+        return TableSpec.model_validate(raw_data)
+    except ValidationError as exc:
+        _raise_table_validation_error(exc)
 
 
 def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
@@ -418,6 +441,7 @@ def apply_mutation(
         node.image_path = image_path
         node.image_fit = image_fit
         node.chart_spec = None
+        node.table_spec = None
         node.icon_name = None
         node.x = None
         node.y = None
@@ -440,7 +464,7 @@ def apply_mutation(
             "node_id": node.node_id,
             "type": node.type,
             "text": node.content.to_plain_text(),
-            "content": node.content.model_dump(mode="json", exclude_none=True),
+            "content": node.content.model_dump(mode="json"),
             "image_path": node.image_path,
             "image_fit": node.image_fit,
             "font_size": node.style_overrides.get("font_size"),
@@ -513,6 +537,7 @@ def apply_mutation(
         node.image_path = None
         node.image_fit = "contain"
         node.chart_spec = chart_spec
+        node.table_spec = None
         node.icon_name = None
         node.x = None
         node.y = None
@@ -553,6 +578,46 @@ def apply_mutation(
             "node_id": node.node_id,
             "chart_type": chart_spec.chart_type,
             "updated": True,
+        }
+
+    if command == "table_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
+        table_spec = _build_table_spec(_require_object(args, "data"))
+
+        slot_nodes = _find_slot_nodes(slide, slot_name)
+        if slot_nodes:
+            node = slot_nodes[0]
+            _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+        else:
+            node = Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="table",
+                table_spec=table_spec,
+            )
+            slide.nodes.append(node)
+
+        node.slot_binding = slot_name
+        node.type = "table"
+        node.content = NodeContent()
+        node.image_path = None
+        node.image_fit = "contain"
+        node.chart_spec = None
+        node.table_spec = table_spec
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
+        node.style_overrides.pop("placeholder", None)
+
+        return {
+            "slide_id": slide.slide_id,
+            "slot": slot_name,
+            "node_id": node.node_id,
+            "column_count": len(table_spec.headers),
+            "row_count": len(table_spec.rows),
         }
 
     if command == "icon_add":

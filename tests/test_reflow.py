@@ -83,6 +83,40 @@ def test_reflow_scatter_chart_nodes_keep_chart_content_type() -> None:
     assert chart.font_size_pt == 0.0
 
 
+def test_reflow_table_nodes_use_grid_geometry_without_text_fitting() -> None:
+    slide = Slide(
+        slide_id="s-table",
+        layout="title_content",
+        nodes=[
+            Node(node_id="n-1", slot_binding="heading", type="text", content="Quarterly summary"),
+            Node(
+                node_id="n-2",
+                slot_binding="body",
+                type="table",
+                table_spec={
+                    "headers": ["Metric", "Q1", "Q2"],
+                    "rows": [
+                        ["Revenue", "$100K", "$150K"],
+                        ["Users", "1000", "1500"],
+                    ],
+                },
+            ),
+        ],
+    )
+
+    reflow_slide(slide, get_layout("title_content"), load_theme("default"))
+
+    table = slide.computed["n-2"]
+
+    assert table.x == pytest.approx(60.0)
+    assert table.y == pytest.approx(130.4)
+    assert table.width == pytest.approx(600.0)
+    assert table.height == pytest.approx(369.6)
+    assert table.font_size_pt == 0.0
+    assert table.text_overflow is False
+    assert table.content_type == "table"
+
+
 def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
     image_path = make_image(tmp_path)
     slide = Slide(
