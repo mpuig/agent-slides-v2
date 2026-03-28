@@ -28,7 +28,7 @@ def build_command(path: Path, output_path: Path) -> None:
     manifest_path = resolve_manifest_path(str(path), deck)
     if manifest_path is not None:
         deck.template_manifest = manifest_path
-    provider = resolve_layout_provider(deck.template_manifest)
+    provider = resolve_layout_provider(manifest_path)
     reflow_deck(deck, provider)
     write_computed_deck(str(path), deck)
     write_pptx(deck, str(output_path))

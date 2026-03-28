@@ -211,7 +211,7 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     from agent_slides.engine.reflow import reflow_deck
 
     deck = read_deck(path)
-    provider = resolve_layout_provider(deck.template_manifest)
+    provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
