@@ -2089,3 +2089,153 @@ def test_preview_command_reports_missing_deck_as_file_not_found(tmp_path: Path) 
             "message": f"Deck file not found: {missing_path}",
         },
     }
+
+
+def test_chat_command_auto_creates_deck_starts_chat_mode_and_opens_browser(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    browser_calls: list[str] = []
+    orchestrator_calls: list[tuple[Path, str]] = []
+    server_events: list[tuple[str, object]] = []
+
+    class FakeServer:
+        def __init__(
+            self,
+            path: Path,
+            *,
+            port: int,
+            mode: str = "preview",
+            orchestrator: object | None = None,
+        ) -> None:
+            self.url = f"http://localhost:{port}"
+            server_events.append(("init", path, port, mode, orchestrator))
+
+        def start(self) -> None:
+            server_events.append(("start",))
+
+        def stop(self) -> None:
+            server_events.append(("stop",))
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: object())
+    monkeypatch.setattr("agent_slides.commands.chat._ForegroundPreviewServer", FakeServer)
+    monkeypatch.setattr(
+        "agent_slides.commands.chat.DeckOrchestrator",
+        lambda path, api_key: orchestrator_calls.append((path, api_key)) or object(),
+    )
+    monkeypatch.setattr(
+        "agent_slides.commands.chat._wait_for_shutdown",
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        "agent_slides.commands.chat.webbrowser.open",
+        lambda url: browser_calls.append(url),
+    )
+
+    result = invoke_cli(["chat", str(deck_path), "--port", "9876"])
+
+    lines = [line for line in result.output.strip().splitlines() if line]
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert deck_path.exists()
+    assert read_payload(deck_path)["theme"] == "default"
+    assert browser_calls == ["http://localhost:9876"]
+    assert orchestrator_calls == [(deck_path, "test-key")]
+    assert server_events[0][:4] == ("init", deck_path, 9876, "chat")
+    assert server_events[1] == ("start",)
+    assert server_events[2] == ("stop",)
+    assert json.loads(lines[0]) == {
+        "ok": True,
+        "data": {
+            "url": "http://localhost:9876",
+            "mode": "chat",
+        },
+    }
+    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_chat_command_supports_custom_port_and_no_open(tmp_path: Path, monkeypatch) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_clean_deck())
+    browser_calls: list[str] = []
+    server_events: list[tuple[str, object]] = []
+
+    class FakeServer:
+        def __init__(
+            self,
+            path: Path,
+            *,
+            port: int,
+            mode: str = "preview",
+            orchestrator: object | None = None,
+        ) -> None:
+            self.url = f"http://localhost:{port}"
+            server_events.append(("init", path, port, mode, orchestrator))
+
+        def start(self) -> None:
+            server_events.append(("start",))
+
+        def stop(self) -> None:
+            server_events.append(("stop",))
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: object())
+    monkeypatch.setattr("agent_slides.commands.chat._ForegroundPreviewServer", FakeServer)
+    monkeypatch.setattr("agent_slides.commands.chat.DeckOrchestrator", lambda *args: object())
+    monkeypatch.setattr(
+        "agent_slides.commands.chat._wait_for_shutdown",
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        "agent_slides.commands.chat.webbrowser.open",
+        lambda url: browser_calls.append(url),
+    )
+
+    result = invoke_cli(["chat", str(deck_path), "--port", "9012", "--no-open"])
+
+    lines = [line for line in result.output.strip().splitlines() if line]
+
+    assert result.exit_code == 0
+    assert browser_calls == []
+    assert server_events[0][:4] == ("init", deck_path, 9012, "chat")
+    assert json.loads(lines[0])["data"] == {
+        "url": "http://localhost:9012",
+        "mode": "chat",
+    }
+    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_chat_command_requires_api_key(tmp_path: Path, monkeypatch) -> None:
+    deck_path = tmp_path / "deck.json"
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    result = invoke_cli(["chat", str(deck_path), "--no-open"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "Chat mode requires `ANTHROPIC_API_KEY`. Set the environment variable and try again.",
+        },
+    }
+
+
+def test_chat_command_reports_missing_anthropic_dependency(tmp_path: Path, monkeypatch) -> None:
+    deck_path = tmp_path / "deck.json"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("agent_slides.commands.chat.importlib.util.find_spec", lambda name: None)
+
+    result = invoke_cli(["chat", str(deck_path), "--no-open"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "Chat mode requires: pip install agent-slides[chat]",
+        },
+    }

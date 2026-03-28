@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+chat = [
+    { name = "anthropic" },
+]
 preview = [
     { name = "anthropic" },
 ]
@@ -28,6 +31,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", marker = "extra == 'chat'", specifier = ">=0.40.0" },
     { name = "anthropic", marker = "extra == 'preview'", specifier = ">=0.52.0" },
     { name = "click", specifier = ">=8.1" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -36,7 +40,7 @@ requires-dist = [
     { name = "watchdog", specifier = ">=6.0" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["preview"]
+provides-extras = ["chat", "preview"]
 
 [package.metadata.requires-dev]
 dev = [
