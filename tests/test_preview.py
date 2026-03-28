@@ -3,14 +3,38 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 from websockets.asyncio.client import connect
 
 from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
 from tests.image_helpers import write_png
+
+
+class InlineAssetParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.script_srcs: list[str] = []
+        self.stylesheet_hrefs: list[str] = []
+        self.inline_script_count = 0
+        self.inline_style_count = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        if tag == "script":
+            src = attr_map.get("src")
+            if src:
+                self.script_srcs.append(src)
+            else:
+                self.inline_script_count += 1
+        if tag == "style":
+            self.inline_style_count += 1
+        if tag == "link" and attr_map.get("rel") == "stylesheet" and attr_map.get("href"):
+            self.stylesheet_hrefs.append(str(attr_map["href"]))
 
 
 def make_deck(*, revision: int, content: str = "Hello preview") -> Deck:
@@ -184,6 +208,51 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
             await server.stop()
 
     asyncio.run(scenario())
+
+
+def test_client_html_is_packaged_and_self_contained() -> None:
+    html_path = client_html_path()
+    parser = InlineAssetParser()
+    payload = read_client_html()
+    parser.feed(payload)
+
+    assert html_path.name == "client.html"
+    assert html_path.exists()
+    assert parser.script_srcs == []
+    assert parser.stylesheet_hrefs == []
+    assert parser.inline_script_count >= 1
+    assert parser.inline_style_count >= 1
+
+
+def test_client_html_contains_required_preview_surface() -> None:
+    payload = read_client_html()
+
+    assert 'viewBox="0 0 720 540"' in payload
+    assert 'id="stage"' in payload
+    assert 'id="prev-slide"' in payload
+    assert 'id="next-slide"' in payload
+    assert 'id="slide-dots"' in payload
+    assert 'id="slide-count"' in payload
+    assert 'id="status-dot"' in payload
+    assert "new WebSocket" in payload
+    assert "Reconnecting in" in payload
+    assert "ArrowLeft" in payload
+    assert "ArrowRight" in payload
+    assert "preserveAspectRatio" in payload
+
+
+def test_client_html_wraps_text_and_renders_structured_content() -> None:
+    payload = read_client_html()
+
+    assert "wrapText" in payload
+    assert "breakLongWord" in payload
+    assert "nodeLines" in payload
+    assert 'split(/\\r?\\n/)' in payload
+    assert 'block?.type === "bullet"' in payload
+    assert "createElementNS" in payload
+    assert 'createSvgElement("tspan")' in payload
+    assert 'createSvgElement("rect")' in payload
+    assert "currentSlideIndex" in payload
 
 
 async def _wait_for(predicate, *, interval: float = 0.01) -> None:
