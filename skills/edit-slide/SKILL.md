@@ -1,3 +1,8 @@
+---
+name: edit-slide
+description: Modify an existing agent-slides deck in place. Inspect current state, apply the smallest mutation that satisfies the request, then validate. Handles layout switches, slot edits, content changes, node rebinding, and atomic batch operations.
+---
+
 # edit-slide
 
 Use this skill to modify an existing `agent-slides` deck in place. Stay operational: inspect the current deck state, make the smallest mutation that satisfies the request, then validate the result. Do not apply design opinions or rewrite content beyond the requested edit.
