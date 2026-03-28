@@ -880,6 +880,87 @@ def test_write_pptx_uses_block_positions_for_precise_text_boxes(tmp_path: Path) 
     assert any(paragraph.find("./a:pPr/a:buChar", DRAWING_NS) is not None for paragraph in paragraphs)
 
 
+def test_write_pptx_renders_icon_nodes_and_icon_bullets(tmp_path: Path) -> None:
+    output_path = tmp_path / "icons.pptx"
+    deck = Deck(
+        deck_id="deck-icons",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(type="bullet", text="On track for Q3", icon="checkmark"),
+                            ]
+                        ),
+                    ),
+                    Node(
+                        node_id="n-2",
+                        type="icon",
+                        icon_name="warning",
+                        x=420.0,
+                        y=120.0,
+                        size=18.0,
+                        color="#D93025",
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=100.0,
+                        width=320.0,
+                        height=90.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#1A73E8",
+                        bg_color=None,
+                        revision=1,
+                    ),
+                    "n-2": ComputedNode(
+                        x=420.0,
+                        y=120.0,
+                        width=18.0,
+                        height=18.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#D93025",
+                        bg_color=None,
+                        revision=1,
+                        content_type="icon",
+                        icon_svg_path="M12 2 L22 21 L2 21 Z M11 8 L13 8 L13 15 L11 15 Z M11 17 L13 17 L13 19 L11 19 Z",
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    text_frame = slide.shapes[0].text_frame
+    slide_xml = read_slide_xml(output_path)
+    custom_geometry = slide_xml.findall(".//a:custGeom", DRAWING_NS)
+    paragraphs = slide_xml.findall(".//a:p", DRAWING_NS)
+    fills = [slide.shapes[index].fill.fore_color.rgb for index in range(1, len(slide.shapes))]
+
+    assert len(slide.shapes) >= 3
+    assert len(custom_geometry) >= 2
+    assert text_frame.paragraphs[0].text == "On track for Q3"
+    assert text_frame.paragraphs[0].runs[0].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert RGBColor.from_string("1A73E8") in fills
+    assert RGBColor.from_string("D93025") in fills
+    assert paragraphs[0].find("./a:pPr/a:buNone", DRAWING_NS) is not None
+    assert paragraphs[0].find("./a:pPr/a:buChar", DRAWING_NS) is None
+    assert int(paragraphs[0].find("./a:pPr", DRAWING_NS).attrib["marL"]) > 0
+
+
 def test_write_pptx_renders_inline_text_runs(tmp_path: Path) -> None:
     output_path = tmp_path / "inline-runs.pptx"
     deck = Deck(

@@ -18,6 +18,7 @@ from agent_slides.errors import (
     INVALID_SLOT,
     SCHEMA_ERROR,
 )
+from agent_slides.icons import normalize_hex_color, require_icon
 from agent_slides.model import ChartSpec, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec, load_design_rules
 from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model.types import (
@@ -122,8 +123,6 @@ def _require_non_negative_number(args: dict[str, Any], key: str, *, default: flo
     if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number")
     return float(value)
-
-
 def _require_object(args: dict[str, Any], key: str) -> dict[str, Any]:
     value = args.get(key)
     if not isinstance(value, dict):
@@ -549,6 +548,11 @@ def apply_mutation(
         node.chart_spec = None
         node.shape_spec = None
         node.table_spec = None
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
         node.style_overrides.pop("placeholder", None)
 
         if "font_size" in args:
@@ -641,6 +645,11 @@ def apply_mutation(
         node.chart_spec = chart_spec
         node.shape_spec = None
         node.table_spec = None
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
         node.style_overrides.pop("placeholder", None)
 
         return {
@@ -739,6 +748,11 @@ def apply_mutation(
         node.chart_spec = None
         node.shape_spec = None
         node.table_spec = table_spec
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
         node.style_overrides.pop("placeholder", None)
 
         return {
@@ -747,6 +761,30 @@ def apply_mutation(
             "node_id": node.node_id,
             "column_count": len(table_spec.headers),
             "row_count": len(table_spec.rows),
+        }
+
+    if command == "icon_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        icon_name = _require_string(args, "name")
+        require_icon(icon_name)
+        node = Node(
+            node_id=deck.next_node_id(),
+            type="icon",
+            icon_name=icon_name,
+            x=_require_number(args, "x"),
+            y=_require_number(args, "y"),
+            size=_require_number(args, "size"),
+            color=normalize_hex_color(args.get("color"), field_name="color"),
+        )
+        slide.nodes.append(node)
+        return {
+            "slide_id": slide.slide_id,
+            "node_id": node.node_id,
+            "name": node.icon_name,
+            "x": node.x,
+            "y": node.y,
+            "size": node.size,
+            "color": node.color,
         }
 
     raise AgentSlidesError(
