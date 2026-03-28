@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
+from agent_slides.errors import (
+    AgentSlidesError,
+    CHART_DATA_ERROR,
+    INVALID_CHART_TYPE,
+    INVALID_SLIDE,
+)
 from agent_slides.model.types import (
+    ChartSpec,
     ComputedDeck,
     ComputedNode,
     Counters,
@@ -16,6 +23,19 @@ from agent_slides.model.types import (
     Slide,
     TextBlock,
 )
+
+
+def build_chart_node() -> Node:
+    return Node(
+        node_id="n-chart-1",
+        type="chart",
+        chart_spec=ChartSpec(
+            chart_type="bar",
+            title="Quarterly revenue",
+            categories=["Q1", "Q2"],
+            series=[{"name": "Revenue", "values": [1.0, 2.0]}],
+        ),
+    )
 
 
 def build_deck() -> Deck:
@@ -199,3 +219,83 @@ def test_computed_deck_round_trip_applies_only_matching_revision() -> None:
     computed.apply_to_deck(deck)
 
     assert deck.slides[0].computed == {}
+
+
+def test_chart_nodes_accept_chart_type_and_round_trip_json() -> None:
+    node = build_chart_node()
+    restored = Node.model_validate_json(node.model_dump_json())
+
+    assert restored == node
+    assert restored.type == "chart"
+    assert restored.chart_spec is not None
+    assert restored.chart_spec.chart_type == "bar"
+    assert json.loads(node.model_dump_json())["chart_spec"]["series"][0]["values"] == [1.0, 2.0]
+
+
+def test_chart_nodes_require_chart_spec() -> None:
+    with pytest.raises(ValidationError, match="chart_spec"):
+        Node(node_id="n-chart-2", type="chart")
+
+
+def test_chart_spec_rejects_unknown_chart_type() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ChartSpec(chart_type="radar")
+
+    assert exc_info.value.errors()[0]["type"] == INVALID_CHART_TYPE
+
+
+def test_category_charts_require_categories_and_series_data() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ChartSpec(chart_type="bar", categories=["Q1", "Q2"], series=[{"name": "Revenue", "values": [1.0]}])
+
+    assert exc_info.value.errors()[0]["type"] == CHART_DATA_ERROR
+
+
+def test_scatter_charts_require_scatter_series() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ChartSpec(chart_type="scatter")
+
+    assert exc_info.value.errors()[0]["type"] == CHART_DATA_ERROR
+
+
+def test_pie_charts_require_a_single_series() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ChartSpec(
+            chart_type="pie",
+            categories=["A", "B"],
+            series=[
+                {"name": "North", "values": [1.0, 2.0]},
+                {"name": "South", "values": [3.0, 4.0]},
+            ],
+        )
+
+    assert exc_info.value.errors()[0]["type"] == CHART_DATA_ERROR
+
+
+def test_pie_charts_warn_on_negative_values() -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spec = ChartSpec(
+            chart_type="pie",
+            categories=["A", "B"],
+            series=[{"name": "Revenue", "values": [1.0, -2.0]}],
+        )
+
+    assert spec.chart_type == "pie"
+    assert any("negative values" in str(warning.message) for warning in caught)
+
+
+def test_chart_specs_warn_when_more_than_ten_series() -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spec = ChartSpec(
+            chart_type="line",
+            categories=["Jan", "Feb"],
+            series=[
+                {"name": f"Series {index}", "values": [float(index), float(index + 1)]}
+                for index in range(11)
+            ],
+        )
+
+    assert spec.chart_type == "line"
+    assert any("more than 10 series" in str(warning.message) for warning in caught)
