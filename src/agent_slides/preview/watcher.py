@@ -13,6 +13,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
+from agent_slides.model import load_design_rules
+from agent_slides.engine.conditional_formatting import preview_conditional_formatting_payload
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
 from agent_slides.icons import require_icon
 from agent_slides.io import read_deck
@@ -45,6 +47,7 @@ def load_deck_payload(sidecar_path: Path) -> tuple[int, DeckPayload]:
 
     deck = read_deck(str(sidecar_path))
     payload = deck.model_dump(mode="json", by_alias=True, exclude_none=True)
+    payload["conditional_formatting"] = preview_conditional_formatting_payload(load_design_rules(deck.design_rules))
     return deck.revision, _enrich_icon_payload(payload)
 
 

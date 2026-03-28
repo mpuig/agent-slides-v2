@@ -12,6 +12,7 @@ from agent_slides.errors import (
     INVALID_CHART_TYPE,
     INVALID_SLIDE,
 )
+from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import (
     BlockPosition,
     ChartSpec,
@@ -27,6 +28,9 @@ from agent_slides.model.types import (
     TableSpec,
     TextBlock,
     TextFitting,
+    TextRun,
+    apply_inline_color_suffixes,
+    parse_inline_markdown_runs,
 )
 
 
@@ -466,3 +470,36 @@ def test_chart_style_validates_series_colors() -> None:
 
     with pytest.raises(ValidationError, match="series_colors entries must use #RRGGBB or RRGGBB format"):
         ChartStyle(series_colors=["bad-color"])
+
+
+def test_parse_inline_markdown_color_suffixes_use_design_rule_aliases() -> None:
+    aliases = load_design_rules("default").conditional_formatting.color_aliases
+    runs = parse_inline_markdown_runs("Revenue: **+23%**{green} vs target **-5%**{red}")
+
+    assert runs is not None
+    assert apply_inline_color_suffixes(runs, color_aliases=aliases) == [
+        TextRun(text="Revenue: "),
+        TextRun(text="+23%", bold=True, color="#1B8A2D"),
+        TextRun(text=" vs target "),
+        TextRun(text="-5%", bold=True, color="#D32F2F"),
+    ]
+
+
+def test_chart_style_accepts_conditional_point_color_settings() -> None:
+    style = ChartStyle(color_by_value=True, highlight_index=1, highlight_color="#C98E48", muted_color="CFC8BD")
+
+    assert style.color_by_value is True
+    assert style.highlight_index == 1
+    assert style.highlight_color == "#C98E48"
+    assert style.muted_color == "#CFC8BD"
+
+    with pytest.raises(ValidationError, match="highlight_index"):
+        ChartStyle(highlight_index=-1)
+
+
+def test_design_rules_default_profile_exposes_conditional_formatting() -> None:
+    rules = load_design_rules("default")
+
+    assert rules.conditional_formatting.color_aliases["green"] == "#1B8A2D"
+    assert any(rule.pattern == "positive_number" for rule in rules.conditional_formatting.text_rules)
+    assert rules.conditional_formatting.table.statuses["in progress"].fill == "#FFF1C7"
