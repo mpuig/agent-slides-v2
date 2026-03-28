@@ -1,4 +1,4 @@
-"""Core scene-graph and theme models."""
+"""Core Pydantic types for the scene graph and theme system."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ class ComputedNode(AgentSlidesModel):
     color: str
     bg_color: str | None = None
     font_bold: bool = False
+    text_overflow: bool = False
     revision: int
 
 
