@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from agent_slides.engine.reflow import reflow_deck
 from agent_slides.io import read_deck, write_pptx
 
 
@@ -23,6 +24,7 @@ def build_command(path: Path, output_path: Path) -> None:
     """Build a PPTX file from a deck sidecar."""
 
     deck = read_deck(str(path))
+    reflow_deck(deck)
     write_pptx(deck, str(output_path))
     payload = {
         "ok": True,
