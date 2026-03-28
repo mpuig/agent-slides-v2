@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PIL import ImageFont
 
-from agent_slides.engine.text_fit import fit_text
-from agent_slides.model.types import NodeContent, TextBlock
+from agent_slides.engine.text_fit import fit_text, measure_text_height
+from agent_slides.model.types import NodeContent, TextBlock, TextRun
 
 
 def test_short_text_fits_at_default_size() -> None:
@@ -88,6 +88,31 @@ def test_structured_blocks_account_for_heading_hierarchy_and_spacing() -> None:
 
     assert font_size == 14
     assert overflowed is False
+
+
+def test_mixed_size_inline_runs_increase_measured_height() -> None:
+    plain = NodeContent(
+        blocks=[
+            TextBlock(
+                type="paragraph",
+                text="Revenue grew 23% driven by premium segment",
+            )
+        ]
+    )
+    mixed = NodeContent(
+        blocks=[
+            TextBlock(
+                type="paragraph",
+                runs=[
+                    TextRun(text="Revenue grew "),
+                    TextRun(text="23%", font_size=32),
+                    TextRun(text=" driven by premium segment"),
+                ],
+            )
+        ]
+    )
+
+    assert measure_text_height(mixed, width=160, font_size=18) > measure_text_height(plain, width=160, font_size=18)
 
 
 def test_precise_measurement_uses_pillow_truetype(monkeypatch) -> None:
