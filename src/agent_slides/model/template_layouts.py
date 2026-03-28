@@ -47,13 +47,21 @@ def _optional_number(mapping: dict[str, Any], *keys: str) -> float | None:
 
 
 def _infer_role(slot_name: str, slot_mapping: dict[str, Any]) -> str:
-    explicit = slot_mapping.get("role") or slot_mapping.get("type")
+    explicit = slot_mapping.get("role")
     if isinstance(explicit, str) and explicit:
-        return explicit
+        return explicit.lower()
+
+    placeholder_type = slot_mapping.get("type")
+    if isinstance(placeholder_type, str):
+        normalized = placeholder_type.upper()
+        if normalized == "PICTURE":
+            return "image"
 
     lowered = slot_name.lower()
     if lowered in {"heading", "title", "header"}:
         return "heading"
+    if lowered in {"subheading", "subtitle"}:
+        return "body"
     if lowered in {"quote"}:
         return "quote"
     if lowered in {"attribution", "credit", "citation"}:
@@ -63,8 +71,40 @@ def _infer_role(slot_name: str, slot_mapping: dict[str, Any]) -> str:
     return "body"
 
 
-def _build_slot(slot_name: str, raw_slot: object) -> SlotDef:
-    slot_mapping = _as_dict(raw_slot, context=f"slot_mapping[{slot_name!r}]")
+def _coerce_slot_mapping(
+    slot_name: str,
+    raw_slot: object,
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    if isinstance(raw_slot, bool):
+        raise AgentSlidesError(SCHEMA_ERROR, f"slot_mapping[{slot_name!r}] must not be a boolean")
+    if isinstance(raw_slot, int):
+        try:
+            placeholder = placeholders_by_idx[raw_slot]
+        except KeyError as exc:
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                f"slot_mapping[{slot_name!r}] references missing placeholder idx {raw_slot}",
+            ) from exc
+        return {
+            "type": placeholder.get("type"),
+            "bounds": placeholder.get("bounds"),
+        }
+    return _as_dict(raw_slot, context=f"slot_mapping[{slot_name!r}]")
+
+
+def _build_slot(
+    slot_name: str,
+    raw_slot: object,
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+) -> SlotDef:
+    slot_mapping = _coerce_slot_mapping(
+        slot_name,
+        raw_slot,
+        placeholders_by_idx=placeholders_by_idx,
+    )
     raw_bounds = slot_mapping.get("bounds", slot_mapping)
     bounds = _as_dict(raw_bounds, context=f"slot_mapping[{slot_name!r}] bounds")
     role = _infer_role(slot_name, slot_mapping)
@@ -102,6 +142,52 @@ def _coerce_layouts(raw_layouts: object) -> list[tuple[str, dict[str, Any]]]:
     raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'layouts' must be a list or object")
 
 
+def _coerce_layout_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_layouts = manifest.get("layouts")
+    if raw_layouts is not None:
+        entries: list[dict[str, Any]] = []
+        for index, (slug, layout) in enumerate(_coerce_layouts(raw_layouts)):
+            entry = dict(layout)
+            entry.setdefault("slug", slug)
+            entry.setdefault("index", index)
+            entry.setdefault("master_index", 0)
+            entries.append(entry)
+        return entries
+
+    raw_masters = manifest.get("slide_masters", [])
+    if not isinstance(raw_masters, list):
+        raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'slide_masters' must be an array")
+
+    entries: list[dict[str, Any]] = []
+    for master_index, raw_master in enumerate(raw_masters):
+        master = _as_dict(raw_master, context=f"slide_masters[{master_index}]")
+        manifest_master_index = master.get("index", master_index)
+        for layout_index, raw_layout in enumerate(_coerce_layouts(master.get("layouts", []))):
+            slug, layout = raw_layout
+            entry = dict(layout)
+            entry.setdefault("slug", slug)
+            entry.setdefault("index", layout_index)
+            entry.setdefault("master_index", manifest_master_index)
+            entries.append(entry)
+    return entries
+
+
+def _coerce_placeholder_index(raw_placeholders: object, *, slug: str) -> dict[int, dict[str, Any]]:
+    if raw_placeholders is None:
+        return {}
+    if not isinstance(raw_placeholders, list):
+        raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].placeholders must be an array")
+
+    placeholders: dict[int, dict[str, Any]] = {}
+    for index, raw_placeholder in enumerate(raw_placeholders):
+        placeholder = _as_dict(raw_placeholder, context=f"layout[{slug!r}].placeholders[{index}]")
+        raw_idx = placeholder.get("idx")
+        if isinstance(raw_idx, bool) or not isinstance(raw_idx, int):
+            raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].placeholders[{index}].idx must be an integer")
+        placeholders[raw_idx] = placeholder
+    return placeholders
+
+
 class TemplateLayoutRegistry:
     """Loads layouts from a template manifest and implements LayoutProvider."""
 
@@ -126,14 +212,21 @@ class TemplateLayoutRegistry:
         self._theme = self._resolve_theme(manifest)
         self._layouts: dict[str, LayoutDef] = {}
         self._slot_names: dict[str, list[str]] = {}
+        self._layout_refs: dict[str, tuple[int, int]] = {}
         self._usable_layouts: list[str] = []
         self._load_layouts(manifest)
 
     def _load_layouts(self, manifest: dict[str, Any]) -> None:
-        for slug, raw_layout in _coerce_layouts(manifest.get("layouts", [])):
+        for raw_layout in _coerce_layout_entries(manifest):
+            slug = _require_string(raw_layout.get("slug"), context="layout.slug")
             slot_mapping = _as_dict(raw_layout.get("slot_mapping", {}), context=f"layout[{slug!r}].slot_mapping")
+            placeholders_by_idx = _coerce_placeholder_index(raw_layout.get("placeholders"), slug=slug)
             slots = {
-                slot_name: _build_slot(slot_name, slot_value)
+                slot_name: _build_slot(
+                    slot_name,
+                    slot_value,
+                    placeholders_by_idx=placeholders_by_idx,
+                )
                 for slot_name, slot_value in slot_mapping.items()
             }
             text_fitting = {
@@ -148,6 +241,13 @@ class TemplateLayoutRegistry:
                 text_fitting=text_fitting,
             )
             self._slot_names[slug] = list(slot_mapping)
+            master_index = raw_layout.get("master_index", 0)
+            layout_index = raw_layout.get("index", 0)
+            if isinstance(master_index, bool) or not isinstance(master_index, int):
+                raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].master_index must be an integer")
+            if isinstance(layout_index, bool) or not isinstance(layout_index, int):
+                raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].index must be an integer")
+            self._layout_refs[slug] = (master_index, layout_index)
             if bool(raw_layout.get("usable", raw_layout.get("is_usable", True))):
                 self._usable_layouts.append(slug)
 
@@ -244,6 +344,10 @@ class TemplateLayoutRegistry:
         if role in layout.text_fitting:
             return layout.text_fitting[role]
         return _default_text_fitting(role)
+
+    def get_layout_ref(self, slug: str) -> tuple[int, int]:
+        self.get_layout(slug)
+        return self._layout_refs[slug]
 
     @property
     def source_path(self) -> str:
