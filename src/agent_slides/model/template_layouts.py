@@ -27,7 +27,7 @@ _THEME_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 _ALIGNMENT_EPSILON_PT = 8.0
 _PEER_Y_EPSILON_PT = 18.0
 _PEER_HEIGHT_RATIO = 0.1
-_CONTENT_TYPES = {"text", "image", "chart"}
+_CONTENT_TYPES = {"text", "image", "chart", "table"}
 
 
 @dataclass(frozen=True)
@@ -183,7 +183,7 @@ def _build_slot(
         alignment_group=_optional_string(slot_mapping, "alignment_group"),
         reading_order=_optional_int(slot_mapping, "reading_order") or 0,
         size_policy=_optional_string(slot_mapping, "size_policy") or _default_size_policy(role),
-        allowed_content=_optional_string_list(slot_mapping, "allowed_content") or ["text", "image", "chart"],
+        allowed_content=_optional_string_list(slot_mapping, "allowed_content") or ["text", "image", "chart", "table"],
         min_font=_optional_number(slot_mapping, "min_font"),
         max_font=_optional_number(slot_mapping, "max_font"),
         preferred_font=(

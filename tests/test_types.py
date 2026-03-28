@@ -24,6 +24,7 @@ from agent_slides.model.types import (
     NodeContent,
     Slide,
     SlotDef,
+    TableSpec,
     TextBlock,
     TextFitting,
 )
@@ -38,6 +39,20 @@ def build_chart_node() -> Node:
             title="Quarterly revenue",
             categories=["Q1", "Q2"],
             series=[{"name": "Revenue", "values": [1.0, 2.0]}],
+        ),
+    )
+
+
+def build_table_node() -> Node:
+    return Node(
+        node_id="n-table-1",
+        type="table",
+        table_spec=TableSpec(
+            headers=["Metric", "Q1", "Q2"],
+            rows=[
+                ["Revenue", "$100K", "$150K"],
+                ["Users", "1000", "1500"],
+            ],
         ),
     )
 
@@ -242,6 +257,23 @@ def test_slot_def_defaults_include_padding_and_top_alignment() -> None:
     assert slot.peer_group is None
 
 
+def test_computed_node_accepts_table_content_type() -> None:
+    computed = ComputedNode(
+        x=0.0,
+        y=0.0,
+        width=320.0,
+        height=180.0,
+        font_size_pt=0.0,
+        font_family="IBM Plex Sans",
+        color="#111111",
+        revision=1,
+        content_type="table",
+    )
+
+    assert computed.content_type == "table"
+    assert computed.font_size_pt == 0.0
+
+
 def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
     image_path = tmp_path / "diagram.svg"
     image_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
@@ -297,6 +329,48 @@ def test_chart_nodes_accept_chart_type_and_round_trip_json() -> None:
     assert restored.chart_spec is not None
     assert restored.chart_spec.chart_type == "bar"
     assert json.loads(node.model_dump_json())["chart_spec"]["series"][0]["values"] == [1.0, 2.0]
+
+
+def test_table_nodes_default_content_to_empty_structured_content() -> None:
+    node = build_table_node()
+
+    assert node.type == "table"
+    assert node.content == NodeContent()
+    assert node.table_spec is not None
+
+
+def test_table_nodes_accept_table_spec_and_round_trip_json() -> None:
+    node = build_table_node()
+    restored = Node.model_validate_json(node.model_dump_json())
+
+    assert restored == node
+    assert restored.type == "table"
+    assert restored.table_spec is not None
+    assert restored.table_spec.headers == ["Metric", "Q1", "Q2"]
+
+
+def test_table_nodes_require_table_spec() -> None:
+    with pytest.raises(ValidationError, match="table_spec"):
+        Node(node_id="n-table-2", type="table")
+
+
+def test_table_spec_auto_detects_numeric_columns_and_widths() -> None:
+    spec = TableSpec(
+        headers=["Metric", "Q1", "Q2"],
+        rows=[
+            ["Revenue", "$100K", "$150K"],
+            ["Users", "1000", "1500"],
+        ],
+    )
+
+    assert spec.infer_numeric_columns() == [False, True, True]
+    assert spec.resolved_col_align() == ["left", "right", "right"]
+    assert spec.resolved_col_widths()[0] > spec.resolved_col_widths()[1]
+
+
+def test_table_spec_rejects_row_length_mismatch() -> None:
+    with pytest.raises(ValidationError, match="rows\\[0\\] has 1 values for 2 headers"):
+        TableSpec(headers=["Metric", "Q1"], rows=[["Revenue"]])
 
 
 def test_chart_nodes_require_chart_spec() -> None:
