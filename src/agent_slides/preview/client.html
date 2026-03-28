@@ -329,6 +329,8 @@
       let reconnectTimer = null;
       let currentRenderProgress = null;
 
+      const conditionalFormatting = () => currentDeck?.conditional_formatting ?? {};
+
       const setConnectionState = (state, text) => {
         statusDot.dataset.state = state;
         statusText.textContent = text;
@@ -408,9 +410,103 @@
         }));
       };
 
+      const mergeRuns = (runs) => {
+        const merged = [];
+        runs.forEach((run) => {
+          if (!run || `${run.text ?? ""}`.length === 0) {
+            return;
+          }
+          const previous = merged[merged.length - 1];
+          if (
+            previous &&
+            previous.bold === run.bold &&
+            previous.italic === run.italic &&
+            previous.color === run.color &&
+            previous.font_size === run.font_size &&
+            previous.underline === run.underline &&
+            previous.strikethrough === run.strikethrough
+          ) {
+            previous.text += run.text;
+            return;
+          }
+          merged.push({ ...run });
+        });
+        return merged.length > 0 ? merged : [{ text: "" }];
+      };
+
+      const conditionalRulePattern = (rule) => {
+        if (rule?.pattern === "positive_number") {
+          return /(?<!\w)\+\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:%|x|bp|bps|k|m|mm|bn|t))?(?!\w)/gi;
+        }
+        if (rule?.pattern === "negative_number") {
+          return /(?<!\w)-\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:%|x|bp|bps|k|m|mm|bn|t))?(?!\w)/gi;
+        }
+        if (rule?.pattern === "keyword" && typeof rule?.match === "string" && rule.match.length > 0) {
+          return new RegExp(rule.match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        }
+        return null;
+      };
+
+      const applyConditionalRuleToRuns = (runs, rule) => {
+        const pattern = conditionalRulePattern(rule);
+        if (!pattern) {
+          return runs;
+        }
+
+        const nextRuns = [];
+        runs.forEach((run) => {
+          const source = `${run?.text ?? ""}`;
+          if (!source) {
+            nextRuns.push(run);
+            return;
+          }
+
+          let lastIndex = 0;
+          let matched = false;
+          pattern.lastIndex = 0;
+          for (const match of source.matchAll(pattern)) {
+            const start = match.index ?? 0;
+            const end = start + match[0].length;
+            if (start === end) {
+              continue;
+            }
+            matched = true;
+            if (start > lastIndex) {
+              nextRuns.push({ ...run, text: source.slice(lastIndex, start) });
+            }
+            nextRuns.push({
+              ...run,
+              text: source.slice(start, end),
+              color: run?.color || rule.color || null,
+              bold: rule?.bold === true && run?.bold == null ? true : run?.bold ?? null,
+            });
+            lastIndex = end;
+          }
+
+          if (!matched) {
+            nextRuns.push(run);
+            return;
+          }
+          if (lastIndex < source.length) {
+            nextRuns.push({ ...run, text: source.slice(lastIndex) });
+          }
+        });
+
+        return mergeRuns(nextRuns);
+      };
+
+      const resolvedBlockRuns = (block) => {
+        let runs = blockRuns(block);
+        const rules = Array.isArray(conditionalFormatting().text_rules) ? conditionalFormatting().text_rules : [];
+        rules.forEach((rule) => {
+          runs = applyConditionalRuleToRuns(runs, rule);
+        });
+        return mergeRuns(runs);
+      };
+
       const splitRunsByLine = (block) => {
         const lines = [[]];
-        for (const run of blockRuns(block)) {
+        for (const run of resolvedBlockRuns(block)) {
           const parts = String(run.text ?? "").split(/\r?\n/);
           parts.forEach((part, index) => {
             if (part || lines[lines.length - 1].length === 0) {
@@ -674,6 +770,33 @@
         );
       };
 
+      const resolveChartPointColors = (chartSpec) => {
+        const series = Array.isArray(chartSpec?.series) ? chartSpec.series : [];
+        if (series.length !== 1) {
+          return null;
+        }
+        const values = Array.isArray(series[0]?.values) ? series[0].values : [];
+        if (!values.length) {
+          return null;
+        }
+
+        const chartRules = conditionalFormatting().chart ?? {};
+        const highlightIndex = Number.isInteger(chartSpec?.style?.highlight_index) ? chartSpec.style.highlight_index : null;
+        if (highlightIndex != null) {
+          const highlightColor = chartSpec?.style?.highlight_color || chartRules.highlight_color || "#C98E48";
+          const mutedColor = chartSpec?.style?.muted_color || chartRules.muted_color || "#CFC8BD";
+          return values.map((_, index) => (index === highlightIndex ? highlightColor : mutedColor));
+        }
+
+        if (chartSpec?.style?.color_by_value === true) {
+          const positiveColor = chartRules.positive_color || "#1B8A2D";
+          const negativeColor = chartRules.negative_color || "#D32F2F";
+          return values.map((value) => (Number(value) >= 0 ? positiveColor : negativeColor));
+        }
+
+        return null;
+      };
+
       const renderFallbackChartPreview = (group, frame) => {
         group.appendChild(
           createSvgElement("rect", {
@@ -717,6 +840,7 @@
 
         const maxValue = Math.max(1, ...values.map((value) => Math.abs(value)));
         const fill = getSeriesColors(chartSpec, 1)[0];
+        const pointColors = resolveChartPointColors(chartSpec);
 
         values.forEach((value, index) => {
           const top = frame.y + index * (rowHeight + rowGap);
@@ -745,7 +869,7 @@
               width,
               height: rowHeight,
               rx: Math.min(6, rowHeight / 2),
-              fill,
+              fill: pointColors?.[index] || fill,
               opacity: 0.92,
             }),
           );
@@ -765,6 +889,7 @@
           ...seriesList.flatMap((series) => (Array.isArray(series.values) ? series.values : []).map((value) => Math.abs(value))),
         );
         const colors = getSeriesColors(chartSpec, seriesList.length);
+        const pointColors = seriesList.length === 1 ? resolveChartPointColors(chartSpec) : null;
         const axisY = frame.y + frame.height;
         const categoryBand = frame.width / categories.length;
         const groupGap = Math.max(8, categoryBand * 0.18);
@@ -806,7 +931,7 @@
                 width: columnWidth,
                 height,
                 rx: Math.min(5, columnWidth / 2),
-                fill: colors[seriesIndex],
+                fill: pointColors?.[categoryIndex] || colors[seriesIndex],
                 opacity: 0.92,
               }),
             );
@@ -944,6 +1069,20 @@
         return luminance < 160 ? "#FFFFFF" : "#2A2824";
       };
 
+      const resolveTableCellStyle = (text, defaultFill, defaultText) => {
+        const normalized = `${text ?? ""}`.trim().toLowerCase();
+        const statusStyles = conditionalFormatting()?.table?.statuses ?? {};
+        const match = normalized ? statusStyles[normalized] : null;
+        if (!match) {
+          return { fill: defaultFill, text: defaultText, bold: false };
+        }
+        return {
+          fill: match.fill || defaultFill,
+          text: match.text || defaultText,
+          bold: match.bold === true,
+        };
+      };
+
       const renderTableNode = (node, computed) => {
         const tableSpec = node.table_spec ?? {};
         const headers = Array.isArray(tableSpec?.headers) ? tableSpec.headers : [];
@@ -994,7 +1133,7 @@
           }),
         );
 
-        const drawCell = (rowIndex, columnIndex, text, fill, alignment, isHeader = false) => {
+        const drawCell = (rowIndex, columnIndex, text, fill, alignment, isHeader = false, fontColor = null, fontBold = false) => {
           const x = Number(computed.x) + columnWidths.slice(0, columnIndex).reduce((sum, value) => sum + value, 0);
           const y = Number(computed.y) + rowIndex * rowHeight;
           const width = columnWidths[columnIndex];
@@ -1026,9 +1165,9 @@
             x: textX,
             y: y + rowHeight * 0.62,
             "text-anchor": textAnchor,
-            fill: isHeader ? headerTextColor : textColor,
+            fill: isHeader ? headerTextColor : (fontColor || textColor),
             "font-size": isHeader ? 12 : 11,
-            "font-weight": isHeader ? 700 : 500,
+            "font-weight": isHeader || fontBold ? 700 : 500,
           });
         };
 
@@ -1039,7 +1178,18 @@
         rows.forEach((row, rowIndex) => {
           const fill = tableSpec?.stripe !== false && rowIndex % 2 === 1 ? stripeFill : bodyFill;
           headers.forEach((_, columnIndex) => {
-            drawCell(rowIndex + 1, columnIndex, row?.[columnIndex] ?? "", fill, columnAlignments[columnIndex]);
+            const value = row?.[columnIndex] ?? "";
+            const cellStyle = resolveTableCellStyle(value, fill, textColor);
+            drawCell(
+              rowIndex + 1,
+              columnIndex,
+              value,
+              cellStyle.fill,
+              columnAlignments[columnIndex],
+              false,
+              cellStyle.text,
+              cellStyle.bold,
+            );
           });
         });
 
