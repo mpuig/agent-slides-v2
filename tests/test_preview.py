@@ -13,10 +13,10 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
 from agent_slides.io import read_deck
-from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, ShapeSpec, Slide, TableSpec
+from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec, TextBlock
 from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
-from agent_slides.preview.watcher import SidecarWatcher
+from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 from tests.image_helpers import write_png
 
 
@@ -215,6 +215,70 @@ def make_chart_deck(*, revision: int, chart_type: str = "bar") -> Deck:
     )
 
 
+def make_icon_preview_deck(*, revision: int) -> Deck:
+    return Deck(
+        deck_id="deck-preview-icon",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                revision=revision,
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(type="bullet", text="On track", icon="checkmark"),
+                                TextBlock(type="bullet", text="Budget risk", icon="warning"),
+                            ]
+                        ),
+                    ),
+                    Node(
+                        node_id="n-2",
+                        type="icon",
+                        icon_name="flag",
+                        x=90.0,
+                        y=84.0,
+                        size=20.0,
+                        color="#1A73E8",
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=120.0,
+                        width=420.0,
+                        height=120.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#333333",
+                        bg_color=None,
+                        revision=revision,
+                    ),
+                    "n-2": ComputedNode(
+                        x=90.0,
+                        y=84.0,
+                        width=20.0,
+                        height=20.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#1A73E8",
+                        bg_color=None,
+                        revision=revision,
+                        content_type="icon",
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+
 def make_shape_deck(*, revision: int) -> Deck:
     return Deck(
         deck_id="deck-preview-shape",
@@ -341,6 +405,20 @@ def test_sidecar_watcher_detects_revision_change_and_debounces(tmp_path: Path) -
             await watcher.stop()
 
     asyncio.run(scenario())
+
+
+def test_load_deck_payload_hydrates_icon_paths_for_preview(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_icon_preview_deck(revision=1))
+
+    _, payload = load_deck_payload(deck_path)
+    slide = payload["slides"][0]
+    text_node = next(node for node in slide["nodes"] if node["type"] == "text")
+    icon_node = next(node for node in slide["nodes"] if node["type"] == "icon")
+
+    assert text_node["content"]["blocks"][0]["icon_svg_path"]
+    assert text_node["content"]["blocks"][1]["icon_svg_path"]
+    assert icon_node["icon_svg_path"]
 
 
 def test_preview_server_serves_http_and_pushes_websocket_updates(
@@ -767,6 +845,15 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert "currentSlideIndex" in payload
     assert "updateRenderProgress" in payload
     assert "Rendering slide" in payload
+
+
+def test_client_html_contains_icon_preview_helpers() -> None:
+    payload = read_client_html()
+
+    assert "renderIconPath" in payload
+    assert "renderIconNode" in payload
+    assert 'node.type === "icon" || computed.content_type === "icon"' in payload
+    assert '"fill-rule": "evenodd"' in payload
 
 
 def test_client_html_contains_chart_preview_helpers() -> None:
