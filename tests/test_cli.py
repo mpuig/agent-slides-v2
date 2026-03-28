@@ -60,6 +60,14 @@ def test_chart_help_lists_all_edit_subcommands() -> None:
     assert "update" in result.output
 
 
+def test_table_help_lists_all_edit_subcommands() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["table", "--help"])
+
+    assert result.exit_code == 0
+    assert "add" in result.output
+
+
 def test_cli_version_runs() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])

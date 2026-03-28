@@ -147,7 +147,7 @@ def _reflow_slide(
         y = rect.y
         width = rect.width
         height = rect.height
-        if node.type == "chart":
+        if node.type in {"chart", "table"}:
             style = resolve_style(theme, slot.role)
             computed[node.node_id] = ComputedNode(
                 x=x,
@@ -162,7 +162,7 @@ def _reflow_slide(
                 font_bold=bool(style["font_bold"]),
                 text_overflow=False,
                 revision=revision,
-                content_type="chart",
+                content_type=node.type,
             )
             continue
 
