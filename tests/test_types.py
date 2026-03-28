@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import ValidationError
-
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 from agent_slides.model.types import (
     ComputedDeck,
@@ -109,9 +107,12 @@ def test_get_slide_raises_invalid_slide_error() -> None:
     assert exc_info.value.code == INVALID_SLIDE
 
 
-def test_text_only_nodes_reject_image_type() -> None:
-    with pytest.raises(ValidationError):
-        Node(node_id="n-2", type="image")
+def test_image_nodes_are_supported() -> None:
+    node = Node(node_id="n-2", type="image", image_path="/tmp/example.png")
+
+    assert node.type == "image"
+    assert node.image_path == "/tmp/example.png"
+    assert node.content.is_empty() is True
 
 
 def test_bump_revision_increments_by_one() -> None:
