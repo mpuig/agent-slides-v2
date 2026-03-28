@@ -67,6 +67,9 @@ def test_orchestrator_executes_tool_calls_and_preserves_conversation_history(
     deck = read_deck(str(deck_path))
     assert len(deck.slides) == 1
     assert api_calls[0]["messages"] == [{"role": "user", "content": "Create the first slide."}]
+    assert "three phases: Plan, Build, QA" in api_calls[0]["system"]
+    assert "Pyramid Principle" in api_calls[0]["system"]
+    assert "action title" in api_calls[0]["system"]
     assert {tool["name"] for tool in api_calls[0]["tools"]} == {
         "slide_add",
         "slot_set",
