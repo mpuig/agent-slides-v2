@@ -15,9 +15,12 @@ from pptx import Presentation
 
 from agent_slides.cli import cli
 from agent_slides.errors import (
+    CHART_DATA_ERROR,
     FILE_EXISTS,
     FILE_NOT_FOUND,
+    INVALID_CHART_TYPE,
     INVALID_LAYOUT,
+    INVALID_NODE_TYPE,
     INVALID_SLIDE,
     INVALID_SLOT,
     SCHEMA_ERROR,
@@ -72,6 +75,18 @@ def make_empty_deck() -> Deck:
         slides=[],
         counters=Counters(),
     )
+
+
+def make_bar_chart_data(*, values: list[float] | None = None) -> dict[str, object]:
+    return {
+        "categories": ["Q1", "Q2"] if values is None else [f"Q{index + 1}" for index in range(len(values))],
+        "series": [
+            {
+                "name": "Revenue",
+                "values": values or [12.0, 18.0],
+            }
+        ],
+    }
 
 
 def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
@@ -529,6 +544,103 @@ def test_theme_apply_returns_error_for_invalid_theme(tmp_path: Path) -> None:
     assert read_deck(str(deck_path)).theme == "default"
 
 
+def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
+    result = invoke_cli(
+        [
+            "suggest-layout",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Quarterly update"},
+                        {"type": "bullet", "text": "Revenue up 24%"},
+                        {"type": "bullet", "text": "Margin improved"},
+                        {"type": "bullet", "text": "Hiring plan"},
+                        {"type": "bullet", "text": "Upsell motion"},
+                        {"type": "bullet", "text": "Pricing refresh"},
+                        {"type": "bullet", "text": "Channel rollout"},
+                    ]
+                }
+            ),
+        ]
+    )
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+
+    payload = json.loads(result.output)
+    suggestions = payload["data"]["suggestions"]
+
+    assert payload["ok"] is True
+    assert suggestions[0]["layout"] == "two_col"
+    assert suggestions[0]["score"] == 0.7
+    assert [item["score"] for item in suggestions] == sorted(
+        [item["score"] for item in suggestions],
+        reverse=True,
+    )
+
+
+def test_suggest_layout_accepts_file_reference(tmp_path: Path) -> None:
+    content_path = tmp_path / "content.json"
+    write_json(
+        content_path,
+        {
+            "blocks": [
+                {"type": "heading", "text": "Launch plan"},
+                {"type": "paragraph", "text": "Sequence the rollout in a single narrative arc."},
+            ]
+        },
+    )
+
+    result = invoke_cli(["suggest-layout", "--content", f"@{content_path}"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+
+    assert payload["ok"] is True
+    assert any(item["layout"] == "title_content" for item in payload["data"]["suggestions"])
+
+
+def test_suggest_layout_image_count_surfaces_image_layouts() -> None:
+    result = invoke_cli(
+        [
+            "suggest-layout",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Customer story"},
+                        {"type": "paragraph", "text": "Show the product in use with supporting context."},
+                    ]
+                }
+            ),
+            "--image-count",
+            "2",
+        ]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    layouts = [item["layout"] for item in payload["data"]["suggestions"]]
+
+    assert payload["ok"] is True
+    assert set(layouts) <= {"gallery", "title", "title_content"}
+    assert layouts[0] == "gallery"
+
+
+def test_suggest_layout_returns_json_error_for_invalid_content() -> None:
+    result = invoke_cli(["suggest-layout", "--content", "{bad json"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "Content JSON is not valid: `--content`",
+        },
+    }
+
+
 def test_theme_apply_changes_subsequent_build_output(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     default_output = tmp_path / "default.pptx"
@@ -729,6 +841,269 @@ def test_slot_bind_rebinds_existing_node_to_valid_slot(tmp_path: Path) -> None:
     assert updated.slides[0].nodes[0].slot_binding == "heading"
 
 
+def test_chart_add_creates_chart_node_with_inline_data_and_title(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "chart",
+            "add",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "body",
+            "--type",
+            "bar",
+            "--data",
+            json.dumps(make_bar_chart_data()),
+            "--title",
+            "Revenue by Quarter",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    chart_node = updated.slides[0].nodes[1]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "body",
+            "node_id": "n-2",
+            "chart_type": "bar",
+        },
+    }
+    assert chart_node.type == "chart"
+    assert chart_node.chart_spec is not None
+    assert chart_node.chart_spec.title == "Revenue by Quarter"
+    assert chart_node.chart_spec.categories == ["Q1", "Q2"]
+    assert chart_node.chart_spec.series is not None
+    assert chart_node.chart_spec.series[0].values == [12.0, 18.0]
+
+
+def test_chart_add_supports_data_file(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    data_path = tmp_path / "chart-data.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+    write_json(data_path, make_bar_chart_data(values=[5.0, 9.0]))
+
+    result = invoke_cli(
+        [
+            "chart",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--type",
+            "column",
+            "--data-file",
+            str(data_path),
+        ]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    chart_node = read_deck(str(deck_path)).slides[0].nodes[1]
+    assert payload["data"]["chart_type"] == "column"
+    assert chart_node.chart_spec is not None
+    assert chart_node.chart_spec.chart_type == "column"
+    assert chart_node.chart_spec.series is not None
+    assert chart_node.chart_spec.series[0].values == [5.0, 9.0]
+
+
+def test_chart_update_updates_existing_chart_data(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="closing",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="chart",
+                        chart_spec={
+                            "chart_type": "bar",
+                            "title": "Revenue",
+                            **make_bar_chart_data(values=[10.0, 15.0]),
+                        },
+                    )
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "chart",
+            "update",
+            str(deck_path),
+            "--node",
+            "n-1",
+            "--data",
+            json.dumps(make_bar_chart_data(values=[20.0, 24.0, 30.0])),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated_node = read_deck(str(deck_path)).slides[0].nodes[0]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "node_id": "n-1",
+            "chart_type": "bar",
+            "updated": True,
+        },
+    }
+    assert updated_node.chart_spec is not None
+    assert updated_node.chart_spec.title == "Revenue"
+    assert updated_node.chart_spec.categories == ["Q1", "Q2", "Q3"]
+    assert updated_node.chart_spec.series is not None
+    assert updated_node.chart_spec.series[0].values == [20.0, 24.0, 30.0]
+
+
+def test_chart_update_rejects_non_chart_nodes(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[Slide(slide_id="s-1", layout="closing", nodes=[Node(node_id="n-1", slot_binding="body", type="text")])],
+        counters=Counters(slides=1, nodes=1),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "chart",
+            "update",
+            str(deck_path),
+            "--node",
+            "n-1",
+            "--data",
+            json.dumps(make_bar_chart_data(values=[4.0, 8.0])),
+        ]
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": INVALID_NODE_TYPE,
+            "message": "Node 'n-1' is not a chart node",
+            "node_id": "n-1",
+            "expected_type": "chart",
+            "actual_type": "text",
+        },
+    }
+
+
+def test_chart_add_invalid_chart_type_returns_valid_types(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        Deck(
+            deck_id="deck-1",
+            slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+            counters=Counters(slides=1, nodes=2),
+        ),
+    )
+
+    result = invoke_cli(
+        [
+            "chart",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--type",
+            "radar",
+            "--data",
+            json.dumps(make_bar_chart_data()),
+        ]
+    )
+    payload = json.loads(result.stderr)
+
+    assert result.exit_code == 1
+    assert payload["error"]["code"] == INVALID_CHART_TYPE
+    assert payload["error"]["chart_type"] == "radar"
+    assert payload["error"]["valid_types"] == ["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
+
+
+def test_chart_add_invalid_chart_data_returns_json_error(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        Deck(
+            deck_id="deck-1",
+            slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+            counters=Counters(slides=1, nodes=2),
+        ),
+    )
+
+    invalid_data = {
+        "categories": ["Q1", "Q2"],
+        "series": [{"name": "Revenue", "values": [10.0]}],
+    }
+    result = invoke_cli(
+        [
+            "chart",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--type",
+            "bar",
+            "--data",
+            json.dumps(invalid_data),
+        ]
+    )
+    payload = json.loads(result.stderr)
+
+    assert result.exit_code == 1
+    assert payload["error"]["code"] == CHART_DATA_ERROR
+    assert "series 'Revenue' has 1 values for 2 categories" in payload["error"]["message"]
+    assert payload["error"]["validation_errors"] == [
+        {
+            "ctx": {
+                "category_count": 2,
+                "series_name": "Revenue",
+                "value_count": 1,
+            },
+            "input": {
+                "categories": ["Q1", "Q2"],
+                "chart_type": "bar",
+                "series": [{"name": "Revenue", "values": [10.0]}],
+            },
+            "loc": [],
+            "msg": "series 'Revenue' has 1 values for 2 categories",
+            "type": CHART_DATA_ERROR,
+        }
+    ]
+
+
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
@@ -763,6 +1138,75 @@ def test_slide_add_invalid_layout_returns_json_error_with_available_layouts(tmp_
     assert payload["error"]["code"] == INVALID_LAYOUT
     for layout_name in list_layouts():
         assert layout_name in payload["error"]["message"]
+
+
+def test_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=False)
+
+    content = json.dumps(
+        {
+            "blocks": [
+                {"type": "heading", "text": "Highlights"},
+                {"type": "paragraph", "text": "Left column summary"},
+                {"type": "paragraph", "text": "Right column summary"},
+            ]
+        }
+    )
+
+    result = invoke_cli(["slide", "add", str(deck_path), "--auto-layout", "--content", content])
+    payload = json.loads(result.stdout)
+    deck = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_index": 0,
+            "slide_id": "s-1",
+            "layout": "two_col",
+            "auto_selected": True,
+            "reason": "Two balanced content blocks",
+        },
+    }
+    assert deck.slides[0].layout == "two_col"
+    assert [
+        (node.slot_binding, node.content.model_dump(mode="json"))
+        for node in deck.slides[0].nodes
+        if node.type == "text"
+    ] == [
+        ("heading", {"blocks": [{"type": "heading", "text": "Highlights", "level": 0}]}),
+        ("col1", {"blocks": [{"type": "paragraph", "text": "Left column summary", "level": 0}]}),
+        ("col2", {"blocks": [{"type": "paragraph", "text": "Right column summary", "level": 0}]}),
+    ]
+
+
+def test_slide_add_auto_layout_rejects_layout_override(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=False)
+
+    result = invoke_cli(
+        [
+            "slide",
+            "add",
+            str(deck_path),
+            "--layout",
+            "title",
+            "--auto-layout",
+            "--content",
+            json.dumps({"blocks": [{"type": "heading", "text": "Conflicting"}]}),
+        ]
+    )
+    payload = json.loads(result.stderr)
+
+    assert result.exit_code == 1
+    assert payload == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "`--auto-layout` and `--layout` are mutually exclusive.",
+        },
+    }
 
 
 def test_slide_remove_by_index_shifts_remaining_slides(tmp_path: Path) -> None:
@@ -1059,6 +1503,62 @@ def test_batch_slot_set_accepts_structured_content_objects(tmp_path: Path) -> No
     }
 
 
+def test_batch_slide_add_auto_layout_selects_layout_and_prefills_slots(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {
+                    "command": "slide_add",
+                    "args": {
+                        "auto_layout": True,
+                        "content": {
+                            "blocks": [
+                                {"type": "heading", "text": "Highlights"},
+                                {"type": "paragraph", "text": "Left column summary"},
+                                {"type": "paragraph", "text": "Right column summary"},
+                            ]
+                        },
+                    },
+                }
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "ok": True,
+        "data": {
+            "operations": 1,
+            "results": [
+                {
+                    "slide_index": 0,
+                    "slide_id": "s-1",
+                    "layout": "two_col",
+                    "auto_selected": True,
+                    "reason": "Two balanced content blocks",
+                }
+            ],
+        },
+    }
+
+    deck = read_deck(str(deck_path))
+    assert deck.slides[0].layout == "two_col"
+    assert [
+        (node.slot_binding, node.content.to_plain_text())
+        for node in deck.slides[0].nodes
+        if node.type == "text"
+    ] == [
+        ("heading", "Highlights"),
+        ("col1", "Left column summary"),
+        ("col2", "Right column summary"),
+    ]
+
+
 def test_batch_empty_array_is_a_successful_no_op(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(deck_path, make_empty_deck())
@@ -1083,6 +1583,58 @@ def test_batch_invalid_json_returns_schema_error(tmp_path: Path) -> None:
     error = json.loads(result.stderr)["error"]
     assert error["code"] == SCHEMA_ERROR
     assert "Invalid JSON batch payload" in error["message"]
+
+
+def test_batch_supports_chart_add_and_chart_update(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title_content"}},
+                {
+                    "command": "chart_add",
+                    "args": {
+                        "slide": 0,
+                        "slot": "body",
+                        "type": "bar",
+                        "data": make_bar_chart_data(values=[8.0, 13.0]),
+                    },
+                },
+                {
+                    "command": "chart_update",
+                    "args": {
+                        "node": "n-2",
+                        "data": make_bar_chart_data(values=[8.0, 13.0, 21.0]),
+                    },
+                },
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 3
+    assert payload["data"]["results"][1] == {
+        "slide_id": "s-1",
+        "slot": "body",
+        "node_id": "n-2",
+        "chart_type": "bar",
+    }
+    assert payload["data"]["results"][2] == {
+        "node_id": "n-2",
+        "chart_type": "bar",
+        "updated": True,
+    }
+
+    chart_node = read_deck(str(deck_path)).slides[0].nodes[1]
+    assert chart_node.type == "chart"
+    assert chart_node.chart_spec is not None
+    assert chart_node.chart_spec.categories == ["Q1", "Q2", "Q3"]
+    assert chart_node.chart_spec.series is not None
+    assert chart_node.chart_spec.series[0].values == [8.0, 13.0, 21.0]
 
 
 def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:

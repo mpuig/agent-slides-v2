@@ -16,3 +16,7 @@ overflow_policy:
 deck_structure:
   recommend_title_slide: true
   recommend_closing_slide: true
+layout_hints:
+  max_bullets_for_single_column: 5
+  equal_length_threshold: 0.4
+  short_text_threshold: 10

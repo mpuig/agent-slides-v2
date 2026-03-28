@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
@@ -22,6 +24,14 @@ from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, Te
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
+CHART_TYPE_MAP = {
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE,
+    "pie": XL_CHART_TYPE.PIE,
+    "area": XL_CHART_TYPE.AREA,
+    "doughnut": XL_CHART_TYPE.DOUGHNUT,
+}
 
 
 @dataclass(frozen=True)
@@ -308,7 +318,7 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
     presentation.save(Path(output_path))
 
 
-def render_text_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
     """Render a single text node as a positioned text box."""
 
     shape = slide_shape_collection.add_textbox(
@@ -351,7 +361,7 @@ def render_text_node(slide_shape_collection: SlideShapes, node: Node, computed: 
             paragraph_index += 1
 
 
-def render_image_node(
+def _render_image_node(
     slide_shape_collection: SlideShapes,
     node: Node,
     computed: ComputedNode,
@@ -373,6 +383,53 @@ def render_image_node(
         width=points_to_emu(width),
         height=points_to_emu(height),
     )
+def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    """Render a single chart node as a native editable PowerPoint chart."""
+
+    spec = node.chart_spec
+    if spec is None:
+        return
+
+    if spec.chart_type == "scatter":
+        chart_data = XyChartData()
+        for scatter_series in spec.scatter_series:
+            series = chart_data.add_series(scatter_series.name)
+            for point in scatter_series.points:
+                series.add_data_point(point.x, point.y)
+        pptx_type = XL_CHART_TYPE.XY_SCATTER
+    else:
+        chart_data = CategoryChartData()
+        chart_data.categories = spec.categories
+        for category_series in spec.series:
+            chart_data.add_series(category_series.name, category_series.values)
+        pptx_type = CHART_TYPE_MAP[spec.chart_type]
+
+    chart_frame = slide_shape_collection.add_chart(
+        pptx_type,
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+        chart_data,
+    )
+    chart = chart_frame.chart
+
+    if spec.title:
+        chart.has_title = True
+        chart.chart_title.text_frame.text = spec.title
+    chart.has_legend = spec.style.has_legend
+
+    # Native PowerPoint charts do not inherit agent-slides theme colors.
+    for index, color in enumerate(spec.style.series_colors):
+        if index >= len(chart.series):
+            break
+        fill = chart.series[index].format.fill
+        fill.solid()
+        fill.fore_color.rgb = hex_to_rgb(color)
+
+
+render_text_node = _render_text_node
+render_image_node = _render_image_node
 
 
 def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
@@ -394,15 +451,17 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
             if computed is None:
                 continue
 
-            if node.type == "image":
-                render_image_node(
+            if node.type == "chart":
+                _render_chart_node(pptx_slide.shapes, node, computed)
+            elif node.type == "image":
+                _render_image_node(
                     pptx_slide.shapes,
                     node,
                     computed,
                     asset_base_dir=asset_base_dir,
                 )
             else:
-                render_text_node(pptx_slide.shapes, node, computed)
+                _render_text_node(pptx_slide.shapes, node, computed)
 
     presentation.save(Path(output_path))
 

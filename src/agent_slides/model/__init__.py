@@ -1,6 +1,9 @@
 """Scene graph model package."""
 
 from .types import (
+    ChartSeries,
+    ChartSpec,
+    ChartStyle,
     ComputedNode,
     ComputedDeck,
     ComputedSlide,
@@ -10,6 +13,8 @@ from .types import (
     LayoutDef,
     Node,
     NodeContent,
+    ScatterPoint,
+    ScatterSeries,
     Slide,
     SlotDef,
     TextFitting,
@@ -25,7 +30,7 @@ from agent_slides.model.layout_provider import (
     resolve_layout_provider,
 )
 from agent_slides.model.constraints import Constraint
-from agent_slides.model.design_rules import DesignRules, list_design_rules, load_design_rules
+from agent_slides.model.design_rules import DesignRules, LayoutHints, list_design_rules, load_design_rules
 from agent_slides.model.layouts import (
     get_layout,
     get_slot_names,
@@ -35,6 +40,9 @@ from agent_slides.model.layouts import (
 from agent_slides.model.template_layouts import TemplateLayoutRegistry
 
 __all__ = [
+    "ChartSeries",
+    "ChartSpec",
+    "ChartStyle",
     "ComputedNode",
     "ComputedDeck",
     "ComputedSlide",
@@ -45,9 +53,12 @@ __all__ = [
     "GridDef",
     "BuiltinLayoutProvider",
     "LayoutDef",
+    "LayoutHints",
     "LayoutProvider",
     "Node",
     "NodeContent",
+    "ScatterPoint",
+    "ScatterSeries",
     "Slide",
     "SlotDef",
     "TemplateLayoutRegistry",
