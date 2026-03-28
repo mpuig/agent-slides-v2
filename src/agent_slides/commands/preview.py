@@ -11,7 +11,6 @@ from pathlib import Path
 
 import click
 
-from agent_slides.io import read_deck
 from agent_slides.preview import PreviewServer
 
 
@@ -116,7 +115,6 @@ class _ForegroundPreviewServer:
 def preview_command(path: Path, port: int, no_open: bool) -> None:
     """Start the live preview HTTP and WebSocket server."""
 
-    read_deck(str(path))
     server = _ForegroundPreviewServer(path, port=port)
     server.start()
 

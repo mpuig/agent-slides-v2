@@ -312,6 +312,62 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
     assert any("Preview client disconnected" in message for message in messages)
 
 
+def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        renderer = FakeSlideRenderer(deck_path, tmp_path / "rendered")
+
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            debounce_ms=20,
+            slide_renderer=renderer,
+        )
+        await server.start()
+
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            assert payload["status"] == "waiting"
+            assert payload["message"] == "Waiting for deck..."
+            assert payload["slides"] == []
+            assert payload["path"] == str(deck_path.resolve())
+            assert payload["preview_backend"] == "svg"
+            assert renderer.render_all_calls == 0
+
+            async with connect(f"ws://127.0.0.1:{server.port}/ws") as client:
+                initial = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+
+                assert initial["event"] == "deck.updated"
+                assert initial["deck"]["status"] == "waiting"
+                assert initial["deck"]["message"] == "Waiting for deck..."
+
+                write_deck(deck_path, make_deck(revision=1, content="Deck arrived"))
+
+                updated = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+                hydrated = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+                assert updated["type"] == "slides_updated"
+                assert updated["revision"] == 1
+                assert updated["slides"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+                assert hydrated["revision"] == 1
+                assert hydrated["preview_backend"] == "png"
+                assert hydrated["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Deck arrived"
+                assert hydrated["slide_previews"] == [
+                    {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
+                ]
+                assert renderer.render_indices_calls == [[0]]
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
 def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     async def scenario() -> None:
         image_path = write_png(tmp_path / "photo.png", width=24, height=12)
@@ -542,6 +598,7 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert "ArrowLeft" in payload
     assert "ArrowRight" in payload
     assert '"slides_updated"' in payload
+    assert '"Waiting for deck..."' in payload
     assert 'fetch("/api/deck")' in payload
     assert "preserveAspectRatio" in payload
 
