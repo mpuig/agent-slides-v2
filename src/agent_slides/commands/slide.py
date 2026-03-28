@@ -9,6 +9,7 @@ import click
 from agent_slides.commands.mutations import apply_mutation
 from agent_slides.errors import UNBOUND_NODES
 from agent_slides.io import mutate_deck
+from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model import Deck
 
 
@@ -45,8 +46,8 @@ def slide() -> None:
 def add_slide_command(path: str, layout_name: str) -> None:
     """Append a slide using a named layout."""
 
-    def mutate(deck: Deck) -> dict[str, object]:
-        return apply_mutation(deck, "slide_add", {"layout": layout_name})
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
+        return apply_mutation(deck, "slide_add", {"layout": layout_name}, provider)
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})
@@ -58,8 +59,8 @@ def add_slide_command(path: str, layout_name: str) -> None:
 def remove_slide_command(path: str, slide_ref: str) -> None:
     """Remove a slide by index or slide_id."""
 
-    def mutate(deck: Deck) -> dict[str, object]:
-        return apply_mutation(deck, "slide_remove", {"slide": slide_ref})
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
+        return apply_mutation(deck, "slide_remove", {"slide": slide_ref}, provider)
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})
@@ -72,7 +73,7 @@ def remove_slide_command(path: str, slide_ref: str) -> None:
 def set_slide_layout_command(path: str, slide_ref: str, layout_name: str) -> None:
     """Change a slide layout and rebind its slot-bound nodes."""
 
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(
             deck,
             "slide_set_layout",
@@ -80,6 +81,7 @@ def set_slide_layout_command(path: str, slide_ref: str, layout_name: str) -> Non
                 "slide": slide_ref,
                 "layout": layout_name,
             },
+            provider,
         )
 
     _, result = mutate_deck(path, mutate)
