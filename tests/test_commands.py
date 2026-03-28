@@ -17,6 +17,8 @@ from click.testing import CliRunner, Result
 from pptx import Presentation
 
 from agent_slides.cli import cli
+import agent_slides.engine.reflow as reflow_module
+from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW
 from agent_slides.errors import (
     CHART_DATA_ERROR,
     FILE_EXISTS,
@@ -207,6 +209,92 @@ def make_theme_switch_deck(theme_name: str = "default") -> Deck:
         ],
         counters=Counters(slides=1, nodes=3),
     )
+
+
+def test_icon_list_command_reports_built_in_icons() -> None:
+    result = invoke_cli(["icon", "list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert 25 <= payload["data"]["count"] <= 30
+    assert "checkmark" in payload["data"]["icons"]
+    assert "warning" in payload["data"]["icons"]
+
+
+def test_icon_add_command_creates_absolute_icon_node(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=True)
+    add_slide = invoke_cli(["slide", "add", str(deck_path), "--layout", "title"])
+    assert add_slide.exit_code == 0
+
+    result = invoke_cli(
+        [
+            "icon",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--name",
+            "checkmark",
+            "--x",
+            "65",
+            "--y",
+            "200",
+            "--size",
+            "16",
+            "--color",
+            "#1A73E8",
+        ]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["name"] == "checkmark"
+    assert payload["data"]["color"] == "#1A73E8"
+
+    deck = read_deck(str(deck_path))
+    slide = deck.slides[0]
+    icon_node = next(node for node in slide.nodes if node.type == "icon")
+    computed = slide.computed[icon_node.node_id]
+
+    assert icon_node.slot_binding is None
+    assert icon_node.icon_name == "checkmark"
+    assert icon_node.x == 65.0
+    assert icon_node.y == 200.0
+    assert icon_node.size == 16.0
+    assert icon_node.color == "#1A73E8"
+    assert computed.content_type == "icon"
+    assert computed.icon_svg_path
+    assert computed.width == pytest.approx(16.0)
+    assert computed.height == pytest.approx(16.0)
+
+
+def test_slot_set_accepts_bullet_icons_in_structured_content(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=True)
+    add_slide = invoke_cli(["slide", "add", str(deck_path), "--layout", "title_content"])
+    assert add_slide.exit_code == 0
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--content",
+            json.dumps({"blocks": [{"type": "bullet", "text": "On track for Q3", "icon": "checkmark"}]}),
+        ]
+    )
+
+    assert result.exit_code == 0
+
+    deck = read_deck(str(deck_path))
+    body_node = next(node for node in deck.slides[0].nodes if node.slot_binding == "body")
+    assert body_node.content.blocks[0].icon == "checkmark"
 
 
 def render_slide_signature(path: Path) -> tuple[tuple[int, int, int, str, str, str], ...]:
@@ -758,6 +846,47 @@ def test_slot_set_parses_inline_markdown_runs_from_text(tmp_path: Path) -> None:
         TextRun(text="23%", bold=True),
         TextRun(text=" driven by "),
         TextRun(text="premium segment", italic=True),
+    ]
+
+
+def test_slot_set_parses_inline_markdown_color_suffixes(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--text",
+            "Revenue: **+23%**{green} vs target **-5%**{red}",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue: +23% vs target -5%"
+    assert payload["data"]["content"]["blocks"][0]["runs"] == [
+        {"text": "Revenue: "},
+        {"text": "+23%", "bold": True, "color": "#1B8A2D"},
+        {"text": " vs target "},
+        {"text": "-5%", "bold": True, "color": "#D32F2F"},
+    ]
+    assert updated.slides[0].nodes[1].content.blocks[0].runs == [
+        TextRun(text="Revenue: "),
+        TextRun(text="+23%", bold=True, color="#1B8A2D"),
+        TextRun(text=" vs target "),
+        TextRun(text="-5%", bold=True, color="#D32F2F"),
     ]
 
 
@@ -1875,6 +2004,68 @@ def test_slide_set_layout_invalid_layout_returns_invalid_layout(tmp_path: Path) 
 
     assert result.exit_code == 1
     assert payload["error"]["code"] == INVALID_LAYOUT
+
+
+def test_slot_set_reports_layout_fallback_warning_without_mutating_authoring_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-fallback",
+        revision=0,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="image_left",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
+                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                    Node(node_id="n-3", slot_binding="image", type="image", image_path="image.png"),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    def fake_validate_layout(layout, rects, **kwargs):
+        if layout.name == "image_left":
+            return [
+                LayoutViolation(
+                    code=TEXT_OVERFLOW,
+                    severity="error",
+                    message="Forced text overflow",
+                    slot_refs=("body",),
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(reflow_module, "validate_layout", fake_validate_layout)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "body", "--text", "Updated body"]
+    )
+
+    payload = json.loads(result.output)
+    updated = read_deck(str(deck_path))
+    computed = read_computed_deck(str(deck_path))
+    deck_payload = read_payload(deck_path)
+
+    assert result.exit_code == 0
+    assert payload["warning"] == {
+        "code": "LAYOUT_FALLBACK",
+        "layout_used": "image_right",
+        "original": "image_left",
+        "reason": "text overflow in body",
+    }
+    assert updated.slides[0].layout == "image_left"
+    assert deck_payload["slides"][0]["layout"] == "image_left"
+    assert "layout_used" not in deck_payload["slides"][0]
+    assert computed.slides[0].computed["n-1"].layout_used == "image_right"
+    assert computed.slides[0].computed["n-1"].layout_fallback_reason == "text overflow in body"
 
 def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"

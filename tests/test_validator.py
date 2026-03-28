@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agent_slides.engine.validator import (
     FONT_SIZE_OUT_OF_RANGE,
+    LAYOUT_FALLBACK,
     MAX_BULLETS_PER_SLIDE_EXCEEDED,
     MAX_SLIDES_EXCEEDED,
     MAX_WORDS_PER_COLUMN_EXCEEDED,
@@ -29,7 +30,14 @@ def make_slide(
     )
 
 
-def make_computed_node(font_size_pt: float, *, overflow: bool = False) -> ComputedNode:
+def make_computed_node(
+    font_size_pt: float,
+    *,
+    overflow: bool = False,
+    layout_used: str | None = None,
+    fallback_reason: str | None = None,
+    overflow_reason: str | None = None,
+) -> ComputedNode:
     return ComputedNode(
         x=72.0,
         y=54.0,
@@ -41,6 +49,9 @@ def make_computed_node(font_size_pt: float, *, overflow: bool = False) -> Comput
         bg_color="#FFFFFF",
         font_bold=False,
         text_overflow=overflow,
+        layout_used=layout_used,
+        layout_fallback_reason=fallback_reason,
+        layout_overflow_reason=overflow_reason,
         revision=1,
     )
 
@@ -91,6 +102,29 @@ def test_validate_slide_returns_overflow_constraint_with_error_severity() -> Non
     assert constraints[0].severity == "error"
     assert constraints[0].slide_id == "s-1"
     assert constraints[0].node_id == "n-1"
+
+
+def test_validate_slide_downgrades_overflow_after_variant_attempts() -> None:
+    rules = load_design_rules("default")
+    slide = make_slide(
+        "s-1",
+        "content",
+        nodes=[Node(node_id="n-1", slot_binding="body", type="text", content="Overflowing text")],
+        computed={
+            "n-1": make_computed_node(
+                rules.overflow_policy.min_font_size,
+                overflow=True,
+                overflow_reason="text overflow in body",
+            )
+        },
+    )
+
+    constraints = validate_slide(slide, rules)
+
+    assert len(constraints) == 1
+    assert constraints[0].code == OVERFLOW
+    assert constraints[0].severity == "warning"
+    assert "after trying layout variants" in constraints[0].message
 
 
 def test_validate_slide_returns_unbound_nodes_constraint_with_node_ids() -> None:
@@ -210,6 +244,37 @@ def test_validate_slide_warns_when_font_size_is_outside_hierarchy_range() -> Non
 
     assert hierarchy_constraint.severity == "warning"
     assert hierarchy_constraint.node_id == "n-1"
+
+
+def test_validate_slide_reports_layout_fallback_warning() -> None:
+    rules = load_design_rules("default")
+    slide = make_slide(
+        "s-1",
+        "image_left",
+        nodes=[
+            Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
+            Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+        ],
+        computed={
+            "n-1": make_computed_node(
+                28.0,
+                layout_used="image_right",
+                fallback_reason="Forced primary failure",
+            ),
+            "n-2": make_computed_node(
+                18.0,
+                layout_used="image_right",
+                fallback_reason="Forced primary failure",
+            ),
+        },
+    )
+
+    constraints = validate_slide(slide, rules)
+    fallback = next(constraint for constraint in constraints if constraint.code == LAYOUT_FALLBACK)
+
+    assert fallback.severity == "warning"
+    assert "image_right" in fallback.message
+    assert "image_left" in fallback.message
 
 
 def test_validate_deck_adds_structure_suggestions() -> None:

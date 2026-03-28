@@ -6,6 +6,7 @@ import json
 
 import click
 
+from agent_slides.commands.warnings import attach_layout_fallback_warning
 from agent_slides.io import mutate_deck
 from agent_slides.model import Deck
 from agent_slides.model.themes import list_themes, load_theme
@@ -39,5 +40,5 @@ def apply_theme_command(path: str, theme_name: str) -> None:
             "previous": previous,
         }
 
-    _, result = mutate_deck(path, mutate)
-    click.echo(json.dumps({"ok": True, "data": result}))
+    deck, result = mutate_deck(path, mutate)
+    click.echo(json.dumps(attach_layout_fallback_warning({"ok": True, "data": result}, deck)))
