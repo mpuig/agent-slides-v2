@@ -17,9 +17,10 @@ EMU_PER_POINT = 12_700
 MAX_IMAGE_SIZE_WARNING_BYTES = 5 * 1024 * 1024
 SUPPORTED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".svg"})
 
-NodeType = Literal["text", "image"]
+NodeType = Literal["text", "image", "chart"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
+ChartType = Literal["bar", "column", "line", "pie", "area", "doughnut", "scatter"]
 
 
 class AgentSlidesModel(BaseModel):
@@ -95,12 +96,73 @@ class NodeContent(AgentSlidesModel):
         return not self.blocks or all(block.text == "" for block in self.blocks)
 
 
+class ChartSeries(AgentSlidesModel):
+    name: str
+    values: list[float] = Field(default_factory=list)
+
+
+class ScatterPoint(AgentSlidesModel):
+    x: float
+    y: float
+
+
+class ScatterSeries(AgentSlidesModel):
+    name: str
+    points: list[ScatterPoint] = Field(default_factory=list)
+
+
+class ChartStyle(AgentSlidesModel):
+    has_legend: bool = True
+    series_colors: list[str] = Field(default_factory=list)
+
+    @field_validator("series_colors")
+    @classmethod
+    def validate_series_colors(cls, values: list[str]) -> list[str]:
+        for value in values:
+            normalized = value.lstrip("#")
+            if len(normalized) != 6 or any(char not in "0123456789abcdefABCDEF" for char in normalized):
+                raise ValueError("series_colors entries must use #RRGGBB or RRGGBB format")
+        return values
+
+
+class ChartSpec(AgentSlidesModel):
+    chart_type: ChartType
+    title: str | None = None
+    categories: list[str] = Field(default_factory=list)
+    series: list[ChartSeries] = Field(default_factory=list)
+    scatter_series: list[ScatterSeries] = Field(default_factory=list)
+    style: ChartStyle = Field(default_factory=ChartStyle)
+
+    @model_validator(mode="after")
+    def validate_chart_data(self) -> ChartSpec:
+        if self.chart_type == "scatter":
+            if self.categories:
+                raise ValueError("scatter charts cannot define categories")
+            if self.series:
+                raise ValueError("scatter charts must use scatter_series")
+            if not self.scatter_series:
+                raise ValueError("scatter charts require at least one scatter series")
+            return self
+
+        if self.scatter_series:
+            raise ValueError("only scatter charts can define scatter_series")
+        if not self.categories:
+            raise ValueError("category charts require at least one category")
+        if not self.series:
+            raise ValueError("category charts require at least one series")
+        for series in self.series:
+            if len(series.values) != len(self.categories):
+                raise ValueError("category chart series must match the number of categories")
+        return self
+
+
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
     type: NodeType
     content: NodeContent | str = Field(default_factory=NodeContent)
     image_path: str | None = None
+    chart_spec: ChartSpec | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -115,6 +177,19 @@ class Node(AgentSlidesModel):
 
         if node_type == "text":
             data["content"] = NodeContent.model_validate(content)
+        elif node_type == "chart":
+            if data.get("chart_spec") is None and content not in (None, "", {"blocks": []}):
+                raw_chart_spec = content
+                if isinstance(raw_chart_spec, str):
+                    raw_chart_spec = ChartSpec.model_validate_json(raw_chart_spec)
+                else:
+                    raw_chart_spec = ChartSpec.model_validate(raw_chart_spec)
+                data["chart_spec"] = (
+                    raw_chart_spec.model_dump(mode="json")
+                    if isinstance(raw_chart_spec, ChartSpec)
+                    else raw_chart_spec
+                )
+            data["content"] = ""
         elif node_type == "image" and (content is None or content == "") and data.get("image_path") is not None:
             data["content"] = data["image_path"]
 
@@ -127,6 +202,18 @@ class Node(AgentSlidesModel):
                 self.content = NodeContent.model_validate(self.content)
             if self.image_path is not None:
                 raise ValueError("text nodes cannot define image_path")
+            if self.chart_spec is not None:
+                raise ValueError("text nodes cannot define chart_spec")
+            return self
+
+        if self.type == "chart":
+            if self.image_path is not None:
+                raise ValueError("chart nodes cannot define image_path")
+            if self.chart_spec is None:
+                raise ValueError("chart nodes require chart_spec")
+            if self.style_overrides.get("placeholder"):
+                raise ValueError("chart nodes cannot be placeholders")
+            self.content = ""
             return self
 
         if not self.image_path:
@@ -136,6 +223,8 @@ class Node(AgentSlidesModel):
             raise ValueError("image nodes require image_path")
         if not isinstance(self.content, str):
             raise ValueError("image nodes must serialize content as a file path string")
+        if self.chart_spec is not None:
+            raise ValueError("image nodes cannot define chart_spec")
 
         self.image_path = _validate_and_resolve_image_path(self.image_path)
         return self

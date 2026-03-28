@@ -7,12 +7,17 @@ import pytest
 from pydantic import ValidationError
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 from agent_slides.model.types import (
+    ChartSeries,
+    ChartSpec,
+    ChartStyle,
     ComputedDeck,
     ComputedNode,
     Counters,
     Deck,
     Node,
     NodeContent,
+    ScatterPoint,
+    ScatterSeries,
     Slide,
     TextBlock,
 )
@@ -125,6 +130,45 @@ def test_image_nodes_require_image_path() -> None:
         Node(node_id="n-2", type="image")
 
 
+def test_chart_nodes_require_chart_spec() -> None:
+    with pytest.raises(ValidationError, match="chart_spec"):
+        Node(node_id="n-chart", type="chart")
+
+
+def test_chart_nodes_accept_chart_spec_and_legacy_json_content() -> None:
+    node = Node(
+        node_id="n-chart",
+        type="chart",
+        chart_spec=ChartSpec(
+            chart_type="column",
+            categories=["Q1", "Q2"],
+            series=[ChartSeries(name="Revenue", values=[10.0, 12.0])],
+        ),
+    )
+    legacy = Node(
+        node_id="n-legacy-chart",
+        type="chart",
+        content=json.dumps(
+            {
+                "chart_type": "scatter",
+                "scatter_series": [
+                    {
+                        "name": "Trend",
+                        "points": [{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}],
+                    }
+                ],
+            }
+        ),
+    )
+
+    assert node.chart_spec is not None
+    assert node.chart_spec.chart_type == "column"
+    assert node.content == ""
+    assert legacy.chart_spec is not None
+    assert legacy.chart_spec.chart_type == "scatter"
+    assert legacy.chart_spec.scatter_series[0].points[1] == ScatterPoint(x=3.0, y=4.0)
+
+
 def test_image_nodes_validate_file_existence_and_supported_format(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="does not exist"):
         Node(node_id="n-2", type="image", image_path=str(tmp_path / "missing.png"))
@@ -173,6 +217,47 @@ def test_computed_node_includes_resolved_style_fields() -> None:
     assert computed.font_bold is False
     assert computed.content_type == "image"
     assert computed.image_fit == "contain"
+
+
+def test_computed_node_accepts_chart_content_type() -> None:
+    computed = ComputedNode(
+        x=0.0,
+        y=0.0,
+        width=320.0,
+        height=180.0,
+        font_size_pt=0.0,
+        font_family="IBM Plex Sans",
+        color="#111111",
+        revision=1,
+        content_type="chart",
+    )
+
+    assert computed.content_type == "chart"
+    assert computed.font_size_pt == 0.0
+
+
+def test_chart_spec_validates_category_and_scatter_shapes() -> None:
+    with pytest.raises(ValidationError, match="number of categories"):
+        ChartSpec(
+            chart_type="line",
+            categories=["Q1", "Q2"],
+            series=[ChartSeries(name="Revenue", values=[10.0])],
+        )
+
+    spec = ChartSpec(
+        chart_type="scatter",
+        scatter_series=[
+            ScatterSeries(
+                name="Trend",
+                points=[ScatterPoint(x=1.0, y=2.0), ScatterPoint(x=2.0, y=3.0)],
+            )
+        ],
+        style=ChartStyle(has_legend=False, series_colors=["#FF0000"]),
+    )
+
+    assert spec.chart_type == "scatter"
+    assert spec.style.has_legend is False
+    assert spec.style.series_colors == ["#FF0000"]
 
 
 def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
