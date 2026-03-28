@@ -8,7 +8,7 @@ from pathlib import Path
 
 from websockets.asyncio.client import connect
 
-from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.model import ChartSpec, ComputedNode, Counters, Deck, Node, Slide
 from agent_slides.preview import client_html_path, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
@@ -105,6 +105,52 @@ def make_image_deck(image_path: str, *, revision: int) -> Deck:
                         height=348.0,
                         revision=revision,
                         image_fit="contain",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+
+def make_chart_deck(*, revision: int, chart_type: str = "bar") -> Deck:
+    return Deck(
+        deck_id="deck-preview-chart",
+        revision=revision,
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type=chart_type,
+                            title="Quarterly revenue",
+                            categories=["Q1", "Q2", "Q3"],
+                            series=[
+                                {"name": "North", "values": [2.0, 4.0, 5.0]},
+                                {"name": "South", "values": [1.0, 3.0, 4.0]},
+                            ],
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=96.0,
+                        y=120.0,
+                        width=528.0,
+                        height=260.0,
+                        revision=revision,
+                        content_type="chart",
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#333333",
+                        bg_color="#FFFFFF",
                     )
                 },
             )
@@ -253,6 +299,42 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert 'createSvgElement("tspan")' in payload
     assert 'createSvgElement("rect")' in payload
     assert "currentSlideIndex" in payload
+
+
+def test_client_html_contains_chart_preview_helpers() -> None:
+    payload = read_client_html()
+
+    assert "chartTypeLabels" in payload
+    assert "summarizeChart" in payload
+    assert "renderChartNode" in payload
+    assert "renderBarChartPreview" in payload
+    assert "renderColumnChartPreview" in payload
+    assert "renderLineChartPreview" in payload
+    assert 'node.type === "chart" || computed.content_type === "chart"' in payload
+    assert "Preview approximation" in payload
+
+
+def test_preview_server_serves_chart_deck_payload(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_chart_deck(revision=4))
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            chart_node = payload["slides"][0]["nodes"][0]
+            assert chart_node["type"] == "chart"
+            assert chart_node["chart_spec"]["chart_type"] == "bar"
+            assert chart_node["chart_spec"]["title"] == "Quarterly revenue"
+            assert chart_node["chart_spec"]["categories"] == ["Q1", "Q2", "Q3"]
+            assert chart_node["chart_spec"]["series"][1]["values"] == [1.0, 3.0, 4.0]
+            assert payload["slides"][0]["computed"]["n-1"]["content_type"] == "chart"
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
 
 
 async def _wait_for(predicate, *, interval: float = 0.01) -> None:
