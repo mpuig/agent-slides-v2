@@ -1,143 +1,1190 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>agent-slides chat</title>
     <style>
       :root {
         color-scheme: light;
         font-family: "Aptos", "Segoe UI", sans-serif;
+        background: #f5f2ea;
+        color: #1f1e1a;
+        --paper: rgba(255, 255, 255, 0.82);
+        --paper-strong: rgba(255, 255, 255, 0.92);
+        --line: rgba(70, 50, 25, 0.12);
+        --line-soft: rgba(70, 50, 25, 0.08);
+        --text-soft: #6a5841;
+        --accent: #99602a;
+        --accent-strong: #7f4814;
+        --assistant: #ece7de;
+        --shadow: 0 24px 80px rgba(78, 55, 21, 0.15);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
       }
 
       body {
         margin: 0;
         min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(180deg, #f7f4ed 0%, #ece8de 100%);
-        color: #1f2933;
+        background:
+          radial-gradient(circle at top, rgba(201, 142, 72, 0.16), transparent 35%),
+          linear-gradient(180deg, #f8f4ed 0%, #efe7db 100%);
       }
 
       main {
-        width: min(720px, calc(100vw - 32px));
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid rgba(31, 41, 51, 0.12);
-        border-radius: 24px;
-        box-shadow: 0 24px 80px rgba(31, 41, 51, 0.14);
-        padding: 24px;
+        width: min(96vw, 1480px);
+        margin: 0 auto;
+        padding: 20px;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
       }
 
-      h1 {
-        margin: 0 0 8px;
-        font-size: 1.5rem;
+      .shell {
+        width: 100%;
+        min-height: min(92vh, 980px);
+        display: grid;
+        grid-template-columns: minmax(320px, 35fr) minmax(440px, 65fr);
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(18px);
       }
 
-      p {
-        margin: 0 0 20px;
-        color: #52606d;
+      .panel {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
       }
 
-      #messages {
-        min-height: 280px;
-        max-height: 52vh;
-        overflow: auto;
-        border: 1px solid rgba(82, 96, 109, 0.18);
-        border-radius: 18px;
-        padding: 16px;
-        background: #fffdf8;
+      .chat-panel {
+        border-right: 1px solid var(--line-soft);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(248, 242, 232, 0.82));
       }
 
-      .message {
-        padding: 12px 14px;
-        border-radius: 14px;
-        margin-bottom: 12px;
-        background: #f2efe7;
+      .preview-panel {
+        background:
+          linear-gradient(180deg, rgba(255, 253, 248, 0.88), rgba(243, 236, 226, 0.78));
       }
 
-      .message[data-type="user_message"] {
-        background: #dfe7ff;
+      .panel-header,
+      .panel-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
       }
 
-      .meta {
+      .panel-header {
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .preview-footer {
+        border-top: 1px solid var(--line-soft);
+        margin-top: auto;
+      }
+
+      .eyebrow {
         display: block;
-        font-size: 0.75rem;
-        letter-spacing: 0.04em;
+        font-size: 12px;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #52606d;
-        margin-bottom: 4px;
+        color: var(--text-soft);
       }
 
-      form {
+      .title {
+        margin: 4px 0 0;
+        font-size: 18px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 13px;
+        color: var(--text-soft);
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #c7b18f;
+        box-shadow: 0 0 0 3px rgba(190, 161, 120, 0.16);
+        flex: 0 0 auto;
+      }
+
+      .status-dot[data-state="connected"],
+      .status-dot[data-state="live"] {
+        background: #2f8f4e;
+        box-shadow: 0 0 0 3px rgba(47, 143, 78, 0.16);
+      }
+
+      .status-dot[data-state="disconnected"],
+      .status-dot[data-state="reconnecting"],
+      .status-dot[data-state="error"] {
+        background: #b44933;
+        box-shadow: 0 0 0 3px rgba(180, 73, 51, 0.16);
+      }
+
+      .chat-log {
+        flex: 1 1 auto;
+        padding: 20px 18px 16px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .message-row {
+        display: flex;
+      }
+
+      .message-row[data-role="user"] {
+        justify-content: flex-end;
+      }
+
+      .message-row[data-role="assistant"],
+      .message-row[data-role="tool"],
+      .message-row[data-role="system"] {
+        justify-content: flex-start;
+      }
+
+      .bubble,
+      .tool-pill,
+      .typing {
+        max-width: min(92%, 32rem);
+        border-radius: 20px;
+        border: 1px solid transparent;
+      }
+
+      .bubble {
+        padding: 12px 14px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        box-shadow: 0 10px 24px rgba(69, 52, 32, 0.08);
+      }
+
+      .bubble[data-role="user"] {
+        background: linear-gradient(180deg, #aa6a2d, var(--accent-strong));
+        color: #fffaf4;
+      }
+
+      .bubble[data-role="assistant"] {
+        background: var(--assistant);
+        color: #2d241a;
+      }
+
+      .bubble[data-role="system"] {
+        background: rgba(255, 255, 255, 0.8);
+        border-color: var(--line);
+        color: #4f3b22;
+      }
+
+      .tool-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background: rgba(255, 250, 242, 0.9);
+        border-color: rgba(127, 72, 20, 0.12);
+        color: #5d4429;
+      }
+
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        border: 2px solid rgba(153, 96, 42, 0.18);
+        border-top-color: var(--accent);
+        animation: spin 800ms linear infinite;
+      }
+
+      .typing {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 12px;
+        background: rgba(236, 231, 222, 0.92);
+        color: #5f4d39;
+      }
+
+      .typing[hidden] {
+        display: none;
+      }
+
+      .typing-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.35;
+        animation: pulse 1.1s ease-in-out infinite;
+      }
+
+      .typing-dot:nth-child(2) {
+        animation-delay: 120ms;
+      }
+
+      .typing-dot:nth-child(3) {
+        animation-delay: 240ms;
+      }
+
+      .composer {
+        padding: 16px 18px 18px;
+        border-top: 1px solid var(--line-soft);
+        background: rgba(255, 250, 243, 0.82);
+      }
+
+      .composer-shell {
         display: grid;
         grid-template-columns: 1fr auto;
-        gap: 12px;
-        margin-top: 16px;
+        gap: 10px;
+        align-items: end;
+        padding: 10px;
+        border: 1px solid rgba(90, 65, 33, 0.14);
+        border-radius: 20px;
+        background: var(--paper-strong);
       }
 
-      input,
-      button {
+      textarea {
+        width: 100%;
+        min-height: 56px;
+        max-height: 180px;
+        resize: vertical;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: inherit;
         font: inherit;
-        border-radius: 14px;
-        border: 1px solid rgba(82, 96, 109, 0.18);
-        padding: 12px 14px;
+        line-height: 1.4;
+        padding: 4px 2px;
       }
 
-      button {
+      button,
+      .download-link {
+        appearance: none;
+        border: 1px solid rgba(90, 65, 33, 0.18);
+        background: rgba(255, 255, 255, 0.88);
+        color: #453420;
+        border-radius: 999px;
+        min-height: 40px;
+        padding: 0 14px;
+        font: inherit;
         cursor: pointer;
-        background: #1f2933;
-        color: #ffffff;
+        text-decoration: none;
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      }
+
+      button:hover:enabled,
+      .download-link:hover {
+        transform: translateY(-1px);
+        background: rgba(255, 255, 255, 1);
+        border-color: rgba(90, 65, 33, 0.28);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .send-button,
+      .build-button {
+        background: linear-gradient(180deg, rgba(255, 245, 233, 0.95), rgba(236, 215, 188, 0.95));
+      }
+
+      .send-button {
+        min-width: 80px;
+      }
+
+      .preview-body {
+        padding: 20px 22px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+
+      .stage-shell {
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+      }
+
+      svg {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        display: block;
+        background: white;
+        border-radius: 18px;
+      }
+
+      .empty {
+        fill: #7b6b56;
+        font-size: 20px;
+      }
+
+      .preview-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        color: var(--text-soft);
+        font-size: 14px;
+      }
+
+      .nav {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        flex-wrap: wrap;
+      }
+
+      .dot {
+        min-width: 12px;
+        min-height: 12px;
+        width: 12px;
+        height: 12px;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(112, 88, 54, 0.22);
+      }
+
+      .dot[aria-current="true"] {
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(142, 90, 35, 0.14);
+      }
+
+      .download-link[hidden] {
+        display: none;
+      }
+
+      .footer-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulse {
+        0%, 80%, 100% {
+          transform: translateY(0);
+          opacity: 0.35;
+        }
+
+        40% {
+          transform: translateY(-2px);
+          opacity: 0.9;
+        }
+      }
+
+      @media (max-width: 767px) {
+        main {
+          width: 100%;
+          padding: 0;
+        }
+
+        .shell {
+          min-height: 100vh;
+          border-radius: 0;
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: minmax(46vh, auto) minmax(54vh, auto);
+        }
+
+        .chat-panel {
+          border-right: 0;
+          border-bottom: 1px solid var(--line-soft);
+        }
+
+        .preview-body {
+          padding: 16px 16px 0;
+        }
+
+        .panel-header,
+        .panel-footer,
+        .composer {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .preview-meta,
+        .preview-footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .footer-actions {
+          width: 100%;
+          justify-content: stretch;
+        }
+
+        .footer-actions > * {
+          flex: 1 1 auto;
+          text-align: center;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>agent-slides chat</h1>
-      <p>Chat mode is connected to <code>/chat/ws</code>.</p>
-      <section id="messages" aria-live="polite"></section>
-      <form id="composer">
-        <input id="prompt" name="prompt" placeholder="Add a slide about Q3 revenue" />
-        <button type="submit">Send</button>
-      </form>
+      <div class="shell">
+        <section class="panel chat-panel" aria-label="Chat panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Orchestrator chat</span>
+              <h1 class="title">agent-slides chat</h1>
+            </div>
+            <span class="status" id="chat-status">
+              <span class="status-dot" id="chat-status-dot" data-state="connecting"></span>
+              <span id="chat-status-text">Connecting...</span>
+            </span>
+          </div>
+          <div class="chat-log" id="chat-messages" aria-live="polite"></div>
+          <div class="chat-log" aria-hidden="true" style="padding-top: 0; overflow: visible; flex: 0 0 auto;">
+            <div class="message-row" data-role="assistant">
+              <div class="typing" id="typing-indicator" hidden>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span>Thinking…</span>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="composer-shell">
+              <label for="chat-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0);">Message</label>
+              <textarea id="chat-input" placeholder="Add a slide about Q3 revenue, then wait 500ms to send…" autocomplete="off"></textarea>
+              <button class="send-button" id="send-button" type="button" disabled>Send</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel preview-panel" aria-label="Preview panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Live deck</span>
+              <h2 class="title">Embedded preview</h2>
+            </div>
+            <span class="status" id="preview-status">
+              <span class="status-dot" id="preview-status-dot" data-state="connecting"></span>
+              <span id="preview-status-text">Connecting...</span>
+            </span>
+          </div>
+
+          <div class="preview-body">
+            <div class="preview-meta">
+              <div class="nav" aria-label="Slide navigation">
+                <button id="prev-slide" type="button" aria-label="Previous slide">&larr;</button>
+                <div class="dots" id="slide-dots" aria-label="Slide list"></div>
+                <button id="next-slide" type="button" aria-label="Next slide">&rarr;</button>
+              </div>
+              <div id="slide-count">Slide 0 of 0</div>
+            </div>
+
+            <div class="stage-shell">
+              <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
+            </div>
+          </div>
+
+          <div class="panel-footer preview-footer">
+            <span class="status">
+              <span class="status-dot" id="build-status-dot" data-state="connected"></span>
+              <span id="build-status-text">Ready to build</span>
+            </span>
+            <div class="footer-actions">
+              <a class="download-link" id="download-link" href="#" hidden>Download PPTX</a>
+              <button class="build-button" id="build-button" type="button">Build</button>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
+
     <script>
-      const messages = document.getElementById("messages");
-      const composer = document.getElementById("composer");
-      const prompt = document.getElementById("prompt");
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${protocol}//${window.location.host}/chat/ws`);
+      const SVG_NS = "http://www.w3.org/2000/svg";
+      const stage = document.getElementById("stage");
+      const previewStatusDot = document.getElementById("preview-status-dot");
+      const previewStatusText = document.getElementById("preview-status-text");
+      const prevButton = document.getElementById("prev-slide");
+      const nextButton = document.getElementById("next-slide");
+      const dots = document.getElementById("slide-dots");
+      const slideCount = document.getElementById("slide-count");
+      const measureContext = document.createElement("canvas").getContext("2d");
 
-      function appendMessage(message) {
-        const item = document.createElement("article");
-        item.className = "message";
-        item.dataset.type = message.type || "assistant_message";
+      let currentDeck = null;
+      let currentSlideIndex = 0;
+      let previewReconnectDelayMs = 250;
+      let previewReconnectTimer = null;
 
-        const meta = document.createElement("span");
-        meta.className = "meta";
-        meta.textContent = [message.type, message.status].filter(Boolean).join(" • ");
-        item.appendChild(meta);
+      const setPreviewConnectionState = (state, text) => {
+        previewStatusDot.dataset.state = state;
+        previewStatusText.textContent = text;
+      };
 
-        const body = document.createElement("div");
-        body.textContent = message.text || "";
-        item.appendChild(body);
+      const imageHref = (imagePath) => {
+        const encoded = String(imagePath)
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
+        return `/api/images/${encoded}`;
+      };
 
-        messages.appendChild(item);
-        messages.scrollTop = messages.scrollHeight;
-      }
+      const nodeLines = (node) => {
+        const blocks = node?.content?.blocks;
+        if (!Array.isArray(blocks)) {
+          const plain = typeof node?.content === "string" ? node.content : "";
+          return String(plain)
+            .split(/\r?\n/)
+            .map((text) => ({ text, level: 0 }));
+        }
 
-      socket.addEventListener("message", (event) => {
-        appendMessage(JSON.parse(event.data));
+        const lines = [];
+        for (const block of blocks) {
+          const parts = String(block?.text ?? "").split(/\r?\n/);
+          const level = Number(block?.level ?? 0);
+          const prefix = block?.type === "bullet" ? "\u2022 " : "";
+          for (const part of parts) {
+            lines.push({ text: `${prefix}${part}`, level });
+          }
+        }
+        return lines.length > 0 ? lines : [{ text: "", level: 0 }];
+      };
+
+      const measureWidth = (text, fontFamily, fontSize, fontWeight) => {
+        if (!measureContext) {
+          return text.length * fontSize * 0.55;
+        }
+        measureContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        return measureContext.measureText(text).width;
+      };
+
+      const breakLongWord = (word, maxWidth, fontFamily, fontSize, fontWeight) => {
+        const parts = [];
+        let current = "";
+
+        for (const character of word) {
+          const candidate = `${current}${character}`;
+          if (current && measureWidth(candidate, fontFamily, fontSize, fontWeight) > maxWidth) {
+            parts.push(current);
+            current = character;
+          } else {
+            current = candidate;
+          }
+        }
+
+        if (current) {
+          parts.push(current);
+        }
+
+        return parts;
+      };
+
+      const wrapText = (text, maxWidth, fontFamily, fontSize, fontWeight) => {
+        if (!text) {
+          return [""];
+        }
+
+        if (maxWidth <= 0 || measureWidth(text, fontFamily, fontSize, fontWeight) <= maxWidth) {
+          return [text];
+        }
+
+        const words = text.split(/\s+/).filter(Boolean);
+        if (words.length === 0) {
+          return [text];
+        }
+
+        const lines = [];
+        let current = "";
+
+        for (const word of words) {
+          if (measureWidth(word, fontFamily, fontSize, fontWeight) > maxWidth) {
+            if (current) {
+              lines.push(current);
+              current = "";
+            }
+            lines.push(...breakLongWord(word, maxWidth, fontFamily, fontSize, fontWeight));
+            continue;
+          }
+
+          const candidate = current ? `${current} ${word}` : word;
+          if (measureWidth(candidate, fontFamily, fontSize, fontWeight) <= maxWidth) {
+            current = candidate;
+          } else {
+            lines.push(current);
+            current = word;
+          }
+        }
+
+        if (current) {
+          lines.push(current);
+        }
+
+        return lines;
+      };
+
+      const createSvgElement = (name) => document.createElementNS(SVG_NS, name);
+
+      const renderStageBackground = () => {
+        const background = createSvgElement("rect");
+        background.setAttribute("x", "0");
+        background.setAttribute("y", "0");
+        background.setAttribute("width", "720");
+        background.setAttribute("height", "540");
+        background.setAttribute("fill", "#ffffff");
+        stage.appendChild(background);
+      };
+
+      const renderEmptyState = () => {
+        renderStageBackground();
+        const label = createSvgElement("text");
+        label.setAttribute("x", "360");
+        label.setAttribute("y", "270");
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "empty");
+        label.textContent = "No slides yet";
+        stage.appendChild(label);
+      };
+
+      const renderTextNode = (node, computed) => {
+        if (computed.bg_color) {
+          const box = createSvgElement("rect");
+          box.setAttribute("x", `${computed.x}`);
+          box.setAttribute("y", `${computed.y}`);
+          box.setAttribute("width", `${computed.width}`);
+          box.setAttribute("height", `${computed.height}`);
+          box.setAttribute("fill", computed.bg_color);
+          box.setAttribute("fill-opacity", `${1 - Number(computed.bg_transparency ?? 0)}`);
+          stage.appendChild(box);
+        }
+
+        const text = createSvgElement("text");
+        const fontSize = Number(computed.font_size_pt ?? 18);
+        const fontFamily = computed.font_family || "Aptos";
+        const fontWeight = computed.font_bold ? 700 : 400;
+        const lineHeight = fontSize * 1.25;
+        const indentSize = fontSize * 1.2;
+        const maxLines = Math.max(1, Math.floor(Number(computed.height ?? lineHeight) / lineHeight));
+
+        text.setAttribute("x", `${computed.x}`);
+        text.setAttribute("y", `${computed.y + fontSize}`);
+        text.setAttribute("font-size", `${fontSize}`);
+        text.setAttribute("font-family", fontFamily);
+        text.setAttribute("font-weight", `${fontWeight}`);
+        text.setAttribute("fill", computed.color || "#1f1e1a");
+
+        let lineIndex = 0;
+        for (const line of nodeLines(node)) {
+          const level = Math.max(0, Number(line.level ?? 0));
+          const startX = Number(computed.x) + (level * indentSize);
+          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize));
+          const wrapped = wrapText(line.text, availableWidth, fontFamily, fontSize, fontWeight);
+
+          for (const segment of wrapped) {
+            if (lineIndex >= maxLines) {
+              break;
+            }
+
+            const tspan = createSvgElement("tspan");
+            tspan.setAttribute("x", `${startX}`);
+            tspan.setAttribute("dy", lineIndex === 0 ? "0" : `${lineHeight}`);
+            tspan.textContent = segment || " ";
+            text.appendChild(tspan);
+            lineIndex += 1;
+          }
+
+          if (lineIndex >= maxLines) {
+            break;
+          }
+        }
+
+        stage.appendChild(text);
+      };
+
+      const renderImageNode = (node, computed) => {
+        const image = createSvgElement("image");
+        image.setAttribute("x", `${computed.x}`);
+        image.setAttribute("y", `${computed.y}`);
+        image.setAttribute("width", `${computed.width}`);
+        image.setAttribute("height", `${computed.height}`);
+        image.setAttribute("href", imageHref(node.image_path));
+        image.setAttribute(
+          "preserveAspectRatio",
+          computed.image_fit === "stretch"
+            ? "none"
+            : computed.image_fit === "cover"
+              ? "xMidYMid slice"
+              : "xMidYMid meet"
+        );
+        stage.appendChild(image);
+      };
+
+      const clampSlideIndex = (index, total) => {
+        if (total <= 0) {
+          return 0;
+        }
+        return Math.min(Math.max(index, 0), total - 1);
+      };
+
+      const updateNavigation = (slides) => {
+        const total = slides.length;
+        const humanIndex = total === 0 ? 0 : currentSlideIndex + 1;
+        slideCount.textContent = `Slide ${humanIndex} of ${total}`;
+        prevButton.disabled = currentSlideIndex <= 0;
+        nextButton.disabled = currentSlideIndex >= total - 1;
+
+        dots.replaceChildren();
+        slides.forEach((slide, index) => {
+          const dot = document.createElement("button");
+          dot.type = "button";
+          dot.className = "dot";
+          dot.ariaLabel = `Go to slide ${index + 1}`;
+          dot.setAttribute("aria-current", index === currentSlideIndex ? "true" : "false");
+          dot.addEventListener("click", () => {
+            currentSlideIndex = index;
+            renderDeck(currentDeck);
+          });
+          dots.appendChild(dot);
+        });
+      };
+
+      const renderDeck = (deck) => {
+        currentDeck = deck && typeof deck === "object" ? deck : { slides: [] };
+        const slides = Array.isArray(currentDeck.slides) ? currentDeck.slides : [];
+        currentSlideIndex = clampSlideIndex(currentSlideIndex, slides.length);
+        stage.replaceChildren();
+        updateNavigation(slides);
+
+        if (slides.length === 0) {
+          renderEmptyState();
+          return;
+        }
+
+        renderStageBackground();
+
+        const slide = slides[currentSlideIndex];
+        for (const node of slide.nodes ?? []) {
+          const computed = slide.computed?.[node.node_id];
+          if (!computed) {
+            continue;
+          }
+
+          if (node.type === "image" && node.image_path) {
+            renderImageNode(node, computed);
+            continue;
+          }
+
+          renderTextNode(node, computed);
+        }
+      };
+
+      const showRelativeSlide = (delta) => {
+        const total = Array.isArray(currentDeck?.slides) ? currentDeck.slides.length : 0;
+        const nextIndex = clampSlideIndex(currentSlideIndex + delta, total);
+        if (nextIndex === currentSlideIndex) {
+          return;
+        }
+        currentSlideIndex = nextIndex;
+        renderDeck(currentDeck);
+      };
+
+      const schedulePreviewReconnect = () => {
+        if (previewReconnectTimer !== null) {
+          return;
+        }
+
+        const delay = previewReconnectDelayMs;
+        setPreviewConnectionState("reconnecting", `Reconnecting in ${Math.round(delay / 100) / 10}s`);
+        previewReconnectTimer = window.setTimeout(() => {
+          previewReconnectTimer = null;
+          connectPreview();
+        }, delay);
+        previewReconnectDelayMs = Math.min(previewReconnectDelayMs * 2, 4000);
+      };
+
+      const connectPreview = () => {
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+
+        setPreviewConnectionState("connecting", "Connecting...");
+
+        socket.addEventListener("open", () => {
+          previewReconnectDelayMs = 250;
+          setPreviewConnectionState("connected", "Connected");
+        });
+
+        socket.addEventListener("message", (event) => {
+          const payload = JSON.parse(event.data);
+          renderDeck(payload.deck ?? payload);
+          setPreviewConnectionState("live", "Live");
+        });
+
+        socket.addEventListener("close", () => {
+          setPreviewConnectionState("disconnected", "Disconnected");
+          schedulePreviewReconnect();
+        });
+
+        socket.addEventListener("error", () => {
+          socket.close();
+        });
+      };
+    </script>
+
+    <script>
+      const chatMessages = document.getElementById("chat-messages");
+      const chatInput = document.getElementById("chat-input");
+      const sendButton = document.getElementById("send-button");
+      const buildButton = document.getElementById("build-button");
+      const downloadLink = document.getElementById("download-link");
+      const typingIndicator = document.getElementById("typing-indicator");
+      const chatStatusDot = document.getElementById("chat-status-dot");
+      const chatStatusText = document.getElementById("chat-status-text");
+      const buildStatusDot = document.getElementById("build-status-dot");
+      const buildStatusText = document.getElementById("build-status-text");
+
+      let chatSocket = null;
+      let chatReconnectDelayMs = 250;
+      let chatReconnectTimer = null;
+      let debounceTimer = null;
+      let sendEnabled = false;
+      let chatConnected = false;
+
+      const setChatConnectionState = (state, text) => {
+        chatStatusDot.dataset.state = state;
+        chatStatusText.textContent = text;
+      };
+
+      const setBuildState = (state, text) => {
+        buildStatusDot.dataset.state = state;
+        buildStatusText.textContent = text;
+      };
+
+      const autoScrollChat = () => {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      };
+
+      const setTypingVisible = (visible) => {
+        typingIndicator.hidden = !visible;
+      };
+
+      const makeMessageRow = (role, contentNode) => {
+        const row = document.createElement("div");
+        row.className = "message-row";
+        row.dataset.role = role;
+        row.appendChild(contentNode);
+        return row;
+      };
+
+      const addMessage = (role, text) => {
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.dataset.role = role;
+        bubble.textContent = text;
+        chatMessages.appendChild(makeMessageRow(role, bubble));
+        autoScrollChat();
+      };
+
+      const addHtmlMessage = (role, text, html) => {
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.dataset.role = role;
+        bubble.textContent = text;
+        if (html) {
+          bubble.insertAdjacentHTML("beforeend", html);
+        }
+        chatMessages.appendChild(makeMessageRow(role, bubble));
+        autoScrollChat();
+      };
+
+      const addToolStatus = (label) => {
+        const pill = document.createElement("div");
+        pill.className = "tool-pill";
+        pill.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+        const text = document.createElement("span");
+        text.textContent = label;
+        pill.appendChild(text);
+        chatMessages.appendChild(makeMessageRow("tool", pill));
+        autoScrollChat();
+      };
+
+      const updateSendState = () => {
+        const hasText = chatInput.value.trim().length > 0;
+        sendButton.disabled = !(hasText && chatConnected && sendEnabled);
+        buildButton.disabled = !chatConnected;
+      };
+
+      const queueSendEnable = () => {
+        sendEnabled = false;
+        updateSendState();
+        if (debounceTimer !== null) {
+          window.clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = window.setTimeout(() => {
+          sendEnabled = true;
+          updateSendState();
+        }, 500);
+      };
+
+      const resetComposer = () => {
+        chatInput.value = "";
+        sendEnabled = false;
+        if (debounceTimer !== null) {
+          window.clearTimeout(debounceTimer);
+          debounceTimer = null;
+        }
+        updateSendState();
+      };
+
+      const sendChatPayload = (payload) => {
+        if (!chatSocket || chatSocket.readyState !== WebSocket.OPEN) {
+          return false;
+        }
+
+        chatSocket.send(JSON.stringify(payload));
+        return true;
+      };
+
+      const sendUserMessage = (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) {
+          return;
+        }
+
+        if (!sendChatPayload({ type: "user_message", text: trimmed })) {
+          return;
+        }
+
+        addMessage("user", trimmed);
+        setTypingVisible(true);
+        if (trimmed.toLowerCase() === "build") {
+          setBuildState("connecting", "Build requested");
+        }
+      };
+
+      const scheduleChatReconnect = () => {
+        if (chatReconnectTimer !== null) {
+          return;
+        }
+
+        const delay = chatReconnectDelayMs;
+        setChatConnectionState("reconnecting", `Reconnecting in ${Math.round(delay / 100) / 10}s`);
+        chatReconnectTimer = window.setTimeout(() => {
+          chatReconnectTimer = null;
+          connectChat();
+        }, delay);
+        chatReconnectDelayMs = Math.min(chatReconnectDelayMs * 2, 4000);
+      };
+
+      const extractText = (payload) => {
+        if (typeof payload?.text === "string" && payload.text.trim()) {
+          return payload.text;
+        }
+        if (typeof payload?.message === "string" && payload.message.trim()) {
+          return payload.message;
+        }
+        if (typeof payload?.content === "string" && payload.content.trim()) {
+          return payload.content;
+        }
+        return "";
+      };
+
+      const basename = (path) => {
+        if (typeof path !== "string" || !path.trim()) {
+          return null;
+        }
+        const parts = path.split(/[\\/]/).filter(Boolean);
+        return parts.length > 0 ? parts[parts.length - 1] : null;
+      };
+
+      const downloadHrefFromPath = (path) => {
+        const name = basename(path);
+        return name ? `/download/${encodeURIComponent(name)}` : null;
+      };
+
+      const extractDownloadUrl = (payload) => {
+        const explicit = [
+          payload?.download_url,
+          payload?.downloadUrl,
+          payload?.url,
+          payload?.artifact_url,
+          payload?.artifactUrl,
+          payload?.data?.download_url,
+          payload?.data?.downloadUrl,
+          payload?.data?.url
+        ].find((candidate) => typeof candidate === "string" && candidate.trim());
+
+        if (explicit) {
+          return explicit;
+        }
+
+        return (
+          downloadHrefFromPath(payload?.tool_result?.output) ||
+          downloadHrefFromPath(payload?.toolResult?.output) ||
+          null
+        );
+      };
+
+      const showDownloadLink = (url) => {
+        downloadLink.href = url;
+        downloadLink.hidden = false;
+        setBuildState("live", "Build ready");
+      };
+
+      const handleChatMessage = (payload) => {
+        const type = String(payload?.type ?? "");
+        const text = extractText(payload);
+        const downloadUrl = extractDownloadUrl(payload);
+
+        if (downloadUrl) {
+          showDownloadLink(downloadUrl);
+        }
+
+        if (type === "thinking") {
+          setTypingVisible(true);
+          if (text) {
+            addMessage("system", text);
+          }
+          return;
+        }
+
+        if (type === "tool_call") {
+          const toolName = payload?.tool_name || payload?.toolName || "tool";
+          addToolStatus(text || `Running ${toolName}...`);
+          if (toolName === "build") {
+            setBuildState("connecting", "Building PPTX");
+          }
+          setTypingVisible(false);
+          return;
+        }
+
+        if (type === "assistant_message") {
+          if (text) {
+            addMessage("assistant", text);
+          }
+          setTypingVisible(false);
+          return;
+        }
+
+        if (type === "error") {
+          if (text) {
+            addMessage("system", text);
+          }
+          setBuildState("error", "Build failed");
+          setTypingVisible(false);
+          return;
+        }
+
+        if (text) {
+          addMessage("assistant", text);
+          setTypingVisible(false);
+        }
+      };
+
+      const connectChat = () => {
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        chatSocket = new WebSocket(`${protocol}://${window.location.host}/chat/ws`);
+        setChatConnectionState("connecting", "Connecting...");
+
+        chatSocket.addEventListener("open", () => {
+          chatConnected = true;
+          chatReconnectDelayMs = 250;
+          setChatConnectionState("connected", "Connected");
+          updateSendState();
+        });
+
+        chatSocket.addEventListener("message", (event) => {
+          handleChatMessage(JSON.parse(event.data));
+        });
+
+        chatSocket.addEventListener("close", () => {
+          chatConnected = false;
+          updateSendState();
+          setChatConnectionState("disconnected", "Disconnected");
+          scheduleChatReconnect();
+        });
+
+        chatSocket.addEventListener("error", () => {
+          chatSocket.close();
+        });
+      };
+
+      prevButton.addEventListener("click", () => showRelativeSlide(-1));
+      nextButton.addEventListener("click", () => showRelativeSlide(1));
+
+      window.addEventListener("keydown", (event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+          return;
+        }
+
+        if (event.key === "ArrowLeft") {
+          showRelativeSlide(-1);
+        } else if (event.key === "ArrowRight") {
+          showRelativeSlide(1);
+        }
       });
 
-      composer.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const text = prompt.value.trim();
-        if (!text) return;
-        const message = { type: "user_message", text };
-        socket.send(JSON.stringify(message));
-        appendMessage(message);
-        prompt.value = "";
+      chatInput.addEventListener("input", queueSendEnable);
+      chatInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          if (!sendButton.disabled) {
+            sendUserMessage(chatInput.value);
+            resetComposer();
+          }
+        }
       });
+
+      sendButton.addEventListener("click", () => {
+        sendUserMessage(chatInput.value);
+        resetComposer();
+      });
+
+      buildButton.addEventListener("click", () => {
+        sendUserMessage("build");
+      });
+
+      fetch("/api/deck")
+        .then((response) => response.json())
+        .then((deck) => renderDeck(deck))
+        .catch(() => {
+          renderDeck({ slides: [] });
+          setPreviewConnectionState("disconnected", "Unable to load deck");
+        })
+        .finally(() => {
+          connectPreview();
+          connectChat();
+          updateSendState();
+        });
     </script>
   </body>
 </html>
