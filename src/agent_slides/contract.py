@@ -28,7 +28,7 @@ from agent_slides.errors import (
 )
 from agent_slides.model import Deck, NodeContent
 from agent_slides.model.constraints import Constraint
-from agent_slides.model.types import CHART_TYPE_VALUES
+from agent_slides.model.types import CHART_TYPE_VALUES, SHAPE_DASH_VALUES, SHAPE_TYPE_VALUES
 
 CONTRACT_VERSION = 1
 
@@ -44,6 +44,7 @@ MUTATION_COMMAND_NAMES = (
     "slot_bind",
     "chart_add",
     "chart_update",
+    "shape_add",
 )
 
 
@@ -232,6 +233,42 @@ DEFINITIONS: dict[str, Any] = {
         },
         required=["node_id", "chart_type", "updated"],
     ),
+    "shape_add_result": _object_schema(
+        {
+            "slide_id": _string_schema(min_length=1),
+            "node_id": _string_schema(min_length=1),
+            "shape_type": {"type": "string", "enum": list(SHAPE_TYPE_VALUES)},
+            "x": _number_schema(),
+            "y": _number_schema(),
+            "w": _number_schema(),
+            "h": _number_schema(),
+            "fill_color": {"type": ["string", "null"]},
+            "line_color": {"type": ["string", "null"]},
+            "line_width": _number_schema(),
+            "corner_radius": _number_schema(),
+            "shadow": _boolean_schema(),
+            "dash": {"type": ["string", "null"], "enum": [*SHAPE_DASH_VALUES, None]},
+            "opacity": _number_schema(),
+            "z_index": {"type": "integer"},
+        },
+        required=[
+            "slide_id",
+            "node_id",
+            "shape_type",
+            "x",
+            "y",
+            "w",
+            "h",
+            "fill_color",
+            "line_color",
+            "line_width",
+            "corner_radius",
+            "shadow",
+            "dash",
+            "opacity",
+            "z_index",
+        ],
+    ),
     "chart_data": _object_schema(
         {
             "title": {"type": ["string", "null"]},
@@ -329,6 +366,7 @@ DEFINITIONS: dict[str, Any] = {
                         _ref("slot_bind_result"),
                         _ref("chart_add_result"),
                         _ref("chart_update_result"),
+                        _ref("shape_add_result"),
                     ]
                 }
             ),
@@ -538,6 +576,32 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "result_schema": _ref("chart_update_result"),
         "errors": [CHART_DATA_ERROR, INVALID_NODE_TYPE, SCHEMA_ERROR],
+    },
+    "shape_add": {
+        "kind": "mutation",
+        "summary": "Add a slide-level decorative or structural shape with explicit coordinates.",
+        "input_schema": _object_schema(
+            {
+                "slide": _ref("slide_ref"),
+                "type": {"type": "string", "enum": list(SHAPE_TYPE_VALUES)},
+                "x": _number_schema(),
+                "y": _number_schema(),
+                "w": _number_schema(),
+                "h": _number_schema(),
+                "fill": _string_schema(min_length=1),
+                "color": _string_schema(min_length=1),
+                "line_color": _string_schema(min_length=1),
+                "line_width": _number_schema(),
+                "corner_radius": _number_schema(),
+                "shadow": _boolean_schema(default=False),
+                "dash": {"type": "string", "enum": list(SHAPE_DASH_VALUES)},
+                "opacity": _number_schema(),
+                "z_index": {"type": "integer"},
+            },
+            required=["slide", "type", "x", "y", "w", "h"],
+        ),
+        "result_schema": _ref("shape_add_result"),
+        "errors": [INVALID_SLIDE, SCHEMA_ERROR],
     },
 }
 
@@ -755,6 +819,35 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             }
         ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED],
+    },
+    "shape.add": {
+        "kind": "cli",
+        "summary": "Add a slide-level shape primitive with explicit geometry and styling.",
+        "cli_command": _cli_command("shape", "add"),
+        "mutation_command": "shape_add",
+        "input_schema": _object_schema(
+            {
+                "path": _string_schema(min_length=1),
+                "slide": _ref("slide_ref"),
+                "type": {"type": "string", "enum": list(SHAPE_TYPE_VALUES)},
+                "x": _number_schema(),
+                "y": _number_schema(),
+                "w": _number_schema(),
+                "h": _number_schema(),
+                "fill": _string_schema(min_length=1),
+                "color": _string_schema(min_length=1),
+                "line_color": _string_schema(min_length=1),
+                "line_width": _number_schema(),
+                "corner_radius": _number_schema(),
+                "shadow": _boolean_schema(default=False),
+                "dash": {"type": "string", "enum": list(SHAPE_DASH_VALUES)},
+                "opacity": _number_schema(),
+                "z_index": {"type": "integer"},
+            },
+            required=["path", "slide", "type", "x", "y", "w", "h"],
+        ),
+        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("shape_add_result"))}],
+        "errors": MUTATION_CONTRACTS["shape_add"]["errors"],
     },
     "slide.add": {
         "kind": "cli",
