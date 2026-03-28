@@ -175,7 +175,7 @@ def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
     seen_provider_types: list[type[object]] = []
     seen_layouts: list[list[str]] = []
 
-    def fake_template_reflow(updated_deck: Deck, provider) -> None:
+    def fake_template_reflow(updated_deck: Deck, provider, **_: object) -> None:
         assert updated_deck.revision == 5
         seen_provider_types.append(type(provider))
         assert isinstance(provider, TemplateLayoutRegistryImpl)

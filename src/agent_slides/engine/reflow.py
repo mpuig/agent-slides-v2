@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
+from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.engine.text_fit import fit_text
 from agent_slides.model import Deck, LayoutDef, Slide
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
@@ -80,6 +81,7 @@ def _text_fit_rules(layout_def: LayoutDef, node: Node) -> TextFitting:
 
 def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision: int) -> None:
     computed: dict[str, ComputedNode] = {}
+    slide.revision = revision
 
     for node in slide.nodes:
         if node.slot_binding is None:
@@ -166,14 +168,24 @@ def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
     _reflow_slide(slide, layout_def, theme, revision=0)
 
 
-def reflow_deck(deck: Deck, provider: LayoutProvider | None = None) -> None:
+def reflow_deck(
+    deck: Deck,
+    provider: LayoutProvider | None = None,
+    *,
+    previous_slide_signatures: dict[str, object] | None = None,
+) -> None:
     """Reflow every slide in the deck using the deck theme."""
 
     active_provider = provider or BuiltinLayoutProvider()
     theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
     for slide in deck.slides:
         layout_getter = active_provider.get_layout
-        _reflow_slide(slide, layout_getter(slide.layout), theme, revision=deck.revision)
+        slide_revision = resolve_slide_revision(
+            slide,
+            deck_revision=deck.revision,
+            previous_slide_signatures=previous_slide_signatures,
+        )
+        _reflow_slide(slide, layout_getter(slide.layout), theme, revision=slide_revision)
 
 
 def rebind_slots(

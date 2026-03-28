@@ -17,6 +17,7 @@ from agent_slides.errors import (
     REVISION_CONFLICT,
     SCHEMA_ERROR,
 )
+from agent_slides.engine.slide_revisions import slide_semantic_signature
 from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
 from agent_slides.model import ComputedDeck, Deck
 
@@ -66,6 +67,7 @@ def _commit_staged_writes(staged_paths: list[tuple[Path, Path]]) -> None:
 def _serialize_deck_payload(deck: Deck) -> str:
     payload = deck.model_dump(mode="json", by_alias=True)
     for slide in payload["slides"]:
+        slide.pop("revision", None)
         slide.pop("computed", None)
     return f"{json.dumps(payload, indent=2)}\n"
 
@@ -223,13 +225,14 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
 
     deck = read_deck(path)
     provider = resolve_layout_provider(resolve_manifest_path(path, deck))
+    previous_slide_signatures = {slide.slide_id: slide_semantic_signature(slide) for slide in deck.slides}
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
     if isinstance(provider, TemplateLayoutRegistry):
-        template_reflow(deck, provider)
+        template_reflow(deck, provider, previous_slide_signatures=previous_slide_signatures)
     else:
-        reflow_deck(deck, provider)
+        reflow_deck(deck, provider, previous_slide_signatures=previous_slide_signatures)
     write_deck(path, deck, expected_revision)
     return deck, result
 
