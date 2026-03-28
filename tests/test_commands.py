@@ -33,7 +33,7 @@ from agent_slides.errors import (
 from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck, read_deck, write_computed_deck
 from agent_slides.model import BuiltinLayoutProvider, Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
-from agent_slides.model.types import ComputedNode
+from agent_slides.model.types import ComputedNode, TextRun
 from tests.image_helpers import write_png
 
 
@@ -711,6 +711,56 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
     assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
 
 
+def test_slot_set_parses_inline_markdown_runs_from_text(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "title",
+            "--text",
+            "Revenue grew **23%** driven by *premium segment*",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue grew 23% driven by premium segment"
+    assert payload["data"]["content"] == {
+        "blocks": [
+            {
+                "type": "paragraph",
+                "text": "Revenue grew 23% driven by premium segment",
+                "level": 0,
+                "runs": [
+                    {"text": "Revenue grew "},
+                    {"text": "23%", "bold": True},
+                    {"text": " driven by "},
+                    {"text": "premium segment", "italic": True},
+                ],
+            }
+        ]
+    }
+    assert updated.slides[0].nodes[0].content.blocks[0].runs == [
+        TextRun(text="Revenue grew "),
+        TextRun(text="23%", bold=True),
+        TextRun(text=" driven by "),
+        TextRun(text="premium segment", italic=True),
+    ]
+
+
 def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
@@ -773,6 +823,65 @@ def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
             {"type": "bullet", "text": "Point two", "level": 1},
         ]
     }
+
+
+def test_slot_set_accepts_structured_runs_json(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {
+                            "type": "paragraph",
+                            "runs": [
+                                {"text": "Revenue grew "},
+                                {"text": "23%", "bold": True, "color": "#1A73E8"},
+                                {"text": " driven by "},
+                                {"text": "premium segment", "italic": True, "font_size": 24},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["text"] == "Revenue grew 23% driven by premium segment"
+    assert payload["data"]["content"] == {
+        "blocks": [
+            {
+                "type": "paragraph",
+                "text": "Revenue grew 23% driven by premium segment",
+                "level": 0,
+                "runs": [
+                    {"text": "Revenue grew "},
+                    {"text": "23%", "bold": True, "color": "#1A73E8"},
+                    {"text": " driven by "},
+                    {"text": "premium segment", "italic": True, "font_size": 24.0},
+                ],
+            }
+        ]
+    }
+    assert updated.slides[0].nodes[1].content.model_dump(mode="json") == payload["data"]["content"]
 
 
 @pytest.mark.parametrize(

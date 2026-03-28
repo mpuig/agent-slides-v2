@@ -20,7 +20,13 @@ from agent_slides.errors import (
 )
 from agent_slides.model import ChartSpec, Deck, Node, NodeContent, ShapeSpec, Slide, TableSpec
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model.types import CHART_TYPE_VALUES, SHAPE_DASH_VALUES, SHAPE_TYPE_VALUES
+from agent_slides.model.types import (
+    CHART_TYPE_VALUES,
+    SHAPE_DASH_VALUES,
+    SHAPE_TYPE_VALUES,
+    TextBlock,
+    parse_inline_markdown_runs,
+)
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -185,6 +191,9 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
     text = args.get("text")
     if not isinstance(text, str):
         raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
+    runs = parse_inline_markdown_runs(text)
+    if runs is not None:
+        return NodeContent(blocks=[TextBlock(type="paragraph", text=text, runs=runs)])
     return NodeContent.from_text(text)
 
 

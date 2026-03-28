@@ -21,6 +21,7 @@ from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.io import read_template_manifest
 from agent_slides.io.pptx_writer import write_pptx
 from agent_slides.model.types import (
+    BlockPosition,
     ChartSeries,
     ChartSpec,
     ChartStyle,
@@ -36,6 +37,7 @@ from agent_slides.model.types import (
     Slide,
     TableSpec,
     TextBlock,
+    TextRun,
 )
 from tests.image_helpers import write_png
 
@@ -741,6 +743,157 @@ def test_write_pptx_renders_structured_headings_and_bullets(tmp_path: Path) -> N
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["lvl"] == "1"
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["marL"] == str(Pt(36))
     assert paragraphs[2].find("./a:pPr", DRAWING_NS).attrib["indent"] == str(Pt(-18))
+
+def test_write_pptx_uses_block_positions_for_precise_text_boxes(tmp_path: Path) -> None:
+    output_path = tmp_path / "block-positions.pptx"
+    deck = Deck(
+        deck_id="deck-block-positions",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(type="heading", text="Highlights"),
+                                TextBlock(type="bullet", text="First takeaway"),
+                            ]
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=100.0,
+                        y=120.0,
+                        width=260.0,
+                        height=140.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color="#F1E2D3",
+                        font_bold=False,
+                        revision=1,
+                        block_positions=[
+                            BlockPosition(
+                                block_index=0,
+                                x=108.0,
+                                y=128.0,
+                                width=244.0,
+                                height=35.2,
+                                font_size_pt=32.0,
+                            ),
+                            BlockPosition(
+                                block_index=1,
+                                x=108.0,
+                                y=173.2,
+                                width=244.0,
+                                height=21.6,
+                                font_size_pt=18.0,
+                            ),
+                        ],
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    slide_xml = read_slide_xml(output_path)
+    paragraphs = slide_xml.findall(".//a:p", DRAWING_NS)
+
+    assert len(slide.shapes) == 1
+    text_box = slide.shapes[0]
+    assert text_box.fill.fore_color.rgb == RGBColor.from_string("F1E2D3")
+    assert text_box.left == int(100.0 * EMU_PER_POINT)
+    assert text_box.top == int(120.0 * EMU_PER_POINT)
+    assert text_box.width == int(260.0 * EMU_PER_POINT)
+    assert text_box.height == int(140.0 * EMU_PER_POINT)
+    assert text_box.text_frame.margin_left == int(8.0 * EMU_PER_POINT)
+    assert text_box.text_frame.margin_top == int(8.0 * EMU_PER_POINT)
+    assert text_box.text_frame.paragraphs[0].runs[0].font.size == Pt(32)
+    assert text_box.text_frame.paragraphs[1].text == "First takeaway"
+    assert text_box.text_frame.paragraphs[1].runs[0].font.size == Pt(18)
+    assert paragraphs[0].find("./a:pPr/a:spcAft/a:spcPts", DRAWING_NS).attrib["val"] == "1000"
+    assert any(paragraph.find("./a:pPr/a:buChar", DRAWING_NS) is not None for paragraph in paragraphs)
+
+
+def test_write_pptx_renders_inline_text_runs(tmp_path: Path) -> None:
+    output_path = tmp_path / "inline-runs.pptx"
+    deck = Deck(
+        deck_id="deck-inline-runs",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(
+                                    type="paragraph",
+                                    runs=[
+                                        TextRun(text="Revenue grew "),
+                                        TextRun(text="23%", bold=True, color="#1A73E8"),
+                                        TextRun(text=" driven by "),
+                                        TextRun(text="premium segment", italic=True, font_size=24, underline=True),
+                                    ],
+                                )
+                            ]
+                        ),
+                    )
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=400.0,
+                        height=80.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    paragraph = presentation.slides[0].shapes[0].text_frame.paragraphs[0]
+    slide_xml = read_slide_xml(output_path)
+    runs = paragraph.runs
+    xml_runs = slide_xml.findall(".//a:r", DRAWING_NS)
+
+    assert paragraph.text == "Revenue grew 23% driven by premium segment"
+    assert [run.text for run in runs] == [
+        "Revenue grew ",
+        "23%",
+        " driven by ",
+        "premium segment",
+    ]
+    assert runs[0].font.size == Pt(18)
+    assert runs[1].font.bold is True
+    assert runs[1].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert runs[3].font.italic is True
+    assert runs[3].font.size == Pt(24)
+    assert runs[3].font.underline is True
+    assert xml_runs[3].find("./a:rPr", DRAWING_NS).attrib["u"] == "sng"
 
 def test_write_pptx_renders_image_nodes_with_contain_fit(tmp_path: Path) -> None:
     image_path = write_png(tmp_path / "photo.png", width=200, height=100)
