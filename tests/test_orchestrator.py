@@ -9,7 +9,14 @@ from typing import Any
 from agent_slides.io import init_deck, read_deck
 from agent_slides.model.constraints import Constraint
 from agent_slides.preview import orchestrator as orchestrator_module
-from agent_slides.preview.orchestrator import DeckOrchestrator
+from agent_slides.preview.orchestrator import DeckOrchestrator, SYSTEM_PROMPT
+
+
+def test_orchestrator_system_prompt_references_storytelling_guide() -> None:
+    assert "references/storytelling.md" in SYSTEM_PROMPT
+    assert "recommendation-first story" in SYSTEM_PROMPT
+    assert "SCQA" in SYSTEM_PROMPT
+    assert "audience, objective, recommendation, scope, and target deck length" in SYSTEM_PROMPT
 
 
 def test_orchestrator_executes_tool_calls_and_preserves_conversation_history(
