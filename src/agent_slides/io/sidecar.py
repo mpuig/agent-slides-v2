@@ -213,8 +213,7 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     from agent_slides.model.layout_provider import TemplateLayoutRegistry
 
     deck = read_deck(path)
-    resolved_manifest = resolve_manifest_path(path, deck)
-    provider = resolve_layout_provider(resolved_manifest)
+    provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()

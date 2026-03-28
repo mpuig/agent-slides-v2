@@ -27,12 +27,16 @@ def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
                 )
 
             slot = layout_def.slots[node.slot_binding]
-            placeholder = registry.get_placeholder(slide.layout, node.slot_binding)
-            bounds = placeholder["bounds"]
-            x = float(bounds["x"])
-            y = float(bounds["y"])
-            width = float(bounds["w"])
-            height = float(bounds["h"])
+            if None in (slot.x, slot.y, slot.width, slot.height):
+                raise AgentSlidesError(
+                    code=INVALID_SLOT,
+                    message=f"Slot '{node.slot_binding}' is missing bounds for layout '{slide.layout}'.",
+                )
+
+            x = float(slot.x)
+            y = float(slot.y)
+            width = float(slot.width)
+            height = float(slot.height)
             style = resolve_style(theme, slot.role)
 
             if slot.role == "image" or node.type == "image":
@@ -44,8 +48,8 @@ def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
                     font_size_pt=0.0,
                     font_family=str(style["font_family"]),
                     color=str(style["color"]),
-                    bg_color=theme.colors.background,
-                    bg_transparency=0.0,
+                    bg_color=slot.bg_color if slot.bg_color is not None else theme.colors.background,
+                    bg_transparency=slot.bg_transparency,
                     font_bold=bool(style["font_bold"]),
                     text_overflow=False,
                     revision=deck.revision,
@@ -70,8 +74,8 @@ def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
                 font_size_pt=font_size_pt,
                 font_family=str(style["font_family"]),
                 color=str(style["color"]),
-                bg_color=theme.colors.background,
-                bg_transparency=0.0,
+                bg_color=slot.bg_color if slot.bg_color is not None else theme.colors.background,
+                bg_transparency=slot.bg_transparency,
                 font_bold=bool(style["font_bold"]),
                 text_overflow=text_overflow,
                 revision=deck.revision,
