@@ -1,4 +1,5 @@
 from pathlib import Path
+from importlib import resources
 
 import pytest
 
@@ -39,6 +40,13 @@ def test_constraint_model_creation() -> None:
     assert constraint.severity == "warning"
     assert constraint.slide_id == "slide-1"
     assert constraint.node_id == "node-2"
+
+
+def test_design_rules_resource_is_packaged() -> None:
+    resource = resources.files("agent_slides.config.design_rules").joinpath("default.yaml")
+
+    assert resource.is_file()
+    assert "name: default" in resource.read_text(encoding="utf-8")
 
 
 def test_load_invalid_design_rules_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
