@@ -6,6 +6,7 @@ from agent_slides.io.sidecar import (
     mutate_deck,
     read_computed_deck,
     read_deck,
+    resolve_manifest_path,
     write_computed_deck,
     write_deck,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "read_computed_deck",
     "read_deck",
     "render_text_node",
+    "resolve_manifest_path",
     "write_computed_deck",
     "write_deck",
     "write_pptx",

@@ -6,7 +6,8 @@ from typing import Any
 
 from agent_slides.engine.reflow import rebind_slots
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
-from agent_slides.model import Deck, Node, NodeContent, Slide, get_layout
+from agent_slides.model import Deck, Node, NodeContent, Slide
+from agent_slides.model.layout_provider import LayoutProvider
 
 SLOT_ALIASES = {
     "title": "heading",
@@ -56,8 +57,9 @@ def _require_string(args: dict[str, Any], key: str) -> str:
     return value.strip()
 
 
-def _create_slot_nodes(deck: Deck, layout_name: str) -> Slide:
-    layout = get_layout(layout_name)
+def _create_slot_nodes(deck: Deck, layout_name: str, provider: LayoutProvider) -> Slide:
+    layout_getter = provider.get_layout
+    layout = layout_getter(layout_name)
     return Slide(
         slide_id=deck.next_slide_id(),
         layout=layout.name,
@@ -73,8 +75,9 @@ def _create_slot_nodes(deck: Deck, layout_name: str) -> Slide:
     )
 
 
-def _resolve_slot_name(slide: Slide, slot: str) -> str:
-    layout = get_layout(slide.layout)
+def _resolve_slot_name(slide: Slide, slot: str, provider: LayoutProvider) -> str:
+    layout_getter = provider.get_layout
+    layout = layout_getter(slide.layout)
     normalized = SLOT_ALIASES.get(slot.strip(), slot.strip())
     if normalized not in layout.slots:
         allowed = ", ".join(layout.slots)
@@ -154,11 +157,16 @@ def _coerce_slot_set_payload(args: dict[str, Any]) -> tuple[str, NodeContent, st
     return "text", _coerce_content(args), None, _coerce_image_fit(args)
 
 
-def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, Any]:
+def apply_mutation(
+    deck: Deck,
+    command: str,
+    args: dict[str, Any],
+    provider: LayoutProvider,
+) -> dict[str, Any]:
     """Apply one supported mutation and return its structured result."""
 
     if command == "slide_add":
-        slide = _create_slot_nodes(deck, _require_string(args, "layout"))
+        slide = _create_slot_nodes(deck, _require_string(args, "layout"), provider)
         deck.slides.append(slide)
         return {
             "slide_index": len(deck.slides) - 1,
@@ -175,9 +183,11 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
         }
 
     if command == "slide_set_layout":
-        layout = get_layout(_require_string(args, "layout"))
+        layout_name = _require_string(args, "layout")
+        layout_getter = provider.get_layout
+        layout_getter(layout_name)
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
-        unbound_nodes = rebind_slots(deck, slide, layout)
+        unbound_nodes = rebind_slots(deck, slide, layout_name, provider)
         return {
             "slide_id": slide.slide_id,
             "layout": slide.layout,
@@ -186,8 +196,8 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
 
     if command == "slot_set":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
-        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
         node_type, content, image_path, image_fit = _coerce_slot_set_payload(args)
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
 
         slot_nodes = _find_slot_nodes(slide, slot_name)
         if slot_nodes:
@@ -230,7 +240,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
 
     if command == "slot_clear":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
-        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
         removed_ids = [node.node_id for node in _find_slot_nodes(slide, slot_name)]
         _prune_nodes(slide, set(removed_ids))
         return {
@@ -242,7 +252,7 @@ def apply_mutation(deck: Deck, command: str, args: dict[str, Any]) -> dict[str, 
     if command == "slot_bind":
         node_id = _require_string(args, "node")
         slide, node = _find_node(deck, node_id)
-        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"))
+        slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
         conflicting_nodes = [
             candidate
             for candidate in _find_slot_nodes(slide, slot_name)

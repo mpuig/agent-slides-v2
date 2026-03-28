@@ -17,9 +17,11 @@ from agent_slides.errors import (
     REVISION_CONFLICT,
     SCHEMA_ERROR,
 )
+from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
 from agent_slides.model import ComputedDeck, Deck
 
 T = TypeVar("T")
+CURRENT_DECK_VERSION = 2
 
 
 def _format_validation_error(exc: ValidationError) -> str:
@@ -108,6 +110,16 @@ def _parse_json_file(path: Path) -> object:
         ) from exc
 
 
+def _normalize_deck_payload(raw: object) -> object:
+    if not isinstance(raw, dict):
+        return raw
+
+    payload = dict(raw)
+    if payload.get("version") == 1:
+        payload["version"] = CURRENT_DECK_VERSION
+    return payload
+
+
 def _read_computed_deck_optional(path: Path) -> ComputedDeck | None:
     try:
         raw = _parse_json_file(path)
@@ -129,7 +141,7 @@ def read_deck(path: str) -> Deck:
     """Load, parse, and validate a sidecar deck file."""
 
     deck_path = Path(path)
-    raw = _parse_json_file(deck_path)
+    raw = _normalize_deck_payload(_parse_json_file(deck_path))
 
     try:
         deck = Deck.model_validate(raw)
@@ -144,6 +156,16 @@ def read_deck(path: str) -> Deck:
         computed_deck.apply_to_deck(deck)
 
     return deck
+
+
+def resolve_manifest_path(deck_path: str, deck: Deck) -> str | None:
+    """Resolve template_manifest to an absolute path relative to the deck file."""
+
+    if deck.template_manifest is None:
+        return None
+
+    deck_dir = os.path.dirname(os.path.abspath(deck_path))
+    return os.path.join(deck_dir, deck.template_manifest)
 
 
 def read_computed_deck(path: str) -> ComputedDeck:
@@ -183,16 +205,17 @@ def write_deck(path: str, deck: Deck, expected_revision: int) -> None:
     _write_bundle_atomic(deck_path, deck)
 
 
-def mutate_deck(path: str, fn: Callable[[Deck], T]) -> tuple[Deck, T]:
+def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Deck, T]:
     """Run the shared read-mutate-reflow-lock-write pipeline."""
 
     from agent_slides.engine.reflow import reflow_deck
 
     deck = read_deck(path)
+    provider = resolve_layout_provider(deck.template_manifest)
     expected_revision = deck.revision
-    result = fn(deck)
+    result = fn(deck, provider)
     deck.bump_revision()
-    reflow_deck(deck)
+    reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 

@@ -14,17 +14,26 @@ from agent_slides.errors import (
     REVISION_CONFLICT,
     SCHEMA_ERROR,
 )
-from agent_slides.io.sidecar import init_deck, mutate_deck, read_deck, write_deck
-from agent_slides.io.sidecar import computed_sidecar_path, read_computed_deck, write_computed_deck
-from agent_slides.model import ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.io.sidecar import (
+    computed_sidecar_path,
+    init_deck,
+    mutate_deck,
+    read_computed_deck,
+    read_deck,
+    resolve_manifest_path,
+    write_computed_deck,
+    write_deck,
+)
+from agent_slides.model import BuiltinLayoutProvider, ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
 
 
-def build_deck(*, revision: int = 2) -> Deck:
+def build_deck(*, revision: int = 2, template_manifest: str | None = None) -> Deck:
     return Deck(
         deck_id="deck-1",
         revision=revision,
         theme="classic",
         design_rules="strict",
+        template_manifest=template_manifest,
         slides=[
             Slide(
                 slide_id="s-1",
@@ -100,7 +109,7 @@ def test_read_deck_wrong_structure_raises_schema_error_with_details(tmp_path: Pa
     assert "slides" in exc_info.value.message
 
 
-def test_read_deck_accepts_legacy_string_content_and_version_one(tmp_path: Path) -> None:
+def test_read_deck_upgrades_legacy_string_content_and_version_one(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck_path.write_text(
         json.dumps(
@@ -132,10 +141,21 @@ def test_read_deck_accepts_legacy_string_content_and_version_one(tmp_path: Path)
 
     deck = read_deck(str(deck_path))
 
-    assert deck.version == 1
+    assert deck.version == 2
+    assert deck.template_manifest is None
     assert deck.slides[0].nodes[0].content.model_dump(mode="json") == {
         "blocks": [{"type": "paragraph", "text": "Legacy title", "level": 0}]
     }
+
+
+def test_read_deck_loads_v2_template_manifest(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_raw_deck(deck_path, build_deck(template_manifest="templates/demo/manifest.json"))
+
+    deck = read_deck(str(deck_path))
+
+    assert deck.version == 2
+    assert deck.template_manifest == "templates/demo/manifest.json"
 
 
 def test_write_deck_uses_atomic_temp_file_and_rename(
@@ -200,13 +220,15 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
 
     reflow_revisions: list[int] = []
 
-    def fake_reflow(deck: Deck) -> None:
+    def fake_reflow(deck: Deck, provider) -> None:
         reflow_revisions.append(deck.revision)
+        assert isinstance(provider, BuiltinLayoutProvider)
 
     monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
-    def mutate(deck: Deck) -> str:
+    def mutate(deck: Deck, provider) -> str:
         deck.theme = "updated"
+        assert isinstance(provider, BuiltinLayoutProvider)
         return "ok"
 
     updated_deck, result = mutate_deck(str(deck_path), mutate)
@@ -225,7 +247,7 @@ def test_mutate_deck_does_not_write_if_mutation_raises(tmp_path: Path) -> None:
     write_raw_deck(deck_path, original)
     original_payload = deck_path.read_text(encoding="utf-8")
 
-    def fail(_: Deck) -> None:
+    def fail(_: Deck, __) -> None:
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -278,7 +300,7 @@ def test_init_deck_force_overwrites_existing_file(tmp_path: Path) -> None:
 
 def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    original = build_deck(revision=7)
+    original = build_deck(revision=7, template_manifest="templates/demo/manifest.json")
     write_raw_deck(deck_path, original)
 
     updated = read_deck(str(deck_path))
@@ -288,8 +310,25 @@ def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(tmp_path: Pa
     payload = json.loads(deck_path.read_text(encoding="utf-8"))
 
     assert payload["_counters"] == {"slides": 1, "nodes": 1}
+    assert payload["template_manifest"] == "templates/demo/manifest.json"
     assert "computed" not in payload["slides"][0]
     assert restored == original
+
+
+def test_resolve_manifest_path_returns_absolute_path(tmp_path: Path) -> None:
+    deck_path = tmp_path / "nested" / "deck.json"
+    deck_path.parent.mkdir()
+    deck = build_deck(template_manifest="templates/demo/manifest.json")
+
+    resolved = resolve_manifest_path(str(deck_path), deck)
+
+    assert resolved == str(deck_path.parent / "templates" / "demo" / "manifest.json")
+
+
+def test_resolve_manifest_path_returns_none_when_manifest_missing(tmp_path: Path) -> None:
+    deck = build_deck()
+
+    assert resolve_manifest_path(str(tmp_path / "deck.json"), deck) is None
 
 
 def test_read_deck_prefers_computed_sidecar_when_present(tmp_path: Path) -> None:
