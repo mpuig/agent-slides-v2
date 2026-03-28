@@ -168,6 +168,15 @@ def resolve_manifest_path(deck_path: str, deck: Deck) -> str | None:
     return os.path.join(deck_dir, deck.template_manifest)
 
 
+def _relative_manifest_path(deck_path: Path, manifest_path: str | Path | None) -> str | None:
+    if manifest_path is None:
+        return None
+
+    resolved_manifest = Path(manifest_path).expanduser().resolve(strict=False)
+    deck_dir = deck_path.parent.resolve(strict=False)
+    return os.path.relpath(resolved_manifest, deck_dir)
+
+
 def read_computed_deck(path: str) -> ComputedDeck:
     """Load, parse, and validate a computed deck sidecar."""
 
@@ -220,7 +229,14 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     return deck, result
 
 
-def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
+def init_deck(
+    path: str,
+    theme: str,
+    design_rules: str,
+    force: bool,
+    *,
+    template_manifest: str | Path | None = None,
+) -> Deck:
     """Create a new sidecar deck file."""
 
     deck_path = Path(path)
@@ -232,6 +248,7 @@ def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
         revision=0,
         theme=theme,
         design_rules=design_rules,
+        template_manifest=_relative_manifest_path(deck_path, template_manifest),
     )
     _write_bundle_atomic(deck_path, deck)
     return deck

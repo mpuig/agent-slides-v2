@@ -6,10 +6,13 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.exc import PackageNotFoundError
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
+from agent_slides.model.template_layouts import TemplateLayoutRegistry
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
@@ -108,16 +111,53 @@ def render_image_node(slide_shape_collection: SlideShapes, node: Node, computed:
     )
 
 
-def write_pptx(deck: Deck, output_path: str) -> None:
+def _open_template_presentation(source_path: str) -> Presentation:
+    path = Path(source_path)
+    if not path.exists():
+        raise AgentSlidesError(FILE_NOT_FOUND, f"Template file not found: {path}")
+
+    try:
+        return Presentation(path)
+    except PackageNotFoundError as exc:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Template file is not a valid PPTX: {path}") from exc
+
+
+def _select_slide_layout(presentation: Presentation, provider: TemplateLayoutRegistry, layout_name: str):
+    master_index, layout_index = provider.get_layout_ref(layout_name)
+    try:
+        slide_master = presentation.slide_masters[master_index]
+        return slide_master.slide_layouts[layout_index]
+    except IndexError as exc:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            (
+                f"Template layout '{layout_name}' could not be resolved in source template "
+                f"(master {master_index}, layout {layout_index})"
+            ),
+        ) from exc
+
+
+def write_pptx(deck: Deck, output_path: str, *, provider: object | None = None) -> None:
     """Write a deck to PowerPoint using the computed scene graph."""
 
-    presentation = Presentation()
-    presentation.slide_width = Inches(10)
-    presentation.slide_height = Inches(7.5)
-    blank_layout = presentation.slide_layouts[BLANK_LAYOUT_INDEX]
+    template_provider = provider if isinstance(provider, TemplateLayoutRegistry) else None
+    if template_provider is None:
+        presentation = Presentation()
+        presentation.slide_width = Inches(10)
+        presentation.slide_height = Inches(7.5)
+        blank_layout = presentation.slide_layouts[BLANK_LAYOUT_INDEX]
+    else:
+        presentation = _open_template_presentation(template_provider.source_path)
+        blank_layout = None
 
     for slide in deck.slides:
-        pptx_slide = presentation.slides.add_slide(blank_layout)
+        if template_provider is None:
+            assert blank_layout is not None
+            pptx_slide = presentation.slides.add_slide(blank_layout)
+        else:
+            pptx_slide = presentation.slides.add_slide(
+                _select_slide_layout(presentation, template_provider, slide.layout)
+            )
         if not slide.computed:
             continue
 
