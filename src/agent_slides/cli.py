@@ -16,6 +16,7 @@ from agent_slides.commands.inspect_cmd import inspect_command
 from agent_slides.commands.init import init_command
 from agent_slides.commands.learn import learn_command
 from agent_slides.commands.preview import preview_command
+from agent_slides.commands.review import review_command
 from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
 from agent_slides.commands.suggest_layout import suggest_layout_command
@@ -59,6 +60,7 @@ cli.add_command(chat_command)
 cli.add_command(chart)
 cli.add_command(init_command)
 cli.add_command(preview_command)
+cli.add_command(review_command)
 cli.add_command(chart)
 cli.add_command(slide)
 cli.add_command(slot)
@@ -73,3 +75,4 @@ cli.add_command(validate_command, name="validate")
 cli.add_command(info_command, name="info")
 cli.add_command(inspect_command, name="inspect")
 cli.add_command(build_command, name="build")
+cli.add_command(review_command, name="review")
