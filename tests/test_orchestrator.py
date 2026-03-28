@@ -14,9 +14,17 @@ from agent_slides.preview.orchestrator import DeckOrchestrator, SYSTEM_PROMPT
 
 def test_orchestrator_system_prompt_references_storytelling_guide() -> None:
     assert "references/storytelling.md" in SYSTEM_PROMPT
+    assert "references/layout-selection.md" in SYSTEM_PROMPT
+    assert "references/chart-guide.md" in SYSTEM_PROMPT
+    assert "references/common-mistakes.md" in SYSTEM_PROMPT
     assert "recommendation-first story" in SYSTEM_PROMPT
     assert "SCQA" in SYSTEM_PROMPT
+    assert "objective and recommendation first" in SYSTEM_PROMPT
     assert "audience, objective, recommendation, scope, and target deck length" in SYSTEM_PROMPT
+    assert "core answer, and 2-4 supporting arguments with slide coverage" in SYSTEM_PROMPT
+    assert "section by section" in SYSTEM_PROMPT
+    assert "Choose layouts isomorphically" in SYSTEM_PROMPT
+    assert "chart clarity" in SYSTEM_PROMPT
 
 
 def test_orchestrator_executes_tool_calls_and_preserves_conversation_history(
