@@ -213,7 +213,7 @@ LAYOUTS: dict[str, LayoutDef] = {
 }
 
 
-def get_layout(name: str) -> LayoutDef:
+def _load_layout(name: str) -> LayoutDef:
     """Return a built-in layout definition by name."""
 
     try:
@@ -227,3 +227,20 @@ def list_layouts() -> list[str]:
     """Return the sorted list of available built-in layouts."""
 
     return sorted(LAYOUTS)
+
+
+def get_slot_names(name: str) -> list[str]:
+    """Return slot names for a built-in layout."""
+
+    layout_loader = get_layout
+    return list(layout_loader(name).slots)
+
+
+def get_text_fitting(name: str, role: str) -> TextFitting:
+    """Return text fitting rules for a built-in layout role."""
+
+    layout_loader = get_layout
+    return layout_loader(name).text_fitting[role]
+
+
+get_layout = _load_layout
