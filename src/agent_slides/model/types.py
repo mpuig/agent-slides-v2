@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from math import isclose
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -12,6 +14,12 @@ from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
 STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
+MAX_IMAGE_SIZE_WARNING_BYTES = 5 * 1024 * 1024
+SUPPORTED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".svg"})
+
+NodeType = Literal["text", "image"]
+ImageFit = Literal["contain", "cover", "stretch"]
+SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 
 
 class AgentSlidesModel(BaseModel):
@@ -36,6 +44,8 @@ class ComputedNode(AgentSlidesModel):
     font_bold: bool = False
     text_overflow: bool = False
     revision: int
+    content_type: NodeType = "text"
+    image_fit: ImageFit = "contain"
 
 
 class TextBlock(AgentSlidesModel):
@@ -87,9 +97,44 @@ class NodeContent(AgentSlidesModel):
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
-    type: Literal["text"]
-    content: NodeContent = Field(default_factory=NodeContent)
+    type: NodeType
+    content: NodeContent | str = Field(default_factory=NodeContent)
+    image_path: str | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_content_by_type(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        node_type = data.get("type", "text")
+        content = data.get("content")
+
+        if node_type == "text":
+            data["content"] = NodeContent.model_validate(content)
+        elif node_type == "image" and (content is None or content == "") and data.get("image_path") is not None:
+            data["content"] = data["image_path"]
+
+        return data
+
+    @model_validator(mode="after")
+    def validate_node_type_specific_fields(self) -> Node:
+        if self.type == "text":
+            if not isinstance(self.content, NodeContent):
+                self.content = NodeContent.model_validate(self.content)
+            if self.image_path is not None:
+                raise ValueError("text nodes cannot define image_path")
+            return self
+
+        if not self.image_path:
+            raise ValueError("image nodes require image_path")
+        if not isinstance(self.content, str):
+            raise ValueError("image nodes must serialize content as a file path string")
+
+        self.image_path = _validate_and_resolve_image_path(self.image_path)
+        return self
 
 
 class Slide(AgentSlidesModel):
@@ -138,7 +183,7 @@ class Theme(AgentSlidesModel):
 class SlotDef(AgentSlidesModel):
     grid_row: int
     grid_col: int | list[int]
-    role: str
+    role: SlotRole
 
 
 class GridDef(AgentSlidesModel):
@@ -172,6 +217,36 @@ class LayoutDef(AgentSlidesModel):
     slots: dict[str, SlotDef]
     grid: GridDef
     text_fitting: dict[str, TextFitting]
+
+
+def _validate_and_resolve_image_path(value: str) -> str:
+    path = Path(value).expanduser()
+    resolved_path = path.resolve(strict=False)
+    suffix = resolved_path.suffix.lower()
+
+    if suffix not in SUPPORTED_IMAGE_EXTENSIONS:
+        supported = ", ".join(sorted(ext.lstrip(".") for ext in SUPPORTED_IMAGE_EXTENSIONS))
+        raise ValueError(f"image_path must use a supported image format: {supported}")
+    if not resolved_path.exists():
+        raise ValueError(f"image_path does not exist: {resolved_path}")
+    if not resolved_path.is_file():
+        raise ValueError(f"image_path must point to a file: {resolved_path}")
+
+    try:
+        with resolved_path.open("rb"):
+            pass
+    except OSError as exc:
+        raise ValueError(f"image_path is not readable: {resolved_path}") from exc
+
+    size_bytes = resolved_path.stat().st_size
+    if size_bytes > MAX_IMAGE_SIZE_WARNING_BYTES:
+        warnings.warn(
+            f"Image file '{resolved_path}' is larger than 5MB and may bloat output decks.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    return str(resolved_path)
 
 
 class Counters(AgentSlidesModel):
