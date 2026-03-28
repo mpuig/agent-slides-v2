@@ -18,6 +18,8 @@ from agent_slides.errors import (
     SCHEMA_ERROR,
 )
 from agent_slides.model import ComputedDeck, Deck
+from agent_slides.model.layouts import BuiltinLayoutProvider, use_layout_provider
+from agent_slides.model.template_layouts import TemplateLayoutRegistry
 
 T = TypeVar("T")
 CURRENT_DECK_VERSION = 2
@@ -210,10 +212,17 @@ def mutate_deck(path: str, fn: Callable[[Deck], T]) -> tuple[Deck, T]:
     from agent_slides.engine.reflow import reflow_deck
 
     deck = read_deck(path)
+    manifest_path = resolve_manifest_path(path, deck)
+    layout_provider = (
+        TemplateLayoutRegistry(manifest_path)
+        if manifest_path is not None
+        else BuiltinLayoutProvider()
+    )
     expected_revision = deck.revision
-    result = fn(deck)
-    deck.bump_revision()
-    reflow_deck(deck)
+    with use_layout_provider(layout_provider):
+        result = fn(deck)
+        deck.bump_revision()
+        reflow_deck(deck, layout_provider=layout_provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 

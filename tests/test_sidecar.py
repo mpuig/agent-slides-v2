@@ -24,7 +24,7 @@ from agent_slides.io.sidecar import (
     write_computed_deck,
     write_deck,
 )
-from agent_slides.model import ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.model import BuiltinLayoutProvider, ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
 
 
 def build_deck(*, revision: int = 2, template_manifest: str | None = None) -> Deck:
@@ -219,9 +219,11 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     write_raw_deck(deck_path, build_deck(revision=2))
 
     reflow_revisions: list[int] = []
+    provider_types: list[type[object]] = []
 
-    def fake_reflow(deck: Deck) -> None:
+    def fake_reflow(deck: Deck, *, layout_provider: object | None = None) -> None:
         reflow_revisions.append(deck.revision)
+        provider_types.append(type(layout_provider))
 
     monkeypatch.setattr("agent_slides.engine.reflow.reflow_deck", fake_reflow)
 
@@ -235,6 +237,7 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     assert updated_deck.revision == 3
     assert updated_deck.theme == "updated"
     assert reflow_revisions == [3]
+    assert provider_types == [BuiltinLayoutProvider]
     assert read_deck(str(deck_path)).theme == "updated"
     assert computed_sidecar_path(deck_path).exists()
 

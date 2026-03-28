@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Protocol, runtime_checkable
+
 from agent_slides.errors import AgentSlidesError, INVALID_LAYOUT
 from agent_slides.model.types import GridDef, LayoutDef, SlotDef, TextFitting
 
@@ -14,6 +18,19 @@ DEFAULT_TEXT_FITTING = {
     "heading": TextFitting(default_size=32.0, min_size=24.0),
     "body": TextFitting(default_size=18.0, min_size=10.0),
 }
+
+
+@runtime_checkable
+class LayoutProvider(Protocol):
+    """Shared layout access protocol for built-in and template-backed layouts."""
+
+    def get_layout(self, slug: str) -> LayoutDef: ...
+
+    def list_layouts(self) -> list[str]: ...
+
+    def get_slot_names(self, slug: str) -> list[str]: ...
+
+    def get_text_fitting(self, slug: str, role: str) -> TextFitting: ...
 
 
 def _grid(*, columns: int, rows: int, row_heights: list[float], col_widths: list[float]) -> GridDef:
@@ -213,17 +230,77 @@ LAYOUTS: dict[str, LayoutDef] = {
 }
 
 
-def get_layout(name: str) -> LayoutDef:
-    """Return a built-in layout definition by name."""
+class BuiltinLayoutProvider:
+    """LayoutProvider backed by the in-repo built-in layout registry."""
 
+    def get_layout(self, slug: str) -> LayoutDef:
+        try:
+            return LAYOUTS[slug]
+        except KeyError as exc:
+            available = ", ".join(self.list_layouts())
+            raise AgentSlidesError(
+                INVALID_LAYOUT,
+                f"Unknown layout '{slug}'. Available layouts: {available}",
+            ) from exc
+
+    def list_layouts(self) -> list[str]:
+        return sorted(LAYOUTS)
+
+    def get_slot_names(self, slug: str) -> list[str]:
+        return list(self.get_layout(slug).slots)
+
+    def get_text_fitting(self, slug: str, role: str) -> TextFitting:
+        layout = self.get_layout(slug)
+        if role in layout.text_fitting:
+            return layout.text_fitting[role]
+        if role == "heading":
+            return DEFAULT_TEXT_FITTING["heading"]
+        return DEFAULT_TEXT_FITTING["body"]
+
+
+_BUILTIN_LAYOUT_PROVIDER = BuiltinLayoutProvider()
+_ACTIVE_LAYOUT_PROVIDER: ContextVar[LayoutProvider | None] = ContextVar(
+    "agent_slides_active_layout_provider",
+    default=None,
+)
+
+
+def current_layout_provider() -> LayoutProvider:
+    """Return the active provider, defaulting to built-in layouts."""
+
+    return _ACTIVE_LAYOUT_PROVIDER.get() or _BUILTIN_LAYOUT_PROVIDER
+
+
+@contextmanager
+def use_layout_provider(provider: LayoutProvider):
+    """Temporarily route layout lookups through the provided registry."""
+
+    token = _ACTIVE_LAYOUT_PROVIDER.set(provider)
     try:
-        return LAYOUTS[name]
-    except KeyError as exc:
-        available = ", ".join(list_layouts())
-        raise AgentSlidesError(INVALID_LAYOUT, f"Unknown layout '{name}'. Available layouts: {available}") from exc
+        yield
+    finally:
+        _ACTIVE_LAYOUT_PROVIDER.reset(token)
+
+
+def get_layout(name: str) -> LayoutDef:
+    """Return a layout definition by name from the active provider."""
+
+    return current_layout_provider().get_layout(name)
 
 
 def list_layouts() -> list[str]:
-    """Return the sorted list of available built-in layouts."""
+    """Return the available layouts from the active provider."""
 
-    return sorted(LAYOUTS)
+    return current_layout_provider().list_layouts()
+
+
+def get_slot_names(name: str) -> list[str]:
+    """Return the slot names for a layout from the active provider."""
+
+    return current_layout_provider().get_slot_names(name)
+
+
+def get_text_fitting(name: str, role: str) -> TextFitting:
+    """Return text fitting rules from the active provider."""
+
+    return current_layout_provider().get_text_fitting(name, role)

@@ -6,8 +6,8 @@ from collections.abc import Iterable
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.text_fit import fit_text
-from agent_slides.model import Deck, LayoutDef, Slide, get_layout
-from agent_slides.model.layouts import SLIDE_HEIGHT_PT, SLIDE_WIDTH_PT
+from agent_slides.model import Deck, LayoutDef, Slide
+from agent_slides.model.layouts import BuiltinLayoutProvider, LayoutProvider, SLIDE_HEIGHT_PT, SLIDE_WIDTH_PT
 from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
 
@@ -35,6 +35,9 @@ def _span_extent(
 
 def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
     slot = layout_def.slots[slot_name]
+    if None not in (slot.x, slot.y, slot.width, slot.height):
+        return float(slot.x), float(slot.y), float(slot.width), float(slot.height)
+
     grid = layout_def.grid
     margin = 0.0 if slot.full_bleed else theme.spacing.margin
     gutter = 0.0 if slot.full_bleed else theme.spacing.gutter
@@ -139,12 +142,13 @@ def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
     _reflow_slide(slide, layout_def, theme, revision=0)
 
 
-def reflow_deck(deck: Deck) -> None:
+def reflow_deck(deck: Deck, *, layout_provider: LayoutProvider | None = None) -> None:
     """Reflow every slide in the deck using the deck theme."""
 
-    theme = load_theme(deck.theme)
+    provider = layout_provider or BuiltinLayoutProvider()
+    theme = getattr(provider, "theme", None) or load_theme(deck.theme)
     for slide in deck.slides:
-        _reflow_slide(slide, get_layout(slide.layout), theme, revision=deck.revision)
+        _reflow_slide(slide, provider.get_layout(slide.layout), theme, revision=deck.revision)
 
 
 def rebind_slots(deck: Deck, slide: Slide, new_layout: LayoutDef) -> list[str]:

@@ -21,7 +21,16 @@ from .types import (
 )
 from agent_slides.model.constraints import Constraint
 from agent_slides.model.design_rules import DesignRules, list_design_rules, load_design_rules
-from agent_slides.model.layouts import get_layout, list_layouts
+from agent_slides.model.layouts import (
+    BuiltinLayoutProvider,
+    LayoutProvider,
+    get_layout,
+    get_slot_names,
+    get_text_fitting,
+    list_layouts,
+    use_layout_provider,
+)
+from agent_slides.model.template_layouts import TemplateLayoutRegistry
 
 __all__ = [
     "ComputedNode",
@@ -33,18 +42,24 @@ __all__ = [
     "DesignRules",
     "GridDef",
     "LayoutDef",
+    "LayoutProvider",
     "Node",
     "NodeContent",
     "Slide",
     "SlotDef",
+    "TemplateLayoutRegistry",
     "TextFitting",
     "TextBlock",
     "Theme",
+    "BuiltinLayoutProvider",
     "ThemeColors",
     "ThemeFonts",
     "ThemeSpacing",
     "get_layout",
+    "get_slot_names",
+    "get_text_fitting",
     "list_design_rules",
     "list_layouts",
     "load_design_rules",
+    "use_layout_provider",
 ]
