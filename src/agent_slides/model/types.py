@@ -29,6 +29,7 @@ ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
 ConstraintWidthMode = Literal["fixed", "equal_share"]
+SlotVerticalAlign = Literal["top", "middle", "bottom"]
 _HEX_COLOR_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
@@ -62,6 +63,15 @@ class AgentSlidesModel(BaseModel):
     )
 
 
+class BlockPosition(AgentSlidesModel):
+    block_index: int
+    x: float
+    y: float
+    width: float
+    height: float
+    font_size_pt: float
+
+
 class ComputedNode(AgentSlidesModel):
     x: float
     y: float
@@ -77,6 +87,7 @@ class ComputedNode(AgentSlidesModel):
     revision: int
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
+    block_positions: list[BlockPosition] = Field(default_factory=list)
 
 
 class TextRun(AgentSlidesModel):
@@ -634,8 +645,9 @@ class SlotDef(AgentSlidesModel):
     max_font: float | None = None
     preferred_font: float | None = None
     text_align: str = "left"
-    vertical_align: str = "top"
+    vertical_align: SlotVerticalAlign = "top"
     full_bleed: bool = False
+    padding: float = 8.0
     x: float | None = None
     y: float | None = None
     width: float | None = None
@@ -650,6 +662,13 @@ class SlotDef(AgentSlidesModel):
     def validate_bg_transparency(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
             raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
+
+    @field_validator("padding")
+    @classmethod
+    def validate_padding(cls, value: float) -> float:
+        if value < 0.0:
+            raise ValueError("padding must be greater than or equal to 0.0")
         return value
 
 
