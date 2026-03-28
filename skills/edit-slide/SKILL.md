@@ -8,6 +8,7 @@ description: Modify an existing agent-slides deck in place. Inspect → smallest
 Use this skill to modify an existing `agent-slides` deck in place. Stay operational: inspect the current deck state, make the smallest mutation that satisfies the request, then validate the result. Do not apply design opinions or rewrite content beyond the requested edit.
 
 In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
+Treat `uv run agent-slides contract` as the canonical command contract instead of inferring semantics from scattered docs or wrappers.
 
 ## When to use it
 

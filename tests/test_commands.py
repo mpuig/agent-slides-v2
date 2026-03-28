@@ -2157,7 +2157,6 @@ def test_preview_command_supports_custom_port_and_no_open(
     }
     assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
 
-
 def test_preview_command_supports_background_mode(
     tmp_path: Path,
     monkeypatch,
@@ -2191,19 +2190,51 @@ def test_preview_command_supports_background_mode(
     os.waitpid(int(payload["data"]["pid"]), 0)
 
 
-def test_preview_command_reports_missing_deck_as_file_not_found(tmp_path: Path) -> None:
+def test_preview_command_waits_for_missing_deck(tmp_path: Path, monkeypatch) -> None:
     missing_path = tmp_path / "missing.json"
+    stop_event = threading.Event()
+    result_box: dict[str, Result] = {}
+    runner = CliRunner()
+    port = find_free_port()
 
-    result = invoke_cli(["preview", str(missing_path), "--no-open"])
+    monkeypatch.setattr(
+        "agent_slides.commands.preview._wait_for_shutdown",
+        lambda: stop_event.wait(timeout=5),
+    )
 
-    assert result.exit_code == 1
-    assert json.loads(result.stderr) == {
-        "ok": False,
-        "error": {
-            "code": FILE_NOT_FOUND,
-            "message": f"Deck file not found: {missing_path}",
-        },
+    def invoke() -> None:
+        result_box["result"] = runner.invoke(
+            cli,
+            ["preview", str(missing_path), "--port", str(port), "--no-open"],
+        )
+
+    thread = threading.Thread(target=invoke, daemon=True)
+    thread.start()
+
+    status, body = wait_for_http(f"http://127.0.0.1:{port}/api/deck")
+    payload = json.loads(body)
+
+    assert status == 200
+    assert payload["status"] == "waiting"
+    assert payload["message"] == "Waiting for deck..."
+    assert payload["slides"] == []
+    assert payload["path"] == str(missing_path.resolve())
+    assert thread.is_alive()
+
+    stop_event.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    result = result_box["result"]
+    lines = [line for line in result.output.strip().splitlines() if line]
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(lines[0])["data"] == {
+        "url": f"http://localhost:{port}",
+        "watching": "missing.json",
     }
+    assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
 
 
 def test_cli_help_does_not_list_chat_command() -> None:
