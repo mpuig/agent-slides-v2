@@ -23,6 +23,9 @@ class AgentSlidesError(Exception):
         self.code = code
         self.message = message
 
+    def __str__(self) -> str:
+        return self.message
+
 
 __all__ = [
     "AgentSlidesError",

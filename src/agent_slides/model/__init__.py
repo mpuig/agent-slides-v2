@@ -1,1 +1,33 @@
-"""Scene graph model package."""
+"""Scene-graph model exports."""
+
+from agent_slides.model.types import (
+    ComputedNode,
+    Counters,
+    Deck,
+    GridDef,
+    LayoutDef,
+    Node,
+    Slide,
+    SlotDef,
+    TextFitting,
+    Theme,
+    ThemeColors,
+    ThemeFonts,
+    ThemeSpacing,
+)
+
+__all__ = [
+    "ComputedNode",
+    "Counters",
+    "Deck",
+    "GridDef",
+    "LayoutDef",
+    "Node",
+    "Slide",
+    "SlotDef",
+    "TextFitting",
+    "Theme",
+    "ThemeColors",
+    "ThemeFonts",
+    "ThemeSpacing",
+]
