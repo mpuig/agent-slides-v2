@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-slides"
+version = "0.1.0"
+description = "CLI for semantic slide operations and PPTX generation."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "click>=8.1",
+  "python-pptx>=1.0.2",
+  "pydantic>=2.0",
+]
+
+[project.scripts]
+agent-slides = "agent_slides.cli:cli"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_slides"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
