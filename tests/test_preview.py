@@ -9,7 +9,7 @@ from pathlib import Path
 from websockets.asyncio.client import connect
 
 from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
-from agent_slides.preview import client_html_path, read_client_html
+from agent_slides.preview import chat_html_path, client_html_path, read_chat_html, read_client_html
 from agent_slides.preview.server import PreviewServer
 from agent_slides.preview.watcher import SidecarWatcher
 from tests.image_helpers import write_png
@@ -148,10 +148,15 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
         try:
             html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
+            chat_html = await asyncio.to_thread(_fetch_text, f"{server.origin}/chat")
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
             assert "<svg" in html
+            assert "<svg" in chat_html
             assert 'id="prev-slide"' in html
+            assert 'id="chat-messages"' in chat_html
+            assert 'id="build-button"' in chat_html
+            assert "/chat/ws" in chat_html
             assert 'id="next-slide"' in html
             assert 'id="slide-dots"' in html
             assert 'id="slide-count"' in html
@@ -224,6 +229,20 @@ def test_client_html_is_packaged_and_self_contained() -> None:
     assert parser.inline_style_count >= 1
 
 
+def test_chat_html_is_packaged_and_self_contained() -> None:
+    html_path = chat_html_path()
+    parser = InlineAssetParser()
+    payload = read_chat_html()
+    parser.feed(payload)
+
+    assert html_path.name == "chat.html"
+    assert html_path.exists()
+    assert parser.script_srcs == []
+    assert parser.stylesheet_hrefs == []
+    assert parser.inline_script_count >= 1
+    assert parser.inline_style_count >= 1
+
+
 def test_client_html_contains_required_preview_surface() -> None:
     payload = read_client_html()
 
@@ -241,6 +260,27 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert "preserveAspectRatio" in payload
 
 
+def test_chat_html_contains_required_chat_surface() -> None:
+    payload = read_chat_html()
+
+    assert 'id="chat-messages"' in payload
+    assert 'id="chat-input"' in payload
+    assert 'id="send-button"' in payload
+    assert 'id="build-button"' in payload
+    assert 'id="download-link"' in payload
+    assert 'id="typing-indicator"' in payload
+    assert 'id="chat-status-dot"' in payload
+    assert 'id="preview-status-dot"' in payload
+    assert "/chat/ws" in payload
+    assert '"user_message"' in payload
+    assert "setTimeout" in payload
+    assert "showDownloadLink" in payload
+    assert "Reconnecting in" in payload
+    assert "ArrowLeft" in payload
+    assert "ArrowRight" in payload
+    assert "preserveAspectRatio" in payload
+
+
 def test_client_html_wraps_text_and_renders_structured_content() -> None:
     payload = read_client_html()
 
@@ -250,6 +290,17 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert 'split(/\\r?\\n/)' in payload
     assert 'block?.type === "bullet"' in payload
     assert "createElementNS" in payload
+    assert 'createSvgElement("tspan")' in payload
+    assert 'createSvgElement("rect")' in payload
+    assert "currentSlideIndex" in payload
+
+
+def test_chat_html_reuses_preview_rendering_logic() -> None:
+    payload = read_chat_html()
+
+    assert "wrapText" in payload
+    assert "breakLongWord" in payload
+    assert "nodeLines" in payload
     assert 'createSvgElement("tspan")' in payload
     assert 'createSvgElement("rect")' in payload
     assert "currentSlideIndex" in payload

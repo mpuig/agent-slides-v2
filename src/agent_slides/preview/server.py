@@ -26,6 +26,9 @@ LOGGER = logging.getLogger(__name__)
 CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
     encoding="utf-8"
 )
+CHAT_HTML = resources.files("agent_slides.preview").joinpath("chat.html").read_text(
+    encoding="utf-8"
+)
 
 
 class PreviewServer:
@@ -147,8 +150,13 @@ class PreviewServer:
         if request.path == "/ws":
             return None
 
-        if request.path == "/":
+        if request.path in {"/", "/client.html"}:
             response = connection.respond(HTTPStatus.OK, CLIENT_HTML)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+
+        if request.path in {"/chat", "/chat.html"}:
+            response = connection.respond(HTTPStatus.OK, CHAT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
 

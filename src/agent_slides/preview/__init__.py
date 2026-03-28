@@ -15,16 +15,30 @@ def client_html_path() -> Path:
     return Path(str(files("agent_slides.preview").joinpath("client.html")))
 
 
+def chat_html_path() -> Path:
+    """Return the packaged preview chat HTML path."""
+
+    return Path(str(files("agent_slides.preview").joinpath("chat.html")))
+
+
 def read_client_html() -> str:
     """Read the packaged preview client HTML."""
 
     return client_html_path().read_text(encoding="utf-8")
 
 
+def read_chat_html() -> str:
+    """Read the packaged preview chat HTML."""
+
+    return chat_html_path().read_text(encoding="utf-8")
+
+
 __all__ = [
     "PreviewServer",
     "SidecarWatcher",
+    "chat_html_path",
     "client_html_path",
+    "read_chat_html",
     "read_client_html",
     "run_preview_server",
 ]
