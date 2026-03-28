@@ -92,6 +92,24 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
 
         slot = layout_def.slots[node.slot_binding]
         x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding, theme)
+        if node.type == "chart":
+            computed[node.node_id] = ComputedNode(
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                font_size_pt=0.0,
+                font_family=theme.fonts.body,
+                color=theme.colors.text,
+                bg_color=None,
+                bg_transparency=0.0,
+                font_bold=False,
+                text_overflow=False,
+                revision=revision,
+                content_type="chart",
+            )
+            continue
+
         if slot.role == "image" or node.type == "image":
             image_fit = "stretch" if slot.full_bleed and node.image_fit == "contain" else node.image_fit
             computed[node.node_id] = ComputedNode(
