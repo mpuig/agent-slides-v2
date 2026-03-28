@@ -16,6 +16,7 @@ from agent_slides.commands.learn import learn_command
 from agent_slides.commands.preview import preview_command
 from agent_slides.commands.slide import slide
 from agent_slides.commands.slot import slot
+from agent_slides.commands.suggest_layout import suggest_layout_command
 from agent_slides.commands.theme import theme
 from agent_slides.commands.validate_cmd import validate_command
 from agent_slides.errors import AgentSlidesError
@@ -61,6 +62,7 @@ cli.add_command(info_command)
 cli.add_command(learn_command)
 cli.add_command(inspect_command)
 cli.add_command(build_command)
+cli.add_command(suggest_layout_command, name="suggest-layout")
 cli.add_command(preview_command, name="preview")
 cli.add_command(validate_command, name="validate")
 cli.add_command(info_command, name="info")
