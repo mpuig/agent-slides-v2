@@ -11,7 +11,7 @@ from agent_slides.commands.mutations import apply_mutation
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
 from agent_slides.model.layout_provider import LayoutProvider
-from agent_slides.model import Deck
+from agent_slides.model import Deck, NodeContent
 
 
 def _emit_json(payload: dict[str, object]) -> None:
@@ -39,22 +39,47 @@ def _resolve_cli_image_path(deck_path: Path, image_path: str | None) -> str | No
     return normalized
 
 
+def _parse_content_json(raw: str) -> dict[str, object]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Invalid JSON for '--content': {exc.msg} at line {exc.lineno} column {exc.colno}",
+        ) from exc
+
+    try:
+        return NodeContent.model_validate(payload).model_dump(mode="json")
+    except Exception as exc:
+        raise AgentSlidesError(SCHEMA_ERROR, "Argument '--content' must be valid structured text") from exc
+
+
 @slot.command("set")
 @click.argument("path")
 @click.option("--slide", "slide_ref", required=True)
 @click.option("--slot", "slot_name", required=True)
 @click.option("--text")
+@click.option("--content", "content_json")
 @click.option("--image")
-def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str | None, image: str | None) -> None:
-    """Set text or image content for a slot on a slide."""
+def set_slot_command(
+    path: str,
+    slide_ref: str,
+    slot_name: str,
+    text: str | None,
+    content_json: str | None,
+    image: str | None,
+) -> None:
+    """Set text, structured content, or image content for a slot on a slide."""
 
-    if (text is None) == (image is None):
+    provided_count = sum(value is not None for value in (text, content_json, image))
+    if provided_count != 1:
         raise AgentSlidesError(
             SCHEMA_ERROR,
-            "Options '--text' and '--image' are mutually exclusive; provide exactly one",
+            "Options '--text', '--content', and '--image' are mutually exclusive; provide exactly one",
         )
 
     image_path = _resolve_cli_image_path(Path(path), image)
+    content = _parse_content_json(content_json) if content_json is not None else None
 
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         args: dict[str, object] = {
@@ -63,6 +88,8 @@ def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str | None
         }
         if text is not None:
             args["text"] = text
+        if content is not None:
+            args["content"] = content
         if image_path is not None:
             args["image"] = image_path
 

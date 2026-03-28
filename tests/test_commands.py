@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
 
@@ -698,6 +699,113 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
     assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
 
 
+def test_slot_set_accepts_structured_content_json(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "left",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Highlights"},
+                        {"type": "bullet", "text": "Point one"},
+                        {"type": "bullet", "text": "Point two", "level": 1},
+                    ]
+                }
+            ),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "col1",
+            "node_id": "n-2",
+            "type": "text",
+            "text": "Highlights\nPoint one\nPoint two",
+            "content": {
+                "blocks": [
+                    {"type": "heading", "text": "Highlights", "level": 0},
+                    {"type": "bullet", "text": "Point one", "level": 0},
+                    {"type": "bullet", "text": "Point two", "level": 1},
+                ]
+            },
+            "image_path": None,
+            "image_fit": "contain",
+            "font_size": None,
+        },
+    }
+    assert updated.slides[0].nodes[1].slot_binding == "col1"
+    assert updated.slides[0].nodes[1].content.model_dump(mode="json") == {
+        "blocks": [
+            {"type": "heading", "text": "Highlights", "level": 0},
+            {"type": "bullet", "text": "Point one", "level": 0},
+            {"type": "bullet", "text": "Point two", "level": 1},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("args",),
+    [
+        (
+            [
+                "--text",
+                "Hello",
+                "--content",
+                json.dumps({"blocks": [{"type": "paragraph", "text": "Intro"}]}),
+            ],
+        ),
+        (
+            [
+                "--text",
+                "Hello",
+                "--image",
+                "photo.png",
+            ],
+        ),
+        (
+            [
+                "--content",
+                json.dumps({"blocks": [{"type": "paragraph", "text": "Intro"}]}),
+                "--image",
+                "photo.png",
+            ],
+        ),
+    ],
+)
+def test_slot_set_rejects_mutually_exclusive_content_options(tmp_path: Path, args: list[str]) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_png(tmp_path / "photo.png", width=12, height=12)
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(["slot", "set", str(deck_path), "--slide", "0", "--slot", "body", *args])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"] == {
+        "code": SCHEMA_ERROR,
+        "message": "Options '--text', '--content', and '--image' are mutually exclusive; provide exactly one",
+    }
+
+
 def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     image_path = write_png(tmp_path / "photo.png", width=30, height=20)
@@ -732,34 +840,6 @@ def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
     body_node = next(node for node in updated.slides[0].nodes if node.slot_binding == "body")
     assert body_node.type == "image"
     assert body_node.image_path == "photo.png"
-
-
-def test_slot_set_rejects_mutually_exclusive_text_and_image_options(tmp_path: Path) -> None:
-    deck_path = tmp_path / "deck.json"
-    image_path = write_png(tmp_path / "photo.png", width=12, height=12)
-    write_deck(deck_path, make_empty_deck())
-
-    result = invoke_cli(
-        [
-            "slot",
-            "set",
-            str(deck_path),
-            "--slide",
-            "0",
-            "--slot",
-            "body",
-            "--text",
-            "Hello",
-            "--image",
-            str(image_path),
-        ]
-    )
-
-    assert result.exit_code == 1
-    assert json.loads(result.stderr)["error"] == {
-        "code": SCHEMA_ERROR,
-        "message": "Options '--text' and '--image' are mutually exclusive; provide exactly one",
-    }
 
 
 def test_slot_set_rejects_missing_image_path(tmp_path: Path) -> None:
