@@ -127,6 +127,13 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
             assert "<svg" in html
+            assert 'id="prev-slide"' in html
+            assert 'id="next-slide"' in html
+            assert 'id="slide-dots"' in html
+            assert 'id="slide-count"' in html
+            assert 'id="status-dot"' in html
+            assert "wrapText" in html
+            assert "preserveAspectRatio" in html
             assert payload["revision"] == 1
 
             async with (
