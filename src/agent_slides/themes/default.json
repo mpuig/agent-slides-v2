@@ -1,0 +1,21 @@
+{
+  "name": "default",
+  "colors": {
+    "primary": "#1a1a2e",
+    "secondary": "#16213e",
+    "accent": "#0f3460",
+    "background": "#ffffff",
+    "text": "#333333",
+    "heading_text": "#1a1a2e",
+    "subtle_text": "#666666"
+  },
+  "fonts": {
+    "heading": "Calibri",
+    "body": "Calibri"
+  },
+  "spacing": {
+    "base_unit": 10,
+    "margin": 60,
+    "gutter": 20
+  }
+}
