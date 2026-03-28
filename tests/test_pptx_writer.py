@@ -12,7 +12,7 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
 from pptx.util import Inches, Pt
 
 from agent_slides.engine.reflow import reflow_deck
@@ -33,6 +33,7 @@ from agent_slides.model.types import (
     ScatterPoint,
     ScatterSeries,
     Slide,
+    TableSpec,
     TextBlock,
 )
 from tests.image_helpers import write_png
@@ -162,6 +163,10 @@ def chart_computed(
 
 def first_chart_shape(presentation: Presentation):
     return next(shape for shape in presentation.slides[0].shapes if shape.shape_type == MSO_SHAPE_TYPE.CHART)
+
+
+def first_table_shape(presentation: Presentation):
+    return next(shape for shape in presentation.slides[0].shapes if shape.shape_type == MSO_SHAPE_TYPE.TABLE)
 
 
 def read_chart_xml(path: Path, *, index: int = 1) -> ET.Element:
@@ -361,6 +366,72 @@ def test_write_pptx_renders_native_scatter_chart_with_read_back_data(tmp_path: P
         "2.3",
         "1.8",
     ]
+
+
+def test_write_pptx_renders_native_table_with_alignment_and_striping(tmp_path: Path) -> None:
+    output_path = tmp_path / "table.pptx"
+    deck = Deck(
+        deck_id="deck-table",
+        theme="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="content",
+                nodes=[
+                    Node(
+                        node_id="n-table",
+                        slot_binding="body",
+                        type="table",
+                        table_spec=TableSpec(
+                            headers=["Metric", "Q1", "Q2"],
+                            rows=[
+                                ["Revenue", "$100K", "$150K"],
+                                ["Users", "1000", "1500"],
+                            ],
+                            header_color="#1F4E79",
+                            stripe=True,
+                        ),
+                    )
+                ],
+                computed={
+                    "n-table": ComputedNode(
+                        x=72.0,
+                        y=108.0,
+                        width=576.0,
+                        height=216.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color="#FFFFFF",
+                        font_bold=False,
+                        revision=1,
+                        content_type="table",
+                    )
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    table_shape = first_table_shape(presentation)
+    table = table_shape.table
+
+    assert table_shape.left == int(72.0 * EMU_PER_POINT)
+    assert table_shape.top == int(108.0 * EMU_PER_POINT)
+    assert table_shape.width == int(576.0 * EMU_PER_POINT)
+    assert table_shape.height == int(216.0 * EMU_PER_POINT)
+    assert table.cell(0, 0).text == "Metric"
+    assert table.cell(1, 0).text == "Revenue"
+    assert table.columns[0].width > table.columns[1].width
+    assert table.cell(0, 0).text_frame.paragraphs[0].alignment == PP_ALIGN.CENTER
+    assert table.cell(1, 0).text_frame.paragraphs[0].alignment == PP_ALIGN.LEFT
+    assert table.cell(1, 1).text_frame.paragraphs[0].alignment == PP_ALIGN.RIGHT
+    assert table.cell(0, 0).fill.fore_color.rgb == RGBColor.from_string("1F4E79")
+    assert table.cell(0, 0).text_frame.paragraphs[0].runs[0].font.bold is True
+    assert table.cell(2, 0).fill.fore_color.rgb != table.cell(1, 0).fill.fore_color.rgb
 
 
 def test_write_pptx_renders_expected_slides_and_shapes(tmp_path: Path) -> None:

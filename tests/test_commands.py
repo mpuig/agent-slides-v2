@@ -92,6 +92,16 @@ def make_bar_chart_data(*, values: list[float] | None = None) -> dict[str, objec
     }
 
 
+def make_table_data() -> dict[str, object]:
+    return {
+        "headers": ["Metric", "Q1", "Q2"],
+        "rows": [
+            ["Revenue", "$100K", "$150K"],
+            ["Users", "1000", "1500"],
+        ],
+    }
+
+
 def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
     runner = CliRunner()
     return runner.invoke(cli, args, input=input)
@@ -1186,6 +1196,49 @@ def test_chart_add_invalid_chart_data_returns_json_error(tmp_path: Path) -> None
     ]
 
 
+def test_table_add_creates_table_node_with_inline_data(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "table",
+            "add",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "body",
+            "--data",
+            json.dumps(make_table_data()),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    table_node = updated.slides[0].nodes[1]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "body",
+            "node_id": "n-2",
+            "column_count": 3,
+            "row_count": 2,
+        },
+    }
+    assert table_node.type == "table"
+    assert table_node.table_spec is not None
+    assert table_node.table_spec.headers == ["Metric", "Q1", "Q2"]
+    assert table_node.table_spec.rows[1] == ["Users", "1000", "1500"]
+
+
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
@@ -1717,6 +1770,44 @@ def test_batch_supports_chart_add_and_chart_update(tmp_path: Path) -> None:
     assert chart_node.chart_spec.categories == ["Q1", "Q2", "Q3"]
     assert chart_node.chart_spec.series is not None
     assert chart_node.chart_spec.series[0].values == [8.0, 13.0, 21.0]
+
+
+def test_batch_supports_table_add(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title_content"}},
+                {
+                    "command": "table_add",
+                    "args": {
+                        "slide": 0,
+                        "slot": "body",
+                        "data": make_table_data(),
+                    },
+                },
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 2
+    assert payload["data"]["results"][1] == {
+        "slide_id": "s-1",
+        "slot": "body",
+        "node_id": "n-2",
+        "column_count": 3,
+        "row_count": 2,
+    }
+
+    table_node = read_deck(str(deck_path)).slides[0].nodes[1]
+    assert table_node.type == "table"
+    assert table_node.table_spec is not None
+    assert table_node.table_spec.resolved_col_align() == ["left", "right", "right"]
 
 
 def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:
