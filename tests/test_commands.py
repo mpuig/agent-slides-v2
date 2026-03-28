@@ -425,6 +425,92 @@ def test_theme_apply_changes_subsequent_build_output(tmp_path: Path) -> None:
     assert updated_build.exit_code == 0
     assert render_slide_signature(default_output) != render_slide_signature(corporate_output)
 
+
+def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title", ["heading", "subheading"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "title", "--text", "New Title"]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "heading",
+            "node_id": "n-1",
+            "text": "New Title",
+            "font_size": None,
+        },
+    }
+    assert updated.slides[0].nodes[0].content == "New Title"
+
+
+def test_slot_clear_removes_bound_nodes(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "two_col", ["heading", "col1", "col2"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(["slot", "clear", str(deck_path), "--slide", "0", "--slot", "right"])
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "col2",
+            "removed_node_ids": ["n-3"],
+        },
+    }
+    assert [node.slot_binding for node in updated.slides[0].nodes] == ["heading", "col1"]
+
+
+def test_slot_bind_rebinds_existing_node_to_valid_slot(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title",
+                nodes=[Node(node_id="n-1", slot_binding=None, type="text", content="Loose title")],
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(["slot", "bind", str(deck_path), "--node", "n-1", "--slot", "title"])
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "heading",
+            "node_id": "n-1",
+        },
+    }
+    assert updated.slides[0].nodes[0].slot_binding == "heading"
+
+
 def test_slide_add_creates_layout_bound_nodes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
