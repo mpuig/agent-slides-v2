@@ -389,33 +389,95 @@
           .trim();
       };
 
+      const blockRuns = (block) => {
+        if (!Array.isArray(block?.runs) || block.runs.length === 0) {
+          return [{ text: String(block?.text ?? "") }];
+        }
+
+        return block.runs.map((run) => ({
+          text: String(run?.text ?? ""),
+          bold: run?.bold === true ? true : null,
+          italic: run?.italic === true ? true : null,
+          color: typeof run?.color === "string" ? run.color : null,
+          font_size: Number.isFinite(Number(run?.font_size)) ? Number(run.font_size) : null,
+          underline: run?.underline === true,
+          strikethrough: run?.strikethrough === true,
+        }));
+      };
+
+      const splitRunsByLine = (block) => {
+        const lines = [[]];
+        for (const run of blockRuns(block)) {
+          const parts = String(run.text ?? "").split(/\r?\n/);
+          parts.forEach((part, index) => {
+            if (part || lines[lines.length - 1].length === 0) {
+              lines[lines.length - 1].push({ ...run, text: part });
+            }
+            if (index < parts.length - 1) {
+              lines.push([]);
+            }
+          });
+        }
+        return lines.length > 0 ? lines : [[{ text: "" }]];
+      };
+
       const nodeLines = (node) => {
         const blocks = node?.content?.blocks;
         if (!Array.isArray(blocks)) {
           const plain = typeof node?.content === "string" ? node.content : "";
           return String(plain)
             .split(/\r?\n/)
-            .map((text) => ({ text, level: 0 }));
+            .map((text) => ({ text, level: 0, runs: [{ text }] }));
         }
 
         const lines = [];
         for (const block of blocks) {
-          const parts = String(block?.text ?? "").split(/\r?\n/);
           const level = Number(block?.level ?? 0);
-          const prefix = block?.type === "bullet" ? "\u2022 " : "";
-          for (const part of parts) {
-            lines.push({ text: `${prefix}${part}`, level });
+          const prefix = block?.type === "bullet" ? [{ text: "\u2022 " }] : [];
+          for (const lineRuns of splitRunsByLine(block)) {
+            const runs = [...prefix, ...lineRuns];
+            lines.push({
+              text: runs.map((run) => run.text ?? "").join(""),
+              level,
+              runs,
+            });
           }
         }
-        return lines.length > 0 ? lines : [{ text: "", level: 0 }];
+        return lines.length > 0 ? lines : [{ text: "", level: 0, runs: [{ text: "" }] }];
       };
 
-      const measureWidth = (text, fontFamily, fontSize, fontWeight) => {
+      const measureWidth = (text, fontFamily, fontSize, fontWeight, fontStyle = "normal") => {
         if (!measureContext) {
           return text.length * fontSize * 0.55;
         }
-        measureContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        measureContext.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
         return measureContext.measureText(text).width;
+      };
+
+      const runFontSize = (run, baseFontSize) => Number(run?.font_size) || baseFontSize;
+
+      const runFontWeight = (run, baseFontWeight) => (run?.bold === true ? 700 : baseFontWeight);
+
+      const runFontStyle = (run) => (run?.italic === true ? "italic" : "normal");
+
+      const measureRunWidth = (run, fontFamily, baseFontSize, baseFontWeight) =>
+        measureWidth(
+          run?.text ?? "",
+          fontFamily,
+          runFontSize(run, baseFontSize),
+          runFontWeight(run, baseFontWeight),
+          runFontStyle(run),
+        );
+
+      const tokenizeRuns = (runs) => {
+        const tokens = [];
+        for (const run of runs) {
+          const parts = String(run?.text ?? "").match(/\s+|\S+/g) ?? [String(run?.text ?? "")];
+          for (const part of parts) {
+            tokens.push({ ...run, text: part });
+          }
+        }
+        return tokens;
       };
 
       const breakLongWord = (word, maxWidth, fontFamily, fontSize, fontWeight) => {
@@ -439,44 +501,93 @@
         return parts;
       };
 
-      const wrapText = (text, maxWidth, fontFamily, fontSize, fontWeight) => {
-        if (!text) {
-          return [""];
-        }
-
-        if (maxWidth <= 0 || measureWidth(text, fontFamily, fontSize, fontWeight) <= maxWidth) {
-          return [text];
-        }
-
-        const words = text.split(/\s+/).filter(Boolean);
-        if (words.length === 0) {
-          return [text];
-        }
-
-        const lines = [];
+      const breakStyledToken = (run, maxWidth, fontFamily, baseFontSize, baseFontWeight) => {
+        const parts = [];
         let current = "";
 
-        for (const word of words) {
-          if (measureWidth(word, fontFamily, fontSize, fontWeight) > maxWidth) {
-            if (current) {
-              lines.push(current);
-              current = "";
-            }
-            lines.push(...breakLongWord(word, maxWidth, fontFamily, fontSize, fontWeight));
-            continue;
-          }
-
-          const candidate = current ? `${current} ${word}` : word;
-          if (measureWidth(candidate, fontFamily, fontSize, fontWeight) <= maxWidth) {
-            current = candidate;
+        for (const character of String(run?.text ?? "")) {
+          const candidate = `${current}${character}`;
+          if (
+            current &&
+            measureRunWidth({ ...run, text: candidate }, fontFamily, baseFontSize, baseFontWeight) > maxWidth
+          ) {
+            parts.push({ ...run, text: current });
+            current = character;
           } else {
-            lines.push(current);
-            current = word;
+            current = candidate;
           }
         }
 
         if (current) {
-          lines.push(current);
+          parts.push({ ...run, text: current });
+        }
+
+        return parts.length > 0 ? parts : [{ ...run, text: "" }];
+      };
+
+      const wrapText = (text, maxWidth, fontFamily, fontSize, fontWeight) => {
+        return wrapTextRuns([{ text }], maxWidth, fontFamily, fontSize, fontWeight).map((line) =>
+          line.map((segment) => segment.text ?? "").join(""),
+        );
+      };
+
+      const wrapTextRuns = (runs, maxWidth, fontFamily, baseFontSize, baseFontWeight) => {
+        if (!Array.isArray(runs) || runs.length === 0) {
+          return [[{ text: "" }]];
+        }
+
+        if (maxWidth <= 0) {
+          return [runs];
+        }
+
+        const tokens = tokenizeRuns(runs);
+        const lines = [];
+        let current = [];
+        let currentWidth = 0;
+
+        const finishLine = () => {
+          while (current.length > 0 && /^\s+$/.test(current[current.length - 1].text ?? "")) {
+            current.pop();
+          }
+          lines.push(current.length > 0 ? current : [{ text: "" }]);
+          current = [];
+          currentWidth = 0;
+        };
+
+        for (const token of tokens) {
+          if (/^\s+$/.test(token.text ?? "") && current.length === 0) {
+            continue;
+          }
+
+          const tokenWidth = measureRunWidth(token, fontFamily, baseFontSize, baseFontWeight);
+          if (tokenWidth > maxWidth && !/^\s+$/.test(token.text ?? "")) {
+            if (current.length > 0) {
+              finishLine();
+            }
+            for (const chunk of breakStyledToken(token, maxWidth, fontFamily, baseFontSize, baseFontWeight)) {
+              const chunkWidth = measureRunWidth(chunk, fontFamily, baseFontSize, baseFontWeight);
+              if (current.length > 0 && currentWidth + chunkWidth > maxWidth) {
+                finishLine();
+              }
+              current.push(chunk);
+              currentWidth += chunkWidth;
+            }
+            continue;
+          }
+
+          if (current.length > 0 && currentWidth + tokenWidth > maxWidth) {
+            finishLine();
+            if (/^\s+$/.test(token.text ?? "")) {
+              continue;
+            }
+          }
+
+          current.push(token);
+          currentWidth += tokenWidth;
+        }
+
+        if (current.length > 0 || lines.length === 0) {
+          finishLine();
         }
 
         return lines;
@@ -1088,38 +1199,28 @@
         stage.appendChild(shape);
       };
 
-      const renderTextNode = (node, computed) => {
-        if (computed.bg_color) {
-          const box = createSvgElement("rect");
-          box.setAttribute("x", `${computed.x}`);
-          box.setAttribute("y", `${computed.y}`);
-          box.setAttribute("width", `${computed.width}`);
-          box.setAttribute("height", `${computed.height}`);
-          box.setAttribute("fill", computed.bg_color);
-          box.setAttribute("fill-opacity", `${1 - Number(computed.bg_transparency ?? 0)}`);
-          stage.appendChild(box);
-        }
-
+      const renderTextBlock = ({ block, bounds, fontFamily, color, fontBold }) => {
         const text = createSvgElement("text");
-        const fontSize = Number(computed.font_size_pt ?? 18);
-        const fontFamily = computed.font_family || "Aptos";
-        const fontWeight = computed.font_bold ? 700 : 400;
-        const lineHeight = fontSize * 1.25;
+        const fontSize = Number(bounds.font_size_pt ?? 18);
+        const isHeading = block?.type === "heading";
+        const fontWeight = fontBold || isHeading ? 700 : 400;
+        const lineHeight = fontSize * (isHeading ? 1.1 : 1.25);
         const indentSize = fontSize * 1.2;
-        const maxLines = Math.max(1, Math.floor(Number(computed.height ?? lineHeight) / lineHeight));
+        const maxLines = Math.max(1, Math.floor(Number(bounds.height ?? lineHeight) / lineHeight));
+        const lines = nodeLines({ content: { blocks: [block] } });
 
-        text.setAttribute("x", `${computed.x}`);
-        text.setAttribute("y", `${computed.y + fontSize}`);
+        text.setAttribute("x", `${bounds.x}`);
+        text.setAttribute("y", `${Number(bounds.y) + fontSize}`);
         text.setAttribute("font-size", `${fontSize}`);
         text.setAttribute("font-family", fontFamily);
         text.setAttribute("font-weight", `${fontWeight}`);
-        text.setAttribute("fill", computed.color || "#1f1e1a");
+        text.setAttribute("fill", color || "#1f1e1a");
 
         let lineIndex = 0;
-        for (const line of nodeLines(node)) {
+        for (const line of lines) {
           const level = Math.max(0, Number(line.level ?? 0));
-          const startX = Number(computed.x) + (level * indentSize);
-          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize));
+          const startX = Number(bounds.x) + (level * indentSize);
+          const availableWidth = Math.max(24, Number(bounds.width) - (level * indentSize));
           const wrapped = wrapText(line.text, availableWidth, fontFamily, fontSize, fontWeight);
 
           for (const segment of wrapped) {
@@ -1136,6 +1237,104 @@
           }
 
           if (lineIndex >= maxLines) {
+            break;
+          }
+        }
+
+        stage.appendChild(text);
+      };
+
+      const renderTextNode = (node, computed) => {
+        if (computed.bg_color) {
+          const box = createSvgElement("rect");
+          box.setAttribute("x", `${computed.x}`);
+          box.setAttribute("y", `${computed.y}`);
+          box.setAttribute("width", `${computed.width}`);
+          box.setAttribute("height", `${computed.height}`);
+          box.setAttribute("fill", computed.bg_color);
+          box.setAttribute("fill-opacity", `${1 - Number(computed.bg_transparency ?? 0)}`);
+          stage.appendChild(box);
+        }
+
+        const blocks = Array.isArray(node?.content?.blocks) ? node.content.blocks : [];
+        const blockPositions = Array.isArray(computed.block_positions) ? computed.block_positions : [];
+        if (blocks.length > 0 && blockPositions.length > 0) {
+          const positionsByIndex = new Map(blockPositions.map((position) => [Number(position.block_index), position]));
+          blocks.forEach((block, index) => {
+            const bounds = positionsByIndex.get(index);
+            if (!bounds) {
+              return;
+            }
+            renderTextBlock({
+              block,
+              bounds,
+              fontFamily: computed.font_family || "Aptos",
+              color: computed.color || "#1f1e1a",
+              fontBold: Boolean(computed.font_bold),
+            });
+          });
+          return;
+        }
+
+        const text = createSvgElement("text");
+        const fontSize = Number(computed.font_size_pt ?? 18);
+        const fontFamily = computed.font_family || "Aptos";
+        const fontWeight = computed.font_bold ? 700 : 400;
+        const indentSize = fontSize * 1.2;
+
+        text.setAttribute("x", `${computed.x}`);
+        text.setAttribute("y", `${computed.y + fontSize}`);
+        text.setAttribute("font-size", `${fontSize}`);
+        text.setAttribute("font-family", fontFamily);
+        text.setAttribute("font-weight", `${fontWeight}`);
+        text.setAttribute("fill", computed.color || "#1f1e1a");
+        text.setAttribute("xml:space", "preserve");
+
+        let usedHeight = 0;
+        let firstVisualLine = true;
+        for (const line of nodeLines(node)) {
+          const level = Math.max(0, Number(line.level ?? 0));
+          const startX = Number(computed.x) + (level * indentSize);
+          const availableWidth = Math.max(24, Number(computed.width) - (level * indentSize));
+          const wrapped = wrapTextRuns(line.runs ?? [{ text: line.text ?? "" }], availableWidth, fontFamily, fontSize, fontWeight);
+
+          for (const segments of wrapped) {
+            const lineHeight = Math.max(
+              ...segments.map((segment) => runFontSize(segment, fontSize) * 1.25),
+              fontSize * 1.25,
+            );
+            if (usedHeight + lineHeight > Math.max(Number(computed.height ?? lineHeight), lineHeight)) {
+              break;
+            }
+
+            segments.forEach((segment, index) => {
+              const tspan = createSvgElement("tspan");
+              if (index === 0) {
+                tspan.setAttribute("x", `${startX}`);
+                tspan.setAttribute("dy", firstVisualLine ? "0" : `${lineHeight}`);
+              }
+              tspan.setAttribute("font-size", `${runFontSize(segment, fontSize)}`);
+              tspan.setAttribute("font-weight", `${runFontWeight(segment, fontWeight)}`);
+              tspan.setAttribute("font-style", runFontStyle(segment));
+              tspan.setAttribute("fill", segment.color || computed.color || "#1f1e1a");
+              const decorations = [];
+              if (segment.underline) {
+                decorations.push("underline");
+              }
+              if (segment.strikethrough) {
+                decorations.push("line-through");
+              }
+              if (decorations.length > 0) {
+                tspan.setAttribute("text-decoration", decorations.join(" "));
+              }
+              tspan.textContent = segment.text || " ";
+              text.appendChild(tspan);
+            });
+            usedHeight += lineHeight;
+            firstVisualLine = false;
+          }
+
+          if (usedHeight >= Number(computed.height ?? usedHeight)) {
             break;
           }
         }

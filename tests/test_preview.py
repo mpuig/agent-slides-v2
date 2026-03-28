@@ -753,10 +753,14 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     payload = read_client_html()
 
     assert "wrapText" in payload
+    assert "wrapTextRuns" in payload
     assert "breakLongWord" in payload
+    assert "blockRuns" in payload
+    assert "splitRunsByLine" in payload
     assert "nodeLines" in payload
     assert 'split(/\\r?\\n/)' in payload
     assert 'block?.type === "bullet"' in payload
+    assert '"text-decoration"' in payload
     assert "createElementNS" in payload
     assert 'createSvgElement("tspan")' in payload
     assert 'createSvgElement("rect")' in payload
