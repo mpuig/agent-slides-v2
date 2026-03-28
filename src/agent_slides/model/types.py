@@ -6,15 +6,17 @@ import warnings
 from math import isclose
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 from pydantic_core import PydanticCustomError
 
 from agent_slides.errors import (
     AgentSlidesError,
     CHART_DATA_ERROR,
     INVALID_CHART_TYPE,
+    INVALID_ICON,
     INVALID_SLIDE,
 )
+from agent_slides.icons import has_icon, normalize_hex_color
 
 STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
@@ -22,7 +24,7 @@ EMU_PER_POINT = 12_700
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
-NodeType = Literal["text", "image", "chart"]
+NodeType = Literal["text", "image", "chart", "icon"]
 ImageFit = Literal["contain", "cover", "stretch"]
 SlotRole = Literal["heading", "body", "quote", "attribution", "image"]
 ConstraintHeightMode = Literal["fixed", "fit_content", "fill_remaining"]
@@ -54,12 +56,14 @@ class ComputedNode(AgentSlidesModel):
     revision: int
     content_type: NodeType = "text"
     image_fit: ImageFit = "contain"
+    icon_svg_path: str | None = None
 
 
 class TextBlock(AgentSlidesModel):
     type: Literal["paragraph", "bullet", "heading"]
     text: str
     level: int = 0
+    icon: str | None = None
 
     @field_validator("level")
     @classmethod
@@ -67,6 +71,29 @@ class TextBlock(AgentSlidesModel):
         if value < 0:
             raise ValueError("level must be greater than or equal to 0")
         return value
+
+    @field_validator("icon")
+    @classmethod
+    def validate_icon(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("icon must be a non-empty string")
+        if not has_icon(normalized):
+            raise AgentSlidesError(INVALID_ICON, f"Unknown icon {value!r}")
+        return normalized
+
+    @model_serializer(mode="plain")
+    def serialize(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": self.type,
+            "text": self.text,
+            "level": self.level,
+        }
+        if self.icon is not None:
+            payload["icon"] = self.icon
+        return payload
 
 
 class NodeContent(AgentSlidesModel):
@@ -225,6 +252,11 @@ class Node(AgentSlidesModel):
     image_path: str | None = None
     image_fit: ImageFit = "contain"
     chart_spec: ChartSpec | None = None
+    icon_name: str | None = None
+    x: float | None = None
+    y: float | None = None
+    size: float | None = None
+    color: str | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
@@ -263,6 +295,10 @@ class Node(AgentSlidesModel):
 
     @model_validator(mode="after")
     def validate_node_type_specific_fields(self) -> Node:
+        icon_fields_present = any(
+            value is not None
+            for value in (self.icon_name, self.x, self.y, self.size, self.color)
+        )
         if self.type == "text":
             if not isinstance(self.content, NodeContent):
                 self.content = NodeContent.model_validate(self.content)
@@ -270,11 +306,15 @@ class Node(AgentSlidesModel):
                 raise ValueError("text nodes cannot define image_path")
             if self.chart_spec is not None:
                 raise ValueError("text nodes cannot define chart_spec")
+            if icon_fields_present:
+                raise ValueError("text nodes cannot define icon placement fields")
             return self
 
         if self.type == "image":
             if self.chart_spec is not None:
                 raise ValueError("image nodes cannot define chart_spec")
+            if icon_fields_present:
+                raise ValueError("image nodes cannot define icon placement fields")
             if not self.image_path:
                 if self.style_overrides.get("placeholder"):
                     return self
@@ -286,10 +326,33 @@ class Node(AgentSlidesModel):
             self.image_path = self.image_path.strip()
             return self
 
+        if self.type == "icon":
+            if self.slot_binding is not None:
+                raise ValueError("icon nodes cannot define slot_binding")
+            if self.image_path is not None:
+                raise ValueError("icon nodes cannot define image_path")
+            if self.chart_spec is not None:
+                raise ValueError("icon nodes cannot define chart_spec")
+            if not self.content.is_empty():
+                raise ValueError("icon nodes cannot define text content")
+            if self.icon_name is None or not self.icon_name.strip():
+                raise ValueError("icon nodes require icon_name")
+            if not has_icon(self.icon_name):
+                raise AgentSlidesError(INVALID_ICON, f"Unknown icon {self.icon_name!r}")
+            if self.x is None or self.y is None:
+                raise ValueError("icon nodes require x and y coordinates")
+            if self.size is None or self.size <= 0:
+                raise ValueError("icon nodes require a positive size")
+            self.icon_name = self.icon_name.strip()
+            self.color = normalize_hex_color(self.color or "#000000")
+            return self
+
         if self.image_path is not None:
             raise ValueError("chart nodes cannot define image_path")
         if self.chart_spec is None:
             raise ValueError("chart nodes require chart_spec")
+        if icon_fields_present:
+            raise ValueError("chart nodes cannot define icon placement fields")
         if not isinstance(self.content, NodeContent):
             self.content = NodeContent.model_validate(self.content)
         return self

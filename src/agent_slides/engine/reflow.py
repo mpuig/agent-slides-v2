@@ -10,6 +10,7 @@ from agent_slides.engine.constraints import Rect, constraints_from_layout, solve
 from agent_slides.engine.layout_validator import LayoutViolation, validate_layout
 from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.engine.text_fit import fit_text, measure_text_height
+from agent_slides.icons import require_icon
 from agent_slides.model import Deck, LayoutDef, Slide
 from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
@@ -148,6 +149,25 @@ def _reflow_slide(
     rects = solve(slot_constraints, content_by_slot, _measure_slot_height_factory(layout_def, active_provider))
 
     for node in slide.nodes:
+        if node.type == "icon":
+            computed[node.node_id] = ComputedNode(
+                x=float(node.x or 0.0),
+                y=float(node.y or 0.0),
+                width=float(node.size or 0.0),
+                height=float(node.size or 0.0),
+                font_size_pt=0.0,
+                font_family=theme.fonts.body,
+                color=str(node.color or theme.colors.text),
+                bg_color=None,
+                bg_transparency=0.0,
+                font_bold=False,
+                text_overflow=False,
+                revision=revision,
+                content_type="icon",
+                icon_svg_path=require_icon(str(node.icon_name)),
+            )
+            continue
+
         if node.slot_binding is None:
             continue
         if node.slot_binding not in layout_def.slots:

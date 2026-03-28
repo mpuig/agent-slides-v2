@@ -20,12 +20,17 @@ from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
+from agent_slides.icons import ICON_VIEWBOX, require_icon, svg_path_subpaths
 from agent_slides.io.assets import resolve_image_path
 from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
 BULLET_MARGIN_STEP_PT = 18.0
+BLOCK_SPACING_FACTOR = 0.3
+LINE_HEIGHT_FACTOR = 1.2
+ICON_BULLET_SIZE_FACTOR = 0.78
+ICON_BULLET_GAP_FACTOR = 0.4
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -89,6 +94,17 @@ def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
     if block.type == "heading":
         return computed.font_size_pt * HEADING_SIZE_FACTOR
     return computed.font_size_pt
+
+
+def _block_line_height(computed: ComputedNode, block: TextBlock) -> float:
+    return _block_font_size(computed, block) * LINE_HEIGHT_FACTOR
+
+
+def _icon_bullet_indent(block: TextBlock, computed: ComputedNode | None = None) -> float:
+    font_size = computed.font_size_pt if computed is not None else 14.0
+    icon_size = font_size * ICON_BULLET_SIZE_FACTOR
+    icon_gap = font_size * ICON_BULLET_GAP_FACTOR
+    return (block.level * BULLET_MARGIN_STEP_PT) + icon_size + icon_gap
 
 
 def _block_lines(block: TextBlock) -> list[str]:
@@ -205,12 +221,17 @@ def _node_paragraphs(node: Node) -> list[tuple[TextBlock, str]]:
     return paragraphs or [(TextBlock(type="paragraph", text=""), "")]
 
 
-def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
+def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: ComputedNode | None = None) -> None:
     pPr = paragraph._p.get_or_add_pPr()
     pPr.remove_all("a:buNone", "a:buAutoNum", "a:buChar", "a:buBlip")
 
     if block.type == "bullet":
         pPr.lvl = block.level
+        if block.icon:
+            pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
+            pPr.set("marL", str(Pt(_icon_bullet_indent(block, computed))))
+            pPr.set("indent", "0")
+            return
         buChar = OxmlElement("a:buChar")
         buChar.set("char", "•")
         pPr.insert_element_before(buChar, "a:tabLst", "a:defRPr", "a:extLst")
@@ -330,6 +351,11 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
         binding = registry.binding_for(slide.layout)
         pptx_slide = presentation.slides.add_slide(_resolve_layout(presentation, slide.layout, binding))
         for node in slide.nodes:
+            if node.type == "icon":
+                computed = slide.computed.get(node.node_id)
+                if computed is not None:
+                    _render_icon_node(pptx_slide.shapes, node, computed)
+                continue
             _fill_placeholder(node, binding.slot_mapping, pptx_slide)
 
     presentation.save(Path(output_path))
@@ -367,7 +393,7 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
     for block in blocks:
         for line in _block_lines(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
-            _configure_paragraph_bullets(paragraph, block)
+            _configure_paragraph_bullets(paragraph, block, computed=computed)
 
             run = paragraph.add_run()
             run.text = line
@@ -376,6 +402,62 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
             run.font.bold = computed.font_bold or block.type == "heading"
             run.font.color.rgb = hex_to_rgb(computed.color)
             paragraph_index += 1
+
+    _render_text_block_icons(slide_shape_collection, node, computed)
+
+
+def _render_icon_shape(
+    slide_shape_collection: SlideShapes,
+    *,
+    path_data: str,
+    x: float,
+    y: float,
+    size: float,
+    color: str,
+) -> None:
+    scale = size / ICON_VIEWBOX
+    for subpath in svg_path_subpaths(path_data):
+        points = [(x + (px * scale), y + (py * scale)) for px, py in subpath]
+        if len(points) < 2:
+            continue
+        is_closed = points[0] == points[-1]
+        vertices = points[1:-1] if is_closed else points[1:]
+        builder = slide_shape_collection.build_freeform(
+            points_to_emu(points[0][0]),
+            points_to_emu(points[0][1]),
+        )
+        if vertices:
+            builder.add_line_segments(
+                tuple((points_to_emu(px), points_to_emu(py)) for px, py in vertices),
+                close=is_closed,
+            )
+        shape = builder.convert_to_shape()
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = hex_to_rgb(color)
+        shape.line.fill.background()
+
+
+def _render_text_block_icons(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
+    current_y = computed.y
+    for index, block in enumerate(blocks):
+        line_height = _block_line_height(computed, block)
+        for line in _block_lines(block):
+            if block.type == "bullet" and block.icon:
+                icon_size = computed.font_size_pt * ICON_BULLET_SIZE_FACTOR
+                icon_x = computed.x + (block.level * BULLET_MARGIN_STEP_PT)
+                icon_y = current_y + ((line_height - icon_size) / 2)
+                _render_icon_shape(
+                    slide_shape_collection,
+                    path_data=require_icon(block.icon),
+                    x=icon_x,
+                    y=icon_y,
+                    size=icon_size,
+                    color=computed.color,
+                )
+            current_y += line_height
+        if index < len(blocks) - 1:
+            current_y += computed.font_size_pt * BLOCK_SPACING_FACTOR
 
 
 def _render_image_node(
@@ -445,8 +527,21 @@ def _render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed
         fill.fore_color.rgb = hex_to_rgb(color)
 
 
+def _render_icon_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    path_data = computed.icon_svg_path or require_icon(str(node.icon_name))
+    _render_icon_shape(
+        slide_shape_collection,
+        path_data=path_data,
+        x=computed.x,
+        y=computed.y,
+        size=computed.width,
+        color=computed.color,
+    )
+
+
 render_text_node = _render_text_node
 render_image_node = _render_image_node
+render_icon_node = _render_icon_node
 
 
 def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
@@ -461,7 +556,7 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
             continue
 
         for node in slide.nodes:
-            if node.slot_binding is None:
+            if node.slot_binding is None and node.type != "icon":
                 continue
 
             computed = slide.computed.get(node.node_id)
@@ -470,6 +565,8 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
 
             if node.type == "chart":
                 _render_chart_node(pptx_slide.shapes, node, computed)
+            elif node.type == "icon":
+                _render_icon_node(pptx_slide.shapes, node, computed)
             elif node.type == "image":
                 _render_image_node(
                     pptx_slide.shapes,
