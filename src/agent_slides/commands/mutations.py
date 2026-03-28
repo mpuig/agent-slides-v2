@@ -5,10 +5,18 @@ from __future__ import annotations
 from math import ceil
 from typing import Any
 
+from pydantic import ValidationError
+
 from agent_slides.engine.layout_suggestions import suggest_layouts
 from agent_slides.engine.reflow import rebind_slots
-from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
-from agent_slides.model import Deck, Node, NodeContent, Slide
+from agent_slides.errors import (
+    AgentSlidesError,
+    CHART_DATA_ERROR,
+    INVALID_CHART_TYPE,
+    INVALID_SLOT,
+    SCHEMA_ERROR,
+)
+from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide
 from agent_slides.model.layout_provider import LayoutProvider
 
 SLOT_ALIASES = {
@@ -26,6 +34,8 @@ SUPPORTED_MUTATION_COMMANDS = frozenset(
         "slot_set",
         "slot_clear",
         "slot_bind",
+        "chart_add",
+        "chart_update",
     }
 )
 
@@ -135,6 +145,31 @@ def _coerce_content(args: dict[str, Any]) -> NodeContent:
     if not isinstance(text, str):
         raise AgentSlidesError(SCHEMA_ERROR, "Argument 'text' must be a string")
     return NodeContent.from_text(text)
+
+
+def _coerce_chart_spec(args: dict[str, Any], key: str = "chart_spec") -> ChartSpec:
+    value = args.get(key)
+    if value is None:
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' is required")
+
+    try:
+        return ChartSpec.model_validate(value)
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False)
+        first = errors[0] if errors else {"type": SCHEMA_ERROR, "msg": f"Argument '{key}' is invalid"}
+        code = first["type"] if first["type"] in {CHART_DATA_ERROR, INVALID_CHART_TYPE} else SCHEMA_ERROR
+        raise AgentSlidesError(code, str(first["msg"])) from exc
+
+
+def _require_chart_slot(slide: Slide, slot_name: str, provider: LayoutProvider) -> str:
+    resolved = _resolve_slot_name(slide, slot_name, provider)
+    layout = provider.get_layout(slide.layout)
+    if layout.slots[resolved].role == "image":
+        raise AgentSlidesError(
+            INVALID_SLOT,
+            f"Slot {slot_name!r} is an image slot on layout {slide.layout!r} and cannot hold charts",
+        )
+    return resolved
 
 
 def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
@@ -310,7 +345,10 @@ def apply_mutation(
             slide.nodes.append(node)
 
         node.slot_binding = slot_name
+        node.type = "text"
         node.content = content
+        node.image_path = None
+        node.chart_spec = None
 
         if "font_size" in args:
             font_size = args["font_size"]
@@ -328,6 +366,56 @@ def apply_mutation(
             "text": node.content.to_plain_text(),
             "content": node.content.model_dump(mode="json"),
             "font_size": node.style_overrides.get("font_size"),
+        }
+
+    if command == "chart_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        slot_name = _require_chart_slot(slide, _require_string(args, "slot"), provider)
+        chart_spec = _coerce_chart_spec(args)
+
+        slot_nodes = _find_slot_nodes(slide, slot_name)
+        if slot_nodes:
+            node = slot_nodes[0]
+            _prune_nodes(slide, {extra.node_id for extra in slot_nodes[1:]})
+        else:
+            node = Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="chart",
+                chart_spec=chart_spec,
+            )
+            slide.nodes.append(node)
+
+        node.slot_binding = slot_name
+        node.type = "chart"
+        node.content = NodeContent()
+        node.image_path = None
+        node.chart_spec = chart_spec
+        node.style_overrides = {}
+        return {
+            "slide_id": slide.slide_id,
+            "slot": slot_name,
+            "node_id": node.node_id,
+            "chart_type": chart_spec.chart_type,
+            "chart_spec": chart_spec.model_dump(mode="json"),
+        }
+
+    if command == "chart_update":
+        node_id = _require_string(args, "node")
+        slide, node = _find_node(deck, node_id)
+        if node.type != "chart":
+            raise AgentSlidesError(SCHEMA_ERROR, f"Node {node_id!r} is not a chart")
+
+        chart_spec = _coerce_chart_spec(args)
+        node.content = NodeContent()
+        node.image_path = None
+        node.chart_spec = chart_spec
+        return {
+            "slide_id": slide.slide_id,
+            "slot": node.slot_binding,
+            "node_id": node.node_id,
+            "chart_type": chart_spec.chart_type,
+            "chart_spec": chart_spec.model_dump(mode="json"),
         }
 
     if command == "slot_clear":
