@@ -8,6 +8,8 @@ description: Build consulting-grade presentations from a natural-language brief 
 Use this skill when the user asks for a new presentation, deck, or slide narrative from scratch.
 
 In this repo, prefer `uv run agent-slides ...` so the command uses the checked-out CLI.
+Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
+Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, and the five pre-flight questions.
 
 This skill is not just CLI orchestration. It is responsible for presentation quality, storyline quality, and final QA.
 
@@ -171,6 +173,10 @@ Prefer the shipped repo commands rather than inventing alternate entry points:
 
 ## Operational Defaults
 
+- Start with the recommendation or answer, not the background.
+- If the brief is under-specified, ask or infer the five pre-flight inputs from `references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
+- Organize the deck as answer -> 2-4 supporting arguments -> evidence.
+- Give each content slide one message and an action title that states the takeaway.
 - Default to 5 slides for a simple topic.
 - Use 6-8 slides when the argument needs setup, comparison, and proof.
 - Stay under 10 slides unless the user explicitly asks for more.
