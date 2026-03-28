@@ -28,6 +28,7 @@ from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck
 from agent_slides.model import Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import ComputedNode
+from tests.image_helpers import write_png
 
 
 def read_payload(path: Path) -> dict[str, object]:
@@ -448,6 +449,7 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
             "slide_id": "s-1",
             "slot": "heading",
             "node_id": "n-1",
+            "type": "text",
             "text": "New Title",
             "content": {
                 "blocks": [
@@ -458,10 +460,99 @@ def test_slot_set_updates_slot_text_using_aliases(tmp_path: Path) -> None:
                     }
                 ]
             },
+            "image_path": None,
+            "image_fit": "contain",
             "font_size": None,
         },
     }
     assert updated.slides[0].nodes[0].content.to_plain_text() == "New Title"
+
+
+def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    image_path = write_png(tmp_path / "photo.png", width=30, height=20)
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "body", "--image", image_path.name]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "body",
+            "node_id": "n-2",
+            "type": "image",
+            "text": "",
+            "content": {"blocks": []},
+            "image_path": "photo.png",
+            "image_fit": "contain",
+            "font_size": None,
+        },
+    }
+    body_node = next(node for node in updated.slides[0].nodes if node.slot_binding == "body")
+    assert body_node.type == "image"
+    assert body_node.image_path == "photo.png"
+
+
+def test_slot_set_rejects_mutually_exclusive_text_and_image_options(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    image_path = write_png(tmp_path / "photo.png", width=12, height=12)
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--text",
+            "Hello",
+            "--image",
+            str(image_path),
+        ]
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["error"] == {
+        "code": SCHEMA_ERROR,
+        "message": "Options '--text' and '--image' are mutually exclusive; provide exactly one",
+    }
+
+
+def test_slot_set_rejects_missing_image_path(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=2),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "body", "--image", "missing.png"]
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": FILE_NOT_FOUND,
+            "message": f"Image file not found: {tmp_path / 'missing.png'}",
+        },
+    }
 
 
 def test_slot_clear_removes_bound_nodes(tmp_path: Path) -> None:

@@ -84,6 +84,22 @@
         status.textContent = text;
       };
 
+      const imageHref = (imagePath) => {
+        const encoded = String(imagePath)
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
+        return `/api/images/${encoded}`;
+      };
+
+      const plainText = (node) => {
+        const blocks = node?.content?.blocks;
+        if (Array.isArray(blocks)) {
+          return blocks.map((block) => block.text ?? "").join("\n");
+        }
+        return typeof node?.content === "string" ? node.content : "";
+      };
+
       const renderDeck = (deck) => {
         const slide = deck?.slides?.[0];
         stage.replaceChildren();
@@ -103,6 +119,25 @@
           const computed = slide.computed?.[node.node_id];
           if (!computed) continue;
 
+          if (node.type === "image" && node.image_path) {
+            const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+            image.setAttribute("x", `${computed.x}`);
+            image.setAttribute("y", `${computed.y}`);
+            image.setAttribute("width", `${computed.width}`);
+            image.setAttribute("height", `${computed.height}`);
+            image.setAttribute("href", imageHref(node.image_path));
+            image.setAttribute(
+              "preserveAspectRatio",
+              computed.image_fit === "stretch"
+                ? "none"
+                : computed.image_fit === "cover"
+                  ? "xMidYMid slice"
+                  : "xMidYMid meet"
+            );
+            stage.appendChild(image);
+            continue;
+          }
+
           const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
           text.setAttribute("x", `${computed.x}`);
           text.setAttribute("y", `${computed.y + computed.font_size_pt}`);
@@ -110,7 +145,7 @@
           text.setAttribute("font-family", computed.font_family ?? "Aptos");
           text.setAttribute("font-weight", computed.font_bold ? "700" : "400");
           text.setAttribute("fill", computed.color ?? "#1f1e1a");
-          text.textContent = node.content ?? "";
+          text.textContent = plainText(node);
           stage.appendChild(text);
         }
       };
