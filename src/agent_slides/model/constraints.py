@@ -9,7 +9,8 @@ class Constraint(BaseModel):
     """A single validator finding tied to a slide or node."""
 
     code: str
-    severity: Literal["error", "warning"]
+    severity: Literal["error", "warning", "suggestion"]
     message: str
     slide_id: str | None = None
     node_id: str | None = None
+    node_ids: list[str] | None = None
