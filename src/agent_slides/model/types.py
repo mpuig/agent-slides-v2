@@ -237,6 +237,7 @@ class Deck(AgentSlidesModel):
     revision: int = 0
     theme: str = "default"
     design_rules: str = "default"
+    template_manifest: str | None = None
     slides: list[Slide] = Field(default_factory=list)
     counters: Counters = Field(default_factory=Counters, alias="_counters")
 

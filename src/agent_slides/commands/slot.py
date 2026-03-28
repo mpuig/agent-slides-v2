@@ -10,6 +10,7 @@ import click
 from agent_slides.commands.mutations import apply_mutation
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
+from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model import Deck
 
 
@@ -55,7 +56,7 @@ def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str | None
 
     image_path = _resolve_cli_image_path(Path(path), image)
 
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         args: dict[str, object] = {
             "slide": slide_ref,
             "slot": slot_name,
@@ -69,6 +70,7 @@ def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str | None
             deck,
             "slot_set",
             args,
+            provider,
         )
 
     _, result = mutate_deck(path, mutate)
@@ -82,7 +84,7 @@ def set_slot_command(path: str, slide_ref: str, slot_name: str, text: str | None
 def clear_slot_command(path: str, slide_ref: str, slot_name: str) -> None:
     """Remove content currently bound to a slot on a slide."""
 
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(
             deck,
             "slot_clear",
@@ -90,6 +92,7 @@ def clear_slot_command(path: str, slide_ref: str, slot_name: str) -> None:
                 "slide": slide_ref,
                 "slot": slot_name,
             },
+            provider,
         )
 
     _, result = mutate_deck(path, mutate)
@@ -103,7 +106,7 @@ def clear_slot_command(path: str, slide_ref: str, slot_name: str) -> None:
 def bind_slot_command(path: str, node_id: str, slot_name: str) -> None:
     """Bind an existing node to a named slot on its slide."""
 
-    def mutate(deck: Deck) -> dict[str, object]:
+    def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(
             deck,
             "slot_bind",
@@ -111,6 +114,7 @@ def bind_slot_command(path: str, node_id: str, slot_name: str) -> None:
                 "node": node_id,
                 "slot": slot_name,
             },
+            provider,
         )
 
     _, result = mutate_deck(path, mutate)

@@ -25,7 +25,7 @@ from agent_slides.errors import (
     UNBOUND_NODES,
 )
 from agent_slides.io import computed_sidecar_path, init_deck, read_computed_deck, read_deck, write_computed_deck
-from agent_slides.model import Counters, Deck, Node, Slide, get_layout, list_layouts
+from agent_slides.model import BuiltinLayoutProvider, Counters, Deck, Node, Slide, get_layout, list_layouts
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import ComputedNode
 from tests.image_helpers import write_png
@@ -33,6 +33,10 @@ from tests.image_helpers import write_png
 
 def read_payload(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
 
 
 def write_deck(path: Path, deck: Deck) -> None:
@@ -1034,7 +1038,7 @@ def test_batch_uses_single_mutate_deck_call(monkeypatch) -> None:
 
     def fake_mutate_deck(path: str, fn):
         calls.append(path)
-        results = fn(Deck(deck_id="deck-1"))
+        results = fn(Deck(deck_id="deck-1"), BuiltinLayoutProvider())
         return Deck(deck_id="deck-1"), results
 
     monkeypatch.setattr("agent_slides.commands.batch.mutate_deck", fake_mutate_deck)
@@ -1115,6 +1119,166 @@ def test_validate_command_returns_structured_overflow_warning(tmp_path: Path) ->
     assert any(warning["code"] == "OVERFLOW" for warning in payload["data"]["warnings"])
     for warning in payload["data"]["warnings"]:
         assert {"code", "severity", "message"} <= warning.keys()
+
+
+def test_inspect_command_summarizes_manifest_json(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "client-brand.manifest.json"
+    write_json(
+        manifest_path,
+        {
+            "source": "client-brand.pptx",
+            "source_hash": "abc123",
+            "slide_masters": [
+                {
+                    "layouts": [
+                        {
+                            "name": "Title Slide",
+                            "slug": "title_slide",
+                            "slot_mapping": {"heading": 0, "subheading": 1},
+                        },
+                        {
+                            "name": "Two Content",
+                            "slug": "two_content",
+                            "slot_mapping": {"heading": 0, "col1": 1, "col2": 2},
+                        },
+                    ]
+                },
+                {
+                    "layouts": [
+                        {
+                            "name": "Blank",
+                            "slug": "blank",
+                            "slot_mapping": {},
+                        },
+                        {
+                            "name": "Custom Layout 4",
+                            "slug": "custom_layout_4",
+                            "slot_mapping": {},
+                        },
+                    ]
+                },
+            ],
+            "theme": {
+                "colors": {"primary": "#112233"},
+                "fonts": {"heading": "Aptos Display", "body": "Aptos"},
+                "spacing": {"base_unit": 10, "margin": 60, "gutter": 20},
+            },
+        },
+    )
+
+    result = invoke_cli(["inspect", str(manifest_path)])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "source": "client-brand.pptx",
+            "layouts_found": 4,
+            "usable_layouts": 3,
+            "theme_extracted": True,
+            "layouts": [
+                {
+                    "name": "Title Slide",
+                    "slug": "title_slide",
+                    "slots": ["heading", "subheading"],
+                    "usable": True,
+                },
+                {
+                    "name": "Two Content",
+                    "slug": "two_content",
+                    "slots": ["heading", "col1", "col2"],
+                    "usable": True,
+                },
+                {
+                    "name": "Blank",
+                    "slug": "blank",
+                    "slots": [],
+                    "usable": True,
+                },
+                {
+                    "name": "Custom Layout 4",
+                    "slug": "custom_layout_4",
+                    "slots": [],
+                    "usable": False,
+                    "reason": "no typed placeholders",
+                },
+            ],
+        },
+    }
+
+
+def test_inspect_command_reports_theme_not_extracted_when_missing(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    write_json(
+        manifest_path,
+        {
+            "source": "template.pptx",
+            "slide_masters": [
+                {
+                    "layouts": [
+                        {
+                            "name": "One Column",
+                            "slug": "one_column",
+                            "slot_mapping": {"body": 3},
+                        }
+                    ]
+                }
+            ],
+        },
+    )
+
+    result = invoke_cli(["inspect", str(manifest_path)])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {
+            "source": "template.pptx",
+            "layouts_found": 1,
+            "usable_layouts": 1,
+            "theme_extracted": False,
+            "layouts": [
+                {
+                    "name": "One Column",
+                    "slug": "one_column",
+                    "slots": ["body"],
+                    "usable": True,
+                }
+            ],
+        },
+    }
+
+
+def test_inspect_command_reports_missing_manifest_as_file_not_found(tmp_path: Path) -> None:
+    missing_path = tmp_path / "missing.manifest.json"
+
+    result = invoke_cli(["inspect", str(missing_path)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": FILE_NOT_FOUND,
+            "message": f"Manifest file not found: {missing_path}",
+        },
+    }
+
+
+def test_inspect_command_reports_invalid_json_as_schema_error(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "broken.manifest.json"
+    manifest_path.write_text("{not valid json\n", encoding="utf-8")
+
+    result = invoke_cli(["inspect", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": f"Manifest file is not valid JSON: {manifest_path}",
+        },
+    }
 
 
 def test_info_command_dumps_indented_deck_json(tmp_path: Path) -> None:
