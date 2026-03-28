@@ -21,7 +21,16 @@ def test_reflow_chart_nodes_use_grid_geometry_without_text_fitting() -> None:
         layout="title_content",
         nodes=[
             Node(node_id="n-1", slot_binding="heading", type="text", content="KPI summary"),
-            Node(node_id="n-2", slot_binding="body", type="chart", content='{"series":[1,2,3]}'),
+            Node(
+                node_id="n-2",
+                slot_binding="body",
+                type="chart",
+                chart_spec={
+                    "chart_type": "bar",
+                    "categories": ["Q1", "Q2", "Q3"],
+                    "series": [{"name": "Revenue", "values": [1.0, 2.0, 3.0]}],
+                },
+            ),
         ],
     )
 
