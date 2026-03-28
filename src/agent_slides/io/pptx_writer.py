@@ -14,6 +14,7 @@ from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.oxml.xmlchemy import OxmlElement
 from pptx.parts.image import Image
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
@@ -24,6 +25,7 @@ from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, Te
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
+BULLET_MARGIN_STEP_PT = 18.0
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -92,12 +94,6 @@ def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
 def _block_lines(block: TextBlock) -> list[str]:
     lines = block.text.splitlines()
     return lines or [""]
-
-
-def _block_text(block: TextBlock, line: str) -> str:
-    if block.type == "bullet":
-        return f"• {line}" if line else "•"
-    return line
 
 
 def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
@@ -198,14 +194,35 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
     return bindings
 
 
-def _content_lines(node: Node) -> list[str]:
+def _node_paragraphs(node: Node) -> list[tuple[TextBlock, str]]:
     if isinstance(node.content, str):
-        return node.content.split("\n")
+        block = TextBlock(type="paragraph", text=node.content)
+        return [(block, line) for line in _block_lines(block)]
 
-    lines: list[str] = []
+    paragraphs: list[tuple[TextBlock, str]] = []
     for block in node.content.blocks:
-        lines.extend(_block_text(block, line) for line in _block_lines(block))
-    return lines or [""]
+        paragraphs.extend((block, line) for line in _block_lines(block))
+    return paragraphs or [(TextBlock(type="paragraph", text=""), "")]
+
+
+def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
+    pPr = paragraph._p.get_or_add_pPr()
+    pPr.remove_all("a:buNone", "a:buAutoNum", "a:buChar", "a:buBlip")
+
+    if block.type == "bullet":
+        pPr.lvl = block.level
+        buChar = OxmlElement("a:buChar")
+        buChar.set("char", "•")
+        pPr.insert_element_before(buChar, "a:tabLst", "a:defRPr", "a:extLst")
+        pPr.set("marL", str(Pt(BULLET_MARGIN_STEP_PT * (block.level + 1))))
+        pPr.set("indent", str(Pt(-BULLET_MARGIN_STEP_PT)))
+        return
+
+    pPr.lvl = 0
+    for attr_name in ("marL", "indent"):
+        if attr_name in pPr.attrib:
+            del pPr.attrib[attr_name]
+    pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
 
 
 def _sha256(path: Path) -> str:
@@ -291,10 +308,10 @@ def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
     text_frame = placeholder.text_frame
     text_frame.clear()
 
-    lines = _content_lines(node)
-    text_frame.paragraphs[0].add_run().text = lines[0]
-    for line in lines[1:]:
-        paragraph = text_frame.add_paragraph()
+    paragraphs = _node_paragraphs(node)
+    for paragraph_index, (block, line) in enumerate(paragraphs):
+        paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+        _configure_paragraph_bullets(paragraph, block)
         paragraph.add_run().text = line
 
 
@@ -350,10 +367,10 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
     for block in blocks:
         for line in _block_lines(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
-            paragraph.level = block.level if block.type == "bullet" else 0
+            _configure_paragraph_bullets(paragraph, block)
 
             run = paragraph.add_run()
-            run.text = _block_text(block, line)
+            run.text = line
             run.font.name = computed.font_family
             run.font.size = Pt(_block_font_size(computed, block))
             run.font.bold = computed.font_bold or block.type == "heading"
