@@ -8,6 +8,7 @@ import json
 import logging
 import mimetypes
 import signal
+import threading
 from http import HTTPStatus
 from importlib import resources
 from pathlib import Path
@@ -63,6 +64,7 @@ class PreviewServer:
         self._preview_backend = "svg"
         self._preview_payload: dict[str, Any] | None = None
         self._slide_previews: list[dict[str, Any]] = []
+        self._rendering_payload: dict[str, Any] | None = None
         self._renderer = slide_renderer
         if self._renderer is None:
             self._renderer = SlideRenderer(self.sidecar_path)
@@ -163,15 +165,17 @@ class PreviewServer:
             return
 
         try:
-            await self._renderer.render_all()
+            await self._render_all_slides(payload)
         except SlideRenderError as exc:
             self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
             self._preview_backend = "svg"
             self._slide_previews = []
+            self._rendering_payload = None
             return
 
         self._preview_backend = "png"
         self._slide_previews = self._build_slide_previews(payload)
+        self._rendering_payload = None
 
     def _log_png_fallback_warning(self) -> None:
         if self._logged_png_fallback_warning:
@@ -189,8 +193,71 @@ class PreviewServer:
         if self._renderer is None or not changed_indices:
             return
 
-        await self._renderer.render_indices(changed_indices)
+        await self._render_indices(payload, changed_indices)
         self._preview_backend = "png"
+
+    def _build_rendering_message(self, slide_index: int, total: int) -> dict[str, Any]:
+        return {
+            "type": "rendering",
+            "path": str(self.sidecar_path),
+            "slide_index": slide_index + 1,
+            "total": total,
+        }
+
+    async def _set_rendering_progress(self, slide_index: int, total: int) -> None:
+        self._rendering_payload = self._build_rendering_message(slide_index, total)
+        await self.broadcast_payload(self._rendering_payload)
+
+    async def _render_all_slides(self, payload: dict[str, Any]) -> None:
+        if self._renderer is None:
+            return
+        total = len(payload.get("slides", []))
+        if total == 0:
+            self._rendering_payload = None
+            return
+
+        await self._set_rendering_progress(0, total)
+        loop = asyncio.get_running_loop()
+        first_progress = True
+        progress_lock = threading.Lock()
+
+        def progress_callback(slide_index: int, total_slides: int) -> None:
+            nonlocal first_progress
+            with progress_lock:
+                if first_progress:
+                    first_progress = False
+                    return
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._set_rendering_progress(slide_index, total_slides))
+            )
+
+        await self._renderer.render_all(progress_callback=progress_callback)
+        self._rendering_payload = None
+
+    async def _render_indices(self, payload: dict[str, Any], slide_indices: list[int]) -> None:
+        if self._renderer is None or not slide_indices:
+            return
+
+        total = len(payload.get("slides", []))
+        first_slide_index = slide_indices[0]
+        await self._set_rendering_progress(first_slide_index, total)
+
+        loop = asyncio.get_running_loop()
+        first_progress = True
+        progress_lock = threading.Lock()
+
+        def progress_callback(slide_index: int, total_slides: int) -> None:
+            nonlocal first_progress
+            with progress_lock:
+                if first_progress:
+                    first_progress = False
+                    return
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._set_rendering_progress(slide_index, total_slides))
+            )
+
+        await self._renderer.render_indices(slide_indices, progress_callback=progress_callback)
+        self._rendering_payload = None
 
     def _slide_revision(self, slide_payload: dict[str, Any], deck_revision: int) -> int:
         return int(slide_payload.get("revision", deck_revision))
@@ -252,6 +319,7 @@ class PreviewServer:
         except SlideRenderError as exc:
             self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
             self._preview_backend = "svg"
+            self._rendering_payload = None
             await self.broadcast_payload(self._build_update_message(payload))
             return
 
@@ -268,6 +336,8 @@ class PreviewServer:
         try:
             if self._preview_payload is not None:
                 await websocket.send(json.dumps(self._build_update_message(self._preview_payload)))
+            if self._rendering_payload is not None:
+                await websocket.send(json.dumps(self._rendering_payload))
             await websocket.wait_closed()
         finally:
             self._preview_clients.discard(websocket)
