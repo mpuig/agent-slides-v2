@@ -121,7 +121,8 @@
 
         socket.addEventListener("open", () => setStatus("Connected"));
         socket.addEventListener("message", (event) => {
-          renderDeck(JSON.parse(event.data));
+          const payload = JSON.parse(event.data);
+          renderDeck(payload.deck ?? payload);
           setStatus("Live");
         });
         socket.addEventListener("close", () => {

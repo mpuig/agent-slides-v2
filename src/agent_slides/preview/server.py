@@ -32,17 +32,23 @@ class PreviewServer:
         *,
         host: str = "localhost",
         port: int = 8765,
-        debounce_ms: int = 50,
+        debounce_ms: int | None = None,
+        debounce_interval: float | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.sidecar_path = Path(sidecar_path).resolve()
         self.host = host
         self.port = port
+        effective_debounce_ms = debounce_ms
+        if debounce_interval is not None:
+            effective_debounce_ms = int(debounce_interval * 1000)
+        if effective_debounce_ms is None:
+            effective_debounce_ms = 50
         self._logger = logger or LOGGER
         self._watcher = SidecarWatcher(
             self.sidecar_path,
-            self.broadcast_payload,
-            debounce_ms=debounce_ms,
+            self._broadcast_update,
+            debounce_ms=effective_debounce_ms,
             logger=self._logger,
         )
         self._server: Server | None = None
@@ -52,16 +58,23 @@ class PreviewServer:
     def origin(self) -> str:
         return f"http://{self.host}:{self.port}"
 
+    @property
+    def url(self) -> str:
+        return f"ws://{self.host}:{self.port}/ws"
+
+    @property
+    def is_running(self) -> bool:
+        return self._server is not None
+
     async def __aenter__(self) -> PreviewServer:
-        await self.start()
-        return self
+        return await self.start()
 
     async def __aexit__(self, *_: object) -> None:
         await self.stop()
 
-    async def start(self) -> None:
+    async def start(self) -> PreviewServer:
         if self._server is not None:
-            return
+            return self
 
         self._server = await serve(
             self._handle_websocket,
@@ -75,6 +88,7 @@ class PreviewServer:
             self.port = int(socket.getsockname()[1])
 
         await self._watcher.start()
+        return self
 
     async def stop(self) -> None:
         await self._watcher.stop()
@@ -85,6 +99,9 @@ class PreviewServer:
         self._server.close()
         await self._server.wait_closed()
         self._server = None
+
+    async def close(self) -> None:
+        await self.stop()
 
     async def serve_forever(self, stop_event: asyncio.Event | None = None) -> None:
         local_stop = stop_event or asyncio.Event()
@@ -105,6 +122,9 @@ class PreviewServer:
 
         broadcast(self._clients, json.dumps(payload))
 
+    async def _broadcast_update(self, payload: dict[str, Any]) -> None:
+        await self.broadcast_payload(self._build_update_message(payload))
+
     async def _handle_websocket(self, websocket: ServerConnection) -> None:
         if websocket.request.path != "/ws":
             return
@@ -113,7 +133,6 @@ class PreviewServer:
         self._logger.info("Preview client connected: %s", websocket.remote_address)
 
         try:
-            await websocket.send(self._read_deck_json())
             await websocket.wait_closed()
         finally:
             self._clients.discard(websocket)
@@ -148,6 +167,14 @@ class PreviewServer:
     def _read_deck_json(self) -> str:
         _, payload = load_deck_payload(self.sidecar_path)
         return json.dumps(payload)
+
+    def _build_update_message(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "event": "deck.updated",
+            "path": str(self.sidecar_path),
+            "revision": payload["revision"],
+            "deck": payload,
+        }
 
 
 async def run_preview_server(

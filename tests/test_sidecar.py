@@ -15,7 +15,8 @@ from agent_slides.errors import (
     SCHEMA_ERROR,
 )
 from agent_slides.io.sidecar import init_deck, mutate_deck, read_deck, write_deck
-from agent_slides.model import ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.io.sidecar import computed_sidecar_path, read_computed_deck, write_computed_deck
+from agent_slides.model import ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
 
 
 def build_deck(*, revision: int = 2) -> Deck:
@@ -103,6 +104,7 @@ def test_write_deck_uses_atomic_temp_file_and_rename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     deck_path = tmp_path / "deck.json"
+    computed_path = computed_sidecar_path(deck_path)
     deck = build_deck()
     write_raw_deck(deck_path, deck)
 
@@ -118,7 +120,10 @@ def test_write_deck_uses_atomic_temp_file_and_rename(
     updated = build_deck(revision=3)
     write_deck(str(deck_path), updated, expected_revision=2)
 
-    assert renamed_paths == [(f"{deck_path}.tmp", str(deck_path))]
+    assert renamed_paths == [
+        (f"{deck_path}.tmp", str(deck_path)),
+        (f"{computed_path}.tmp", str(computed_path)),
+    ]
     assert read_deck(str(deck_path)).revision == 3
 
 
@@ -173,6 +178,7 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     assert updated_deck.theme == "updated"
     assert reflow_revisions == [3]
     assert read_deck(str(deck_path)).theme == "updated"
+    assert computed_sidecar_path(deck_path).exists()
 
 
 def test_mutate_deck_does_not_write_if_mutation_raises(tmp_path: Path) -> None:
@@ -193,16 +199,19 @@ def test_mutate_deck_does_not_write_if_mutation_raises(tmp_path: Path) -> None:
 
 def test_init_deck_creates_new_file_with_defaults(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
+    computed_path = computed_sidecar_path(deck_path)
 
     deck = init_deck(str(deck_path), theme="modern", design_rules="default", force=False)
 
     assert deck_path.exists()
+    assert computed_path.exists()
     assert deck.revision == 0
     assert deck.theme == "modern"
     assert deck.design_rules == "default"
     assert deck.slides == []
     assert deck.counters == Counters()
     assert UUID(deck.deck_id)
+    assert read_computed_deck(str(deck_path)) == ComputedDeck(deck_id=deck.deck_id)
 
 
 def test_init_deck_existing_file_without_force_raises(tmp_path: Path) -> None:
@@ -226,6 +235,7 @@ def test_init_deck_force_overwrites_existing_file(tmp_path: Path) -> None:
     assert loaded.design_rules == "new-rules"
     assert loaded.revision == 0
     assert loaded.slides == []
+    assert computed_sidecar_path(deck_path).exists()
 
 
 def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(tmp_path: Path) -> None:
@@ -240,4 +250,35 @@ def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(tmp_path: Pa
     payload = json.loads(deck_path.read_text(encoding="utf-8"))
 
     assert payload["_counters"] == {"slides": 1, "nodes": 1}
+    assert "computed" not in payload["slides"][0]
     assert restored == original
+
+
+def test_read_deck_prefers_computed_sidecar_when_present(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_raw_deck(deck_path, build_deck(revision=4))
+
+    deck = read_deck(str(deck_path))
+    deck.slides[0].computed["n-1"].font_size_pt = 16.0
+    write_deck(str(deck_path), deck, expected_revision=4)
+
+    loaded = read_deck(str(deck_path))
+
+    assert loaded.slides[0].computed["n-1"].font_size_pt == 16.0
+    assert "computed" not in json.loads(deck_path.read_text(encoding="utf-8"))["slides"][0]
+
+
+def test_read_deck_ignores_stale_computed_sidecar(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = build_deck(revision=2)
+    write_raw_deck(deck_path, deck)
+    write_computed_deck(str(deck_path), deck)
+
+    updated_payload = json.loads(deck_path.read_text(encoding="utf-8"))
+    updated_payload["revision"] = 9
+    deck_path.write_text(f"{json.dumps(updated_payload, indent=2)}\n", encoding="utf-8")
+
+    loaded = read_deck(str(deck_path))
+
+    assert loaded.revision == 9
+    assert loaded.slides[0].computed == {}
