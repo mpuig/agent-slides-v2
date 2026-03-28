@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from agent_slides.engine.reflow import reflow_slide
-from agent_slides.model import LayoutDef, Node, Slide, SlotDef, TextBlock, TextFitting, get_layout
+import agent_slides.engine.reflow as reflow_module
+from agent_slides.engine.reflow import reflow_deck, reflow_slide
+from agent_slides.model import Counters, Deck, LayoutDef, Node, Slide, SlotDef, TextBlock, TextFitting, get_layout
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import GridDef, NodeContent
 from agent_slides.model.themes import load_theme
@@ -107,6 +108,49 @@ def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
     assert image.font_size_pt == 0.0
     assert image.content_type == "image"
     assert image.text_overflow is False
+
+
+def test_reflow_deck_normalizes_font_sizes_by_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    deck = Deck(
+        deck_id="deck-normalized",
+        theme="default",
+        design_rules="default",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Short heading"),
+                    Node(node_id="n-2", slot_binding="body", type="text", content="Short body"),
+                ],
+            ),
+            Slide(
+                slide_id="s-2",
+                layout="title_content",
+                nodes=[
+                    Node(node_id="n-3", slot_binding="heading", type="text", content="Long heading"),
+                    Node(node_id="n-4", slot_binding="body", type="text", content="Long body"),
+                ],
+            ),
+        ],
+        counters=Counters(slides=2, nodes=4),
+    )
+
+    def fake_fit_text(*, text, width, height, default_size, min_size, role, font_family=None, ladder=None, use_precise=False):
+        assert font_family == "Calibri"
+        if ladder == [24.0]:
+            return (24.0, False)
+        if role == "heading":
+            return (32.0, False) if text.to_plain_text() == "Short heading" else (24.0, False)
+        return (18.0, False)
+
+    monkeypatch.setattr(reflow_module, "fit_text", fake_fit_text)
+
+    reflow_deck(deck)
+
+    assert deck.slides[0].computed["n-1"].font_size_pt == 24.0
+    assert deck.slides[1].computed["n-3"].font_size_pt == 24.0
+    assert deck.slides[0].computed["n-2"].font_size_pt == 18.0
 
 
 def test_reflow_composes_text_blocks_with_padding_spacing_and_per_block_sizes() -> None:

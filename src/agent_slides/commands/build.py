@@ -8,9 +8,8 @@ from pathlib import Path
 import click
 
 from agent_slides.engine.reflow import reflow_deck
-from agent_slides.engine.template_reflow import template_reflow
 from agent_slides.io import read_deck, resolve_manifest_path, write_computed_deck, write_pptx
-from agent_slides.model.layout_provider import TemplateLayoutRegistry, resolve_layout_provider
+from agent_slides.model.layout_provider import resolve_layout_provider
 
 
 @click.command("build")
@@ -30,10 +29,7 @@ def build_command(path: Path, output_path: Path) -> None:
     if manifest_path is not None:
         deck.template_manifest = manifest_path
     provider = resolve_layout_provider(manifest_path)
-    if isinstance(provider, TemplateLayoutRegistry):
-        template_reflow(deck, provider)
-    else:
-        reflow_deck(deck, provider)
+    reflow_deck(deck, provider)
     write_computed_deck(str(path), deck)
     write_pptx(deck, str(output_path), asset_base_dir=path.parent)
     payload = {
