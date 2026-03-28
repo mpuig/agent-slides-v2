@@ -49,12 +49,25 @@ def add_slide(path: str, layout_name: str) -> dict[str, object]:
     return result
 
 
+def remove_slide(path: str, slide_ref: str | int) -> dict[str, object]:
+    def mutate(deck: Deck) -> dict[str, object]:
+        slide = deck.get_slide(slide_ref)
+        deck.slides.remove(slide)
+        return {
+            "removed": slide.slide_id,
+            "slide_count": len(deck.slides),
+        }
+
+    _, result = mutate_deck(path, mutate)
+    return result
+
+
 def set_slide_layout(path: str, slide_ref: str | int, layout_name: str) -> dict[str, object]:
     layout = get_layout(layout_name)
 
     def mutate(deck: Deck) -> dict[str, object]:
         slide = deck.get_slide(slide_ref)
-        unbound_nodes = rebind_slots(slide, layout)
+        unbound_nodes = rebind_slots(deck, slide, layout)
         return {
             "slide_id": slide.slide_id,
             "layout": slide.layout,

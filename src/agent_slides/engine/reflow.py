@@ -83,12 +83,13 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
 
         slot = layout_def.slots[node.slot_binding]
         x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding)
+        fit_rules = _text_fit_rules(layout_def, node)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
             width=width,
             height=height,
-            default_size=_text_fit_rules(layout_def, node).default_size,
-            min_size=_text_fit_rules(layout_def, node).min_size,
+            default_size=fit_rules.default_size,
+            min_size=fit_rules.min_size,
         )
         style = resolve_style(theme, slot.role)
 
@@ -123,17 +124,33 @@ def reflow_deck(deck: Deck) -> None:
         _reflow_slide(slide, get_layout(slide.layout), theme, revision=deck.revision)
 
 
-def rebind_slots(slide: Slide, new_layout: LayoutDef) -> list[str]:
-    """Keep compatible slot bindings when a slide switches layouts."""
+def rebind_slots(deck: Deck, slide: Slide, new_layout: LayoutDef) -> list[str]:
+    """Keep compatible slot bindings and create missing nodes for a new layout."""
 
+    desired_slots = tuple(new_layout.slots)
+    claimed_slots: set[str] = set()
     unbound_node_ids: list[str] = []
 
     for node in slide.nodes:
-        if node.slot_binding is None:
+        slot_name = node.slot_binding
+        if slot_name is None:
             continue
-        if node.slot_binding not in new_layout.slots:
-            unbound_node_ids.append(node.node_id)
-            node.slot_binding = None
+        if slot_name in new_layout.slots and slot_name not in claimed_slots:
+            claimed_slots.add(slot_name)
+            continue
+        unbound_node_ids.append(node.node_id)
+        node.slot_binding = None
+
+    for slot_name in desired_slots:
+        if slot_name in claimed_slots:
+            continue
+        slide.nodes.append(
+            Node(
+                node_id=deck.next_node_id(),
+                slot_binding=slot_name,
+                type="text",
+            )
+        )
 
     slide.layout = new_layout.name
     return unbound_node_ids
