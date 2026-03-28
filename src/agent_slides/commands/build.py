@@ -26,7 +26,10 @@ def build_command(path: Path, output_path: Path) -> None:
     """Build a PPTX file from a deck sidecar."""
 
     deck = read_deck(str(path))
-    provider = resolve_layout_provider(resolve_manifest_path(str(path), deck))
+    manifest_path = resolve_manifest_path(str(path), deck)
+    if manifest_path is not None:
+        deck.template_manifest = manifest_path
+    provider = resolve_layout_provider(manifest_path)
     if isinstance(provider, TemplateLayoutRegistry):
         template_reflow(deck, provider)
     else:

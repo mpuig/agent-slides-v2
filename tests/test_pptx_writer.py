@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
+from collections.abc import Iterable
 from pathlib import Path
+from zipfile import ZipFile
 
+import pytest
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -10,6 +14,8 @@ from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
 from agent_slides.engine.reflow import reflow_deck
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
+from agent_slides.io import read_template_manifest
 from agent_slides.io.pptx_writer import write_pptx
 from agent_slides.model.types import (
     ComputedNode,
@@ -118,6 +124,30 @@ def open_presentation(path: Path) -> Presentation:
 
 def write_test_png(path: Path) -> None:
     path.write_bytes(PNG_1X1)
+
+
+def create_template_manifest(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
+    template_path = tmp_path / "template.pptx"
+    manifest_path = tmp_path / "template.manifest.json"
+
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[0])
+    presentation.slides.add_slide(presentation.slide_layouts[1])
+    presentation.slides.add_slide(presentation.slide_layouts[1])
+    presentation.save(template_path)
+
+    result = read_template_manifest(template_path, manifest_path)
+    return template_path, result.manifest_path, result.manifest
+
+
+def find_layout(manifest: dict[str, object], required_slots: Iterable[str]) -> dict[str, object]:
+    required = set(required_slots)
+    for master in manifest["slide_masters"]:
+        for layout in master["layouts"]:
+            slot_mapping = layout["slot_mapping"]
+            if required.issubset(slot_mapping):
+                return layout
+    raise AssertionError(f"No layout found with slots {sorted(required)}")
 
 
 def test_write_pptx_renders_expected_slides_and_shapes(tmp_path: Path) -> None:
@@ -303,3 +333,148 @@ def test_write_pptx_renders_image_layout_variants(tmp_path: Path) -> None:
     assert hero_picture.top == 0
     assert hero_picture.width == int(720.0 * EMU_PER_POINT)
     assert hero_picture.height == int(540.0 * EMU_PER_POINT)
+
+
+def test_write_pptx_clones_template_and_fills_native_placeholders(tmp_path: Path) -> None:
+    template_path, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-output.pptx"
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+    body_layout = find_layout(manifest, {"heading", "body"})
+
+    deck = Deck(
+        deck_id="template-deck",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout=title_layout["slug"],
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="Template heading"),
+                    Node(node_id="n-2", slot_binding="subheading", type="text", content="Line 1\nLine 2"),
+                ],
+            ),
+            Slide(
+                slide_id="s-2",
+                layout=body_layout["slug"],
+                nodes=[
+                    Node(node_id="n-3", slot_binding="heading", type="text", content="Agenda"),
+                    Node(node_id="n-4", slot_binding="body", type="text", content="Point A\nPoint B"),
+                ],
+            ),
+        ],
+        counters=Counters(slides=2, nodes=4),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    template = open_presentation(template_path)
+    presentation = open_presentation(output_path)
+
+    assert len(presentation.slides) == 2
+    assert len(presentation.slide_masters) == len(template.slide_masters)
+    assert presentation.slides[0].slide_layout.name == title_layout["name"]
+    assert presentation.slides[1].slide_layout.name == body_layout["name"]
+
+    title_placeholder = presentation.slides[0].placeholders[title_layout["slot_mapping"]["heading"]]
+    subtitle_placeholder = presentation.slides[0].placeholders[title_layout["slot_mapping"]["subheading"]]
+    body_placeholder = presentation.slides[1].placeholders[body_layout["slot_mapping"]["body"]]
+
+    assert [paragraph.text for paragraph in subtitle_placeholder.text_frame.paragraphs] == ["Line 1", "Line 2"]
+    assert [paragraph.text for paragraph in body_placeholder.text_frame.paragraphs] == ["Point A", "Point B"]
+    assert title_placeholder.text_frame.paragraphs[0].runs[0].font.name is None
+    assert title_placeholder.text_frame.paragraphs[0].runs[0].font.size is None
+
+    with ZipFile(output_path) as archive:
+        slide_parts = sorted(
+            name
+            for name in archive.namelist()
+            if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+        )
+    assert slide_parts == ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]
+
+
+def test_write_pptx_warns_when_template_hash_changes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "hash-mismatch.pptx"
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["source_hash"] = "0" * 64
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="template-deck",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout=title_layout["slug"],
+                nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Updated title")],
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    warning = json.loads(capsys.readouterr().err)
+    assert warning["warning"]["code"] == "TEMPLATE_CHANGED"
+    assert output_path.exists()
+
+
+def test_write_pptx_reports_missing_template_file_from_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "missing-template.manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source": "missing-template.pptx",
+                "source_hash": "abc123",
+                "slide_masters": [
+                    {
+                        "layouts": [
+                            {
+                                "name": "Title Slide",
+                                "slug": "title_slide",
+                                "index": 0,
+                                "master_index": 0,
+                                "slot_mapping": {"heading": 0},
+                            }
+                        ]
+                    }
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    deck = Deck(
+        deck_id="missing-template",
+        template_manifest=str(manifest_path),
+        slides=[Slide(slide_id="s-1", layout="title_slide")],
+    )
+
+    with pytest.raises(AgentSlidesError) as exc_info:
+        write_pptx(deck, str(tmp_path / "missing-template-output.pptx"))
+
+    assert exc_info.value.code == FILE_NOT_FOUND
+
+
+def test_write_pptx_reports_manifest_layout_index_out_of_range(tmp_path: Path) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["slide_masters"][0]["layouts"][0]["index"] = 99
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="bad-layout-index",
+        template_manifest=str(manifest_path),
+        slides=[Slide(slide_id="s-1", layout=title_layout["slug"])],
+    )
+
+    with pytest.raises(AgentSlidesError) as exc_info:
+        write_pptx(deck, str(tmp_path / "bad-layout-index.pptx"))
+
+    assert exc_info.value.code == SCHEMA_ERROR
