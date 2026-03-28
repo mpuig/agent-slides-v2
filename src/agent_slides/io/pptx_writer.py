@@ -10,13 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.shapes.shapetree import SlideShapes
 from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
-from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
+from agent_slides.model.types import ChartSpec, ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
 HEADING_SIZE_FACTOR = 1.35
@@ -344,6 +346,57 @@ def render_image_node(slide_shape_collection: SlideShapes, node: Node, computed:
     )
 
 
+def _chart_type(spec: ChartSpec) -> XL_CHART_TYPE:
+    return {
+        "area": XL_CHART_TYPE.AREA,
+        "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+        "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+        "doughnut": XL_CHART_TYPE.DOUGHNUT,
+        "line": XL_CHART_TYPE.LINE,
+        "pie": XL_CHART_TYPE.PIE,
+        "scatter": XL_CHART_TYPE.XY_SCATTER,
+    }[spec.chart_type]
+
+
+def _chart_data(spec: ChartSpec) -> CategoryChartData | XyChartData:
+    if spec.chart_type == "scatter":
+        chart_data = XyChartData()
+        for series in spec.scatter_series or []:
+            xy_series = chart_data.add_series(series.name)
+            for point in series.points:
+                xy_series.add_data_point(point.x, point.y)
+        return chart_data
+
+    chart_data = CategoryChartData()
+    chart_data.categories = spec.categories or []
+    for series in spec.series or []:
+        chart_data.add_series(series.name, tuple(series.values))
+    return chart_data
+
+
+def render_chart_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+    """Render a native PowerPoint chart for a chart node."""
+
+    if node.chart_spec is None:
+        return
+
+    graphic_frame = slide_shape_collection.add_chart(
+        _chart_type(node.chart_spec),
+        points_to_emu(computed.x),
+        points_to_emu(computed.y),
+        points_to_emu(computed.width),
+        points_to_emu(computed.height),
+        _chart_data(node.chart_spec),
+    )
+    chart = graphic_frame.chart
+    chart.has_legend = node.chart_spec.style.has_legend
+    if node.chart_spec.title:
+        chart.has_title = True
+        chart.chart_title.text_frame.text = node.chart_spec.title
+    if node.chart_spec.style.has_data_labels and chart.plots:
+        chart.plots[0].has_data_labels = True
+
+
 def _write_v0_pptx(deck: Deck, output_path: str) -> None:
     presentation = Presentation()
     presentation.slide_width = Inches(10)
@@ -363,7 +416,9 @@ def _write_v0_pptx(deck: Deck, output_path: str) -> None:
             if computed is None:
                 continue
 
-            if node.type == "image":
+            if node.type == "chart":
+                render_chart_node(pptx_slide.shapes, node, computed)
+            elif node.type == "image":
                 render_image_node(pptx_slide.shapes, node, computed)
             else:
                 render_text_node(pptx_slide.shapes, node, computed)
