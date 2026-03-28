@@ -12,6 +12,8 @@ from agent_slides.errors import (
     FILE_NOT_FOUND,
     INVALID_LAYOUT,
     INVALID_SLIDE,
+    INVALID_SLOT,
+    SCHEMA_ERROR,
     THEME_NOT_FOUND,
     UNBOUND_NODES,
 )
@@ -43,9 +45,20 @@ def build_slide(slide_id: str, layout: str, slots: list[str], *, start_node: int
     )
 
 
-def invoke_cli(args: list[str]) -> Result:
+def make_empty_deck() -> Deck:
+    return Deck(
+        deck_id="deck-1",
+        revision=0,
+        theme="default",
+        design_rules="default",
+        slides=[],
+        counters=Counters(),
+    )
+
+
+def invoke_cli(args: list[str], *, input: str | None = None) -> Result:
     runner = CliRunner()
-    return runner.invoke(cli, args)
+    return runner.invoke(cli, args, input=input)
 
 
 def test_init_creates_valid_deck_file_and_reports_success_json(tmp_path: Path) -> None:
@@ -364,3 +377,179 @@ def test_slide_set_layout_invalid_layout_returns_invalid_layout(tmp_path: Path) 
 
     assert result.exit_code == 1
     assert payload["error"]["code"] == INVALID_LAYOUT
+
+
+def test_batch_applies_multiple_operations_atomically(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title"}},
+                {"command": "slot_set", "args": {"slide": 0, "slot": "title", "text": "Hello"}},
+                {
+                    "command": "slot_set",
+                    "args": {"slide": 0, "slot": "subtitle", "text": "World", "font_size": 18},
+                },
+                {"command": "slide_add", "args": {"layout": "two_col"}},
+                {"command": "slot_set", "args": {"slide": 1, "slot": "title", "text": "Key Points"}},
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["data"]["operations"] == 5
+    assert payload["data"]["results"][0] == {
+        "slide_index": 0,
+        "slide_id": "s-1",
+        "layout": "title",
+    }
+
+    deck = read_deck(str(deck_path))
+    assert deck.revision == 1
+    assert [slide.layout for slide in deck.slides] == ["title", "two_col"]
+    assert [(node.slot_binding, node.content) for node in deck.slides[0].nodes] == [
+        ("heading", "Hello"),
+        ("subheading", "World"),
+    ]
+    assert deck.slides[0].nodes[1].style_overrides["font_size"] == 18.0
+    assert [(node.slot_binding, node.content) for node in deck.slides[1].nodes] == [
+        ("heading", "Key Points"),
+        ("col1", ""),
+        ("col2", ""),
+    ]
+
+
+def test_batch_rolls_back_and_reports_operation_index_on_failure(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+    original_payload = deck_path.read_text(encoding="utf-8")
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slide_add", "args": {"layout": "title"}},
+                {"command": "slot_set", "args": {"slide": 0, "slot": "body", "text": "Nope"}},
+            ]
+        ),
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)["error"]
+    assert error["code"] == INVALID_SLOT
+    assert error["operation_index"] == 1
+    assert deck_path.read_text(encoding="utf-8") == original_payload
+    assert read_deck(str(deck_path)).slides == []
+
+
+def test_batch_empty_array_is_a_successful_no_op(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(["batch", str(deck_path)], input="[]")
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "ok": True,
+        "data": {"operations": 0, "results": []},
+    }
+    assert read_deck(str(deck_path)).revision == 0
+
+
+def test_batch_invalid_json_returns_schema_error(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_empty_deck())
+
+    result = invoke_cli(["batch", str(deck_path)], input="{not json")
+
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)["error"]
+    assert error["code"] == SCHEMA_ERROR
+    assert "Invalid JSON batch payload" in error["message"]
+
+
+def test_batch_supports_all_mutation_types(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    write_deck(
+        deck_path,
+        Deck(
+            deck_id="deck-1",
+            revision=0,
+            theme="default",
+            design_rules="default",
+            slides=[
+                Slide(
+                    slide_id="s-1",
+                    layout="title",
+                    nodes=[Node(node_id="n-1", slot_binding=None, type="text", content="Loose title")],
+                )
+            ],
+            counters=Counters(slides=1, nodes=1),
+        ),
+    )
+
+    result = invoke_cli(
+        ["batch", str(deck_path)],
+        input=json.dumps(
+            [
+                {"command": "slot_bind", "args": {"node": "n-1", "slot": "title"}},
+                {"command": "slot_set", "args": {"slide": "s-1", "slot": "subtitle", "text": "Intro"}},
+                {"command": "slide_add", "args": {"layout": "two_col"}},
+                {"command": "slot_set", "args": {"slide": 1, "slot": "left", "text": "Key Points"}},
+                {"command": "slot_clear", "args": {"slide": 1, "slot": "left"}},
+                {"command": "slide_set_layout", "args": {"slide": 1, "layout": "three_col"}},
+                {"command": "slide_remove", "args": {"slide": 1}},
+            ]
+        ),
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["operations"] == 7
+    assert payload["data"]["results"][0] == {
+        "slide_id": "s-1",
+        "slot": "heading",
+        "node_id": "n-1",
+    }
+    assert payload["data"]["results"][5] == {
+        "slide_id": "s-2",
+        "layout": "three_col",
+        "unbound_nodes": [],
+    }
+    assert payload["data"]["results"][6] == {
+        "removed": "s-2",
+        "slide_count": 1,
+    }
+
+    deck = read_deck(str(deck_path))
+    assert len(deck.slides) == 1
+    assert deck.slides[0].nodes[0].node_id == "n-1"
+    assert deck.slides[0].nodes[0].slot_binding == "heading"
+    assert deck.slides[0].nodes[0].content == "Loose title"
+    assert deck.slides[0].nodes[1].slot_binding == "subheading"
+    assert deck.slides[0].nodes[1].content == "Intro"
+
+
+def test_batch_uses_single_mutate_deck_call(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_mutate_deck(path: str, fn):
+        calls.append(path)
+        results = fn(Deck(deck_id="deck-1"))
+        return Deck(deck_id="deck-1"), results
+
+    monkeypatch.setattr("agent_slides.commands.batch.mutate_deck", fake_mutate_deck)
+
+    result = invoke_cli(
+        ["batch", "deck.json"],
+        input=json.dumps([{"command": "slide_add", "args": {"layout": "title"}}]),
+    )
+
+    assert result.exit_code == 0
+    assert calls == ["deck.json"]
+    assert json.loads(result.output)["data"]["operations"] == 1
