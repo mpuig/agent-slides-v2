@@ -98,16 +98,23 @@ class FakeSlideRenderer:
         path = self.cache_dir / f"{slide_id}-{revision}.png"
         return path if path.exists() else None
 
-    async def render_all(self) -> list[Path]:
+    async def render_all(self, *, progress_callback=None) -> list[Path]:
         self.render_all_calls += 1
         deck = read_deck(str(self.deck_path))
-        return [self._render_slide(slide.slide_id, slide.revision or deck.revision) for slide in deck.slides]
+        rendered: list[Path] = []
+        for index, slide in enumerate(deck.slides):
+            if progress_callback is not None:
+                progress_callback(index, len(deck.slides))
+            rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+        return rendered
 
-    async def render_indices(self, slide_indices: list[int]) -> list[Path]:
+    async def render_indices(self, slide_indices: list[int], *, progress_callback=None) -> list[Path]:
         self.render_indices_calls.append(list(slide_indices))
         deck = read_deck(str(self.deck_path))
         rendered: list[Path] = []
         for index in slide_indices:
+            if progress_callback is not None:
+                progress_callback(index, len(deck.slides))
             slide = deck.slides[index]
             rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
         return rendered
@@ -281,10 +288,14 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
                 write_deck(deck_path, make_deck(revision=2, content="Updated"))
 
+                rendering_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
+                rendering_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
                 updated_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
                 updated_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
 
                 assert renderer.render_indices_calls == [[0]]
+                assert rendering_one == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+                assert rendering_two == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
                 assert updated_one["type"] == "slides_updated"
                 assert updated_two["type"] == "slides_updated"
                 assert updated_one["revision"] == 2
@@ -307,13 +318,68 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
     assert any("Preview client disconnected" in message for message in messages)
 
 
+def test_preview_server_reports_initial_render_progress_to_new_clients(tmp_path: Path) -> None:
+    class BlockingSlideRenderer(FakeSlideRenderer):
+        def __init__(self, deck_path: Path, output_dir: Path) -> None:
+            super().__init__(deck_path, output_dir)
+            self.render_started = asyncio.Event()
+            self.release_render = asyncio.Event()
+
+        async def render_all(self, *, progress_callback=None) -> list[Path]:
+            self.render_all_calls += 1
+            deck = read_deck(str(self.deck_path))
+            rendered: list[Path] = []
+            for index, slide in enumerate(deck.slides):
+                if progress_callback is not None:
+                    progress_callback(index, len(deck.slides))
+                self.render_started.set()
+                await self.release_render.wait()
+                rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+            return rendered
+
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        renderer = BlockingSlideRenderer(deck_path, tmp_path / "rendered")
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            debounce_ms=20,
+            slide_renderer=renderer,
+        )
+
+        start_task = asyncio.create_task(server.start())
+        await asyncio.wait_for(_wait_for(lambda: server.port != 0), timeout=1.0)
+        await asyncio.wait_for(renderer.render_started.wait(), timeout=1.0)
+
+        try:
+            async with connect(f"ws://127.0.0.1:{server.port}/ws") as client:
+                first_message = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+                second_message = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+
+                messages = [first_message, second_message]
+                assert any(message.get("type") == "rendering" for message in messages)
+                rendering = next(message for message in messages if message.get("type") == "rendering")
+                assert rendering == {
+                    "type": "rendering",
+                    "path": str(deck_path),
+                    "slide_index": 1,
+                    "total": 1,
+                }
+        finally:
+            renderer.release_render.set()
+            await start_task
+            await server.stop()
+    asyncio.run(scenario())
+
+
 def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
         renderer = FakeSlideRenderer(deck_path, tmp_path / "rendered")
-
         server = PreviewServer(
             deck_path,
             host="127.0.0.1",
@@ -342,9 +408,16 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
 
                 write_deck(deck_path, make_deck(revision=1, content="Deck arrived"))
 
+                rendering = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
                 updated = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
                 hydrated = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
+                assert rendering == {
+                    "type": "rendering",
+                    "path": str(deck_path.resolve()),
+                    "slide_index": 1,
+                    "total": 1,
+                }
                 assert updated["type"] == "slides_updated"
                 assert updated["revision"] == 1
                 assert updated["slides"] == [
@@ -361,7 +434,6 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
             await server.stop()
 
     asyncio.run(scenario())
-
 
 def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     async def scenario() -> None:
@@ -500,12 +572,16 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert 'id="next-slide"' in payload
     assert 'id="slide-dots"' in payload
     assert 'id="slide-count"' in payload
+    assert 'id="render-progress"' in payload
+    assert 'id="render-progress-text"' in payload
+    assert 'id="render-progress-fill"' in payload
     assert 'id="status-dot"' in payload
     assert "new WebSocket" in payload
     assert "Reconnecting in" in payload
     assert "ArrowLeft" in payload
     assert "ArrowRight" in payload
     assert '"slides_updated"' in payload
+    assert '"rendering"' in payload
     assert '"Waiting for deck..."' in payload
     assert 'fetch("/api/deck")' in payload
     assert "preserveAspectRatio" in payload
@@ -523,6 +599,8 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert 'createSvgElement("tspan")' in payload
     assert 'createSvgElement("rect")' in payload
     assert "currentSlideIndex" in payload
+    assert "updateRenderProgress" in payload
+    assert "Rendering slide" in payload
 
 
 def test_client_html_contains_chart_preview_helpers() -> None:

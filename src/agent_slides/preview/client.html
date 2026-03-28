@@ -102,6 +102,38 @@
         background: rgba(255, 252, 247, 0.78);
       }
 
+      .render-progress {
+        display: grid;
+        gap: 8px;
+        padding: 0 20px 12px;
+        color: #6a5841;
+      }
+
+      .render-progress[hidden] {
+        display: none;
+      }
+
+      .render-progress-copy {
+        font-size: 13px;
+        letter-spacing: 0.01em;
+      }
+
+      .render-progress-bar {
+        width: 100%;
+        height: 6px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(199, 177, 143, 0.3);
+      }
+
+      .render-progress-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #c98e48 0%, #8e5a23 100%);
+        transition: width 180ms ease;
+      }
+
       .nav {
         display: inline-flex;
         align-items: center;
@@ -218,6 +250,12 @@
           <img id="stage-image" alt="Slide preview" hidden>
           <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
         </div>
+        <div class="render-progress" id="render-progress" hidden aria-live="polite">
+          <div class="render-progress-copy" id="render-progress-text"></div>
+          <div class="render-progress-bar" aria-hidden="true">
+            <div class="render-progress-fill" id="render-progress-fill"></div>
+          </div>
+        </div>
         <div class="toolbar-bottom">
           <div class="nav" aria-label="Slide navigation">
             <button id="prev-slide" type="button" aria-label="Previous slide">&larr;</button>
@@ -237,6 +275,9 @@
       const nextButton = document.getElementById("next-slide");
       const dots = document.getElementById("slide-dots");
       const slideCount = document.getElementById("slide-count");
+      const renderProgress = document.getElementById("render-progress");
+      const renderProgressText = document.getElementById("render-progress-text");
+      const renderProgressFill = document.getElementById("render-progress-fill");
       const measureContext = document.createElement("canvas").getContext("2d");
       const chartPalette = ["#c98e48", "#6e8ca7", "#8f9b5f", "#c56f5e", "#8672b8"];
       const chartTypeLabels = {
@@ -254,6 +295,7 @@
       let previewBackend = "svg";
       let reconnectDelayMs = 250;
       let reconnectTimer = null;
+      let currentRenderProgress = null;
 
       const setConnectionState = (state, text) => {
         statusDot.dataset.state = state;
@@ -264,6 +306,22 @@
         previewBackend = backend === "png" ? "png" : "svg";
         stageImage.hidden = previewBackend !== "png";
         stage.hidden = previewBackend === "png";
+      };
+
+      const updateRenderProgress = () => {
+        if (!currentRenderProgress || currentRenderProgress.total <= 0) {
+          renderProgress.hidden = true;
+          renderProgressText.textContent = "";
+          renderProgressFill.style.width = "0%";
+          return;
+        }
+
+        const slideIndex = Math.max(1, Number(currentRenderProgress.slide_index || 0));
+        const total = Math.max(1, Number(currentRenderProgress.total || 0));
+        const width = Math.min(100, Math.max(0, (slideIndex / total) * 100));
+        renderProgress.hidden = false;
+        renderProgressText.textContent = `Rendering slide ${slideIndex} of ${total}...`;
+        renderProgressFill.style.width = `${width}%`;
       };
 
       const imageHref = (imagePath) => {
@@ -934,6 +992,16 @@
 
         socket.addEventListener("message", (event) => {
           const payload = JSON.parse(event.data);
+          if (payload.type === "rendering") {
+            currentRenderProgress = payload;
+            updateRenderProgress();
+            setConnectionState("live", "Rendering preview");
+            return;
+          }
+
+          currentRenderProgress = null;
+          updateRenderProgress();
+
           if (payload.type === "slides_updated") {
             fetch("/api/deck")
               .then((response) => response.json())
@@ -975,6 +1043,8 @@
         .then((deck) => renderDeck(deck))
         .catch(() => {
           renderDeck({ slides: [] });
+          currentRenderProgress = null;
+          updateRenderProgress();
           setConnectionState("disconnected", "Unable to load deck");
         })
         .finally(connect);
