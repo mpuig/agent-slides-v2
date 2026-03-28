@@ -116,6 +116,16 @@ class FakeSlideRenderer:
         return write_png(self.cache_dir / f"{slide_id}-{revision}.png", width=48, height=36)
 
 
+class SilentFailureSlideRenderer(FakeSlideRenderer):
+    async def render_all(self) -> list[Path]:
+        self.render_all_calls += 1
+        return []
+
+    async def render_indices(self, slide_indices: list[int]) -> list[Path]:
+        self.render_indices_calls.append(list(slide_indices))
+        return []
+
+
 def make_image_deck(image_path: str, *, revision: int) -> Deck:
     return Deck(
         deck_id="deck-preview-image",
@@ -378,6 +388,7 @@ def test_preview_server_falls_back_to_svg_when_renderer_unavailable(
             payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
 
             assert payload["preview_backend"] == "svg"
+            assert payload["preview_notice"] == "Approximate preview (LibreOffice unavailable)"
             with pytest.raises(urllib.error.HTTPError) as exc_info:
                 await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png")
             assert exc_info.value.code == 404
@@ -389,6 +400,41 @@ def test_preview_server_falls_back_to_svg_when_renderer_unavailable(
 
     messages = [record.message for record in caplog.records]
     assert any("LibreOffice not found. Using approximate SVG preview." in message for message in messages)
+
+
+def test_preview_server_falls_back_to_svg_when_renderer_silently_misses_png_cache(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        write_deck(deck_path, make_deck(revision=1, content="Initial"))
+        renderer = SilentFailureSlideRenderer(deck_path, tmp_path / "rendered")
+
+        server = PreviewServer(
+            deck_path,
+            host="127.0.0.1",
+            port=0,
+            debounce_ms=20,
+            slide_renderer=renderer,
+        )
+        await server.start()
+        try:
+            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+
+            assert payload["preview_backend"] == "svg"
+            assert payload["preview_notice"] == "Approximate preview (LibreOffice unavailable)"
+            assert "slide_previews" not in payload
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png")
+            assert exc_info.value.code == 404
+        finally:
+            await server.stop()
+
+    caplog.set_level("WARNING")
+    asyncio.run(scenario())
+
+    messages = [record.message for record in caplog.records]
+    assert any("did not produce cached slide images" in message for message in messages)
 
 
 def test_preview_server_rejects_chat_routes(tmp_path: Path) -> None:
@@ -444,6 +490,7 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert 'id="next-slide"' in payload
     assert 'id="slide-dots"' in payload
     assert 'id="slide-count"' in payload
+    assert 'id="preview-banner"' in payload
     assert 'id="status-dot"' in payload
     assert "new WebSocket" in payload
     assert "Reconnecting in" in payload
@@ -452,6 +499,16 @@ def test_client_html_contains_required_preview_surface() -> None:
     assert '"slides_updated"' in payload
     assert 'fetch("/api/deck")' in payload
     assert "preserveAspectRatio" in payload
+    assert "Approximate preview (LibreOffice unavailable)" in payload
+
+
+def test_client_html_probes_png_preview_before_showing_image() -> None:
+    payload = read_client_html()
+
+    assert "const probe = new Image();" in payload
+    assert 'showSurface("svg");' in payload
+    assert 'showSurface("png");' in payload
+    assert 'setPreviewBanner(currentDeck?.preview_notice || APPROXIMATE_PREVIEW_NOTICE);' in payload
 
 
 def test_client_html_wraps_text_and_renders_structured_content() -> None:
