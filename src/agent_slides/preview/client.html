@@ -145,11 +145,25 @@
         color: #6a5841;
       }
 
+      .stage-shell {
+        background: white;
+      }
+
+      #stage-image,
       svg {
         width: 100%;
         aspect-ratio: 4 / 3;
         display: block;
         background: white;
+      }
+
+      #stage-image {
+        object-fit: contain;
+      }
+
+      #stage-image[hidden],
+      svg[hidden] {
+        display: none;
       }
 
       .empty {
@@ -176,12 +190,16 @@
           </div>
           <div class="meta" id="slide-count">Slide 0 of 0</div>
         </div>
-        <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
+        <div class="stage-shell">
+          <img id="stage-image" alt="Slide preview" hidden>
+          <svg id="stage" viewBox="0 0 720 540" role="img" aria-label="Slide preview"></svg>
+        </div>
       </div>
     </main>
     <script>
       const SVG_NS = "http://www.w3.org/2000/svg";
       const stage = document.getElementById("stage");
+      const stageImage = document.getElementById("stage-image");
       const statusDot = document.getElementById("status-dot");
       const statusText = document.getElementById("status-text");
       const prevButton = document.getElementById("prev-slide");
@@ -202,12 +220,19 @@
 
       let currentDeck = null;
       let currentSlideIndex = 0;
+      let previewBackend = "svg";
       let reconnectDelayMs = 250;
       let reconnectTimer = null;
 
       const setConnectionState = (state, text) => {
         statusDot.dataset.state = state;
         statusText.textContent = text;
+      };
+
+      const setPreviewBackend = (backend) => {
+        previewBackend = backend === "png" ? "png" : "svg";
+        stageImage.hidden = previewBackend !== "png";
+        stage.hidden = previewBackend === "png";
       };
 
       const imageHref = (imagePath) => {
@@ -755,19 +780,40 @@
         });
       };
 
+      const slidePreview = (index) => {
+        if (!Array.isArray(currentDeck?.slide_previews)) {
+          return null;
+        }
+        return currentDeck.slide_previews[index] ?? null;
+      };
+
       const renderDeck = (deck) => {
         currentDeck = deck && typeof deck === "object" ? deck : { slides: [] };
         const slides = Array.isArray(currentDeck.slides) ? currentDeck.slides : [];
+        setPreviewBackend(currentDeck.preview_backend);
         currentSlideIndex = clampSlideIndex(currentSlideIndex, slides.length);
         stage.replaceChildren();
         updateNavigation(slides);
 
         if (slides.length === 0) {
+          setPreviewBackend("svg");
+          stageImage.removeAttribute("src");
           renderEmptyState();
           return;
         }
 
+        if (previewBackend === "png") {
+          const preview = slidePreview(currentSlideIndex);
+          if (preview?.url) {
+            stageImage.src = preview.url;
+            stageImage.alt = `Slide ${currentSlideIndex + 1} preview`;
+            return;
+          }
+          setPreviewBackend("svg");
+        }
+
         renderStageBackground();
+        stageImage.removeAttribute("src");
 
         const slide = slides[currentSlideIndex];
         for (const node of slide.nodes ?? []) {
@@ -827,7 +873,14 @@
 
         socket.addEventListener("message", (event) => {
           const payload = JSON.parse(event.data);
-          renderDeck(payload.deck ?? payload);
+          if (payload.type === "slides_updated") {
+            fetch("/api/deck")
+              .then((response) => response.json())
+              .then((deck) => renderDeck(deck))
+              .catch(() => setConnectionState("disconnected", "Unable to refresh preview"));
+          } else {
+            renderDeck(payload.deck ?? payload);
+          }
           setConnectionState("live", "Live");
         });
 

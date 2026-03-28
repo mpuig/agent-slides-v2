@@ -3,19 +3,31 @@
 from __future__ import annotations
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
+from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.engine.text_fit import fit_text
 from agent_slides.model.layout_provider import TemplateLayoutRegistry
 from agent_slides.model.themes import resolve_style
 from agent_slides.model.types import ComputedNode, Deck
 
 
-def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
+def template_reflow(
+    deck: Deck,
+    registry: TemplateLayoutRegistry,
+    *,
+    previous_slide_signatures: dict[str, object] | None = None,
+) -> None:
     """Populate computed nodes from template placeholder bounds and theme."""
 
     theme = registry.theme
     for slide in deck.slides:
+        slide_revision = resolve_slide_revision(
+            slide,
+            deck_revision=deck.revision,
+            previous_slide_signatures=previous_slide_signatures,
+        )
         layout_def = registry.get_layout(slide.layout)
         computed: dict[str, ComputedNode] = {}
+        slide.revision = slide_revision
 
         for node in slide.nodes:
             if node.slot_binding is None:
@@ -52,7 +64,7 @@ def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
                     bg_transparency=slot.bg_transparency,
                     font_bold=bool(style["font_bold"]),
                     text_overflow=False,
-                    revision=deck.revision,
+                    revision=slide_revision,
                     content_type="image",
                     image_fit=str(node.style_overrides.get("image_fit", "contain")),
                 )
@@ -78,7 +90,7 @@ def template_reflow(deck: Deck, registry: TemplateLayoutRegistry) -> None:
                 bg_transparency=slot.bg_transparency,
                 font_bold=bool(style["font_bold"]),
                 text_overflow=text_overflow,
-                revision=deck.revision,
+                revision=slide_revision,
                 content_type="text",
             )
 

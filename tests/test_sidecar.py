@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 import agent_slides.io.sidecar as sidecar
+from agent_slides.commands.mutations import apply_mutation
 from agent_slides.errors import (
     AgentSlidesError,
     FILE_EXISTS,
@@ -221,7 +222,7 @@ def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.Monk
     reflow_revisions: list[int] = []
     provider_types: list[type[object]] = []
 
-    def fake_reflow(deck: Deck, provider) -> None:
+    def fake_reflow(deck: Deck, provider, **_: object) -> None:
         reflow_revisions.append(deck.revision)
         provider_types.append(type(provider))
 
@@ -257,6 +258,55 @@ def test_mutate_deck_does_not_write_if_mutation_raises(tmp_path: Path) -> None:
 
     assert deck_path.read_text(encoding="utf-8") == original_payload
     assert read_deck(str(deck_path)) == original
+
+
+def test_mutate_deck_preserves_unchanged_slide_revisions(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=False)
+    mutate_deck(
+        str(deck_path),
+        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
+    )
+    mutate_deck(
+        str(deck_path),
+        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
+    )
+    mutate_deck(
+        str(deck_path),
+        lambda deck, provider: apply_mutation(
+            deck,
+            "slot_set",
+            {"slide": 0, "slot": "title", "text": "Slide one"},
+            provider,
+        ),
+    )
+    mutate_deck(
+        str(deck_path),
+        lambda deck, provider: apply_mutation(
+            deck,
+            "slot_set",
+            {"slide": 1, "slot": "title", "text": "Slide two"},
+            provider,
+        ),
+    )
+
+    before = read_deck(str(deck_path))
+    updated_deck, _ = mutate_deck(
+        str(deck_path),
+        lambda deck, provider: apply_mutation(
+            deck,
+            "slot_set",
+            {"slide": 0, "slot": "title", "text": "Slide one updated"},
+            provider,
+        ),
+    )
+    after = read_deck(str(deck_path))
+
+    assert before.slides[0].revision == 3
+    assert before.slides[1].revision == 4
+    assert updated_deck.revision == 5
+    assert after.slides[0].revision == 5
+    assert after.slides[1].revision == 4
 
 
 def test_init_deck_creates_new_file_with_defaults(tmp_path: Path) -> None:

@@ -296,6 +296,7 @@ class Node(AgentSlidesModel):
 class Slide(AgentSlidesModel):
     slide_id: str
     layout: str
+    revision: int = 0
     nodes: list[Node] = Field(default_factory=list)
     computed: dict[str, ComputedNode] = Field(default_factory=dict)
 
@@ -437,6 +438,7 @@ class Deck(AgentSlidesModel):
 
 class ComputedSlide(AgentSlidesModel):
     slide_id: str
+    revision: int = 0
     computed: dict[str, ComputedNode] = Field(default_factory=dict)
 
 
@@ -454,6 +456,7 @@ class ComputedDeck(AgentSlidesModel):
             slides=[
                 ComputedSlide(
                     slide_id=slide.slide_id,
+                    revision=slide.revision,
                     computed=slide.computed,
                 )
                 for slide in deck.slides
@@ -462,6 +465,7 @@ class ComputedDeck(AgentSlidesModel):
 
     def apply_to_deck(self, deck: Deck) -> None:
         for slide in deck.slides:
+            slide.revision = 0
             slide.computed = {}
 
         if self.deck_id != deck.deck_id or self.revision != deck.revision:
@@ -472,4 +476,5 @@ class ComputedDeck(AgentSlidesModel):
             slide = slides_by_id.get(computed_slide.slide_id)
             if slide is None:
                 continue
+            slide.revision = computed_slide.revision
             slide.computed = dict(computed_slide.computed)
