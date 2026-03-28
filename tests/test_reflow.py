@@ -51,6 +51,37 @@ def test_reflow_chart_nodes_use_grid_geometry_without_text_fitting() -> None:
     assert chart.content_type == "chart"
 
 
+def test_reflow_scatter_chart_nodes_keep_chart_content_type() -> None:
+    slide = Slide(
+        slide_id="s-scatter",
+        layout="title_content",
+        nodes=[
+            Node(node_id="n-1", slot_binding="heading", type="text", content="Correlation"),
+            Node(
+                node_id="n-2",
+                slot_binding="body",
+                type="chart",
+                chart_spec={
+                    "chart_type": "scatter",
+                    "scatter_series": [
+                        {
+                            "name": "Observations",
+                            "points": [{"x": 1.0, "y": 2.0}, {"x": 2.5, "y": 3.5}],
+                        }
+                    ],
+                },
+            ),
+        ],
+    )
+
+    reflow_slide(slide, get_layout("title_content"), load_theme("default"))
+
+    chart = slide.computed["n-2"]
+
+    assert chart.content_type == "chart"
+    assert chart.font_size_pt == 0.0
+
+
 def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
     image_path = make_image(tmp_path)
     slide = Slide(

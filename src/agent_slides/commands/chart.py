@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Any
 
 import click
 
 from agent_slides.commands.mutations import apply_mutation
-from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.io import mutate_deck
 from agent_slides.model import Deck
 from agent_slides.model.layout_provider import LayoutProvider
@@ -17,38 +19,74 @@ def _emit_json(payload: dict[str, object]) -> None:
     click.echo(json.dumps(payload))
 
 
-def _parse_chart_spec_json(raw: str) -> dict[str, object]:
+def _parse_chart_json(raw: str, *, option_name: str) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise AgentSlidesError(
             SCHEMA_ERROR,
-            f"Invalid JSON for '--spec': {exc.msg} at line {exc.lineno} column {exc.colno}",
+            f"Invalid JSON for '{option_name}': {exc.msg} at line {exc.lineno} column {exc.colno}",
         ) from exc
 
     if not isinstance(payload, dict):
-        raise AgentSlidesError(SCHEMA_ERROR, "Argument '--spec' must be a JSON object")
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{option_name}' must be a JSON object")
     return payload
+
+
+def _load_chart_data(data_json: str | None, data_file: str | None) -> dict[str, Any]:
+    if (data_json is None) == (data_file is None):
+        raise AgentSlidesError(SCHEMA_ERROR, "Exactly one of '--data' or '--data-file' is required")
+
+    if data_json is not None:
+        return _parse_chart_json(data_json, option_name="--data")
+
+    assert data_file is not None
+    data_path = Path(data_file)
+    try:
+        payload = data_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise AgentSlidesError(FILE_NOT_FOUND, f"Chart data file not found: {data_path}") from exc
+    except OSError as exc:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Failed to read chart data file {data_path}: {exc.strerror or str(exc)}",
+        ) from exc
+
+    return _parse_chart_json(payload, option_name="--data-file")
 
 
 @click.group()
 def chart() -> None:
-    """Manage slot-bound charts."""
+    """Manage chart nodes."""
 
 
 @chart.command("add")
 @click.argument("path")
 @click.option("--slide", "slide_ref", required=True)
 @click.option("--slot", "slot_name", required=True)
-@click.option("--spec", "spec_json", required=True)
-def add_chart_command(path: str, slide_ref: str, slot_name: str, spec_json: str) -> None:
-    """Create or replace the chart bound to a slot on a slide."""
+@click.option("--type", "chart_type", required=True)
+@click.option("--data", "data_json")
+@click.option("--data-file", "data_file")
+@click.option("--title")
+def add_chart_command(
+    path: str,
+    slide_ref: str,
+    slot_name: str,
+    chart_type: str,
+    data_json: str | None,
+    data_file: str | None,
+    title: str | None,
+) -> None:
+    """Create or replace a chart node in a slide slot."""
 
-    mutation_args = {
+    mutation_args: dict[str, object] = {
         "slide": slide_ref,
         "slot": slot_name,
-        "chart_spec": _parse_chart_spec_json(spec_json),
+        "type": chart_type,
+        "data": _load_chart_data(data_json, data_file),
     }
+    if title is not None:
+        mutation_args["title"] = title
 
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
         return apply_mutation(deck, "chart_add", mutation_args, provider)
@@ -60,17 +98,20 @@ def add_chart_command(path: str, slide_ref: str, slot_name: str, spec_json: str)
 @chart.command("update")
 @click.argument("path")
 @click.option("--node", "node_id", required=True)
-@click.option("--spec", "spec_json", required=True)
-def update_chart_command(path: str, node_id: str, spec_json: str) -> None:
-    """Update the chart specification for an existing chart node."""
-
-    mutation_args = {
-        "node": node_id,
-        "chart_spec": _parse_chart_spec_json(spec_json),
-    }
+@click.option("--data", "data_json", required=True)
+def update_chart_command(path: str, node_id: str, data_json: str) -> None:
+    """Update the data payload for an existing chart node."""
 
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:
-        return apply_mutation(deck, "chart_update", mutation_args, provider)
+        return apply_mutation(
+            deck,
+            "chart_update",
+            {
+                "node": node_id,
+                "data": _parse_chart_json(data_json, option_name="--data"),
+            },
+            provider,
+        )
 
     _, result = mutate_deck(path, mutate)
     _emit_json({"ok": True, "data": result})
