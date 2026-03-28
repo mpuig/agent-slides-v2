@@ -167,6 +167,64 @@ Before Phase 2, present:
 
 Ask for approval before building when the workflow is interactive.
 
+Worked example of a completed Phase 1 output:
+
+### Example: "Make a deck about our Q3 product launch"
+
+This example is illustrative, not a template. Real decks will vary.
+
+**Pre-flight exchange:**
+
+- Audience: Leadership team
+- Objective: Get approval for Q3 launch timing
+- Recommendation: Launch in September, not August, due to beta feedback
+
+**Storyline plan:**
+
+```text
+Title: Q3 Product Launch Strategy
+Answer: Launch in September to incorporate beta feedback, capturing 85% of Q3 revenue window
+
+Arguments:
+  1. Beta feedback requires 3 more weeks -> Slides 2-3
+  2. September still captures Q3 revenue -> Slide 4
+  3. Competitive window remains open -> Slide 5
+```
+
+**Slide plan:**
+
+| # | Layout | Action Title |
+|---|--------|-------------|
+| 0 | title | Q3 Product Launch Strategy |
+| 1 | title_content | Beta users flagged three issues that block enterprise adoption |
+| 2 | two_col | Fixing these issues requires 3 weeks, not 3 months |
+| 3 | title_content + chart | September launch still captures 85% of Q3 revenue opportunity |
+| 4 | comparison | Our window stays open: competitors won't ship until November |
+| 5 | closing | Recommendation: approve September launch with expedited fix sprint |
+
+**Coverage diagram:**
+
+```text
+STORYLINE COVERAGE
+===========================
+[+] Deck: "Q3 Product Launch Strategy"
+    |
+    |-- [✓] Answer: "Launch September, captures 85% of Q3"
+    |
+    |-- Argument 1: Beta feedback
+    |   |-- [✓] Slide 1: "Beta users flagged three blocking issues"
+    |   `-- [✓] Slide 2: "Fixing requires 3 weeks, not 3 months"
+    |
+    |-- Argument 2: Revenue capture
+    |   `-- [✓] Slide 3: "September captures 85% of Q3 revenue"
+    |
+    `-- Argument 3: Competitive window
+        `-- [✓] Slide 4: "Competitors won't ship until November"
+-------------------------
+COVERAGE: 5/5 messages covered (100%)
+GAPS: 0
+```
+
 ### Step 6: Optional outside voice
 
 After the storyline review, offer a second-opinion pass on the narrative.
