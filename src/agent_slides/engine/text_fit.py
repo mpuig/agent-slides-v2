@@ -34,6 +34,8 @@ HEADING_SIZE_FACTOR = 1.35
 HEADING_LINE_HEIGHT_FACTOR = 1.1
 BULLET_INDENT_PT = 18.0
 BULLET_GLYPH_WIDTH_CHARS = 2.0
+ICON_GLYPH_WIDTH_FACTOR = 1.4
+ICON_GAP_WIDTH_FACTOR = 0.45
 
 
 def fit_text(
@@ -176,7 +178,10 @@ def _block_width(width: float, block: TextBlock, font_size: float, *, font_famil
     available_width = width
     if block.type == "bullet":
         available_width -= block.level * BULLET_INDENT_PT
-        available_width -= BULLET_GLYPH_WIDTH_CHARS * _width_factor(font_family) * font_size
+        if block.icon:
+            available_width -= (ICON_GLYPH_WIDTH_FACTOR + ICON_GAP_WIDTH_FACTOR) * font_size
+        else:
+            available_width -= BULLET_GLYPH_WIDTH_CHARS * _width_factor(font_family) * font_size
     return max(available_width, 1.0)
 
 

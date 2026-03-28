@@ -10,6 +10,7 @@ from agent_slides.errors import (
     FILE_EXISTS,
     FILE_NOT_FOUND,
     INVALID_CHART_TYPE,
+    INVALID_ICON,
     INVALID_LAYOUT,
     INVALID_NODE_TYPE,
     INVALID_SLIDE,
@@ -44,6 +45,7 @@ MUTATION_COMMAND_NAMES = (
     "slot_bind",
     "chart_add",
     "chart_update",
+    "icon_add",
 )
 
 
@@ -231,6 +233,25 @@ DEFINITIONS: dict[str, Any] = {
             "updated": {"const": True},
         },
         required=["node_id", "chart_type", "updated"],
+    ),
+    "icon_add_result": _object_schema(
+        {
+            "slide_id": _string_schema(min_length=1),
+            "node_id": _string_schema(min_length=1),
+            "name": _string_schema(min_length=1),
+            "x": _number_schema(),
+            "y": _number_schema(),
+            "size": _number_schema(),
+            "color": _string_schema(min_length=4),
+        },
+        required=["slide_id", "node_id", "name", "x", "y", "size", "color"],
+    ),
+    "icon_list_result": _object_schema(
+        {
+            "icons": _array_schema(_string_schema(min_length=1)),
+            "count": _integer_schema(minimum=0),
+        },
+        required=["icons", "count"],
     ),
     "chart_data": _object_schema(
         {
@@ -539,6 +560,23 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
         "result_schema": _ref("chart_update_result"),
         "errors": [CHART_DATA_ERROR, INVALID_NODE_TYPE, SCHEMA_ERROR],
     },
+    "icon_add": {
+        "kind": "mutation",
+        "summary": "Add a built-in icon node at absolute slide coordinates.",
+        "input_schema": _object_schema(
+            {
+                "slide": _ref("slide_ref"),
+                "name": _string_schema(min_length=1),
+                "x": _number_schema(),
+                "y": _number_schema(),
+                "size": _number_schema(),
+                "color": _string_schema(min_length=4),
+            },
+            required=["slide", "name", "x", "y", "size", "color"],
+        ),
+        "result_schema": _ref("icon_add_result"),
+        "errors": [INVALID_ICON, INVALID_SLIDE, SCHEMA_ERROR],
+    },
 }
 
 _BATCH_ERROR_CODES = sorted(
@@ -634,6 +672,34 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "input_schema": _object_schema({"path": _string_schema(min_length=1)}, required=["path"]),
         "outputs": [{"channel": "stdout", "schema": _ref("deck")}],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
+    },
+    "icon.add": {
+        "kind": "cli",
+        "summary": "Place a built-in vector icon on a slide at absolute coordinates.",
+        "cli_command": _cli_command("icon", "add"),
+        "mutation_command": "icon_add",
+        "input_schema": _object_schema(
+            {
+                "path": _string_schema(min_length=1),
+                "slide": _ref("slide_ref"),
+                "name": _string_schema(min_length=1),
+                "x": _number_schema(),
+                "y": _number_schema(),
+                "size": _number_schema(),
+                "color": _string_schema(min_length=4),
+            },
+            required=["path", "slide", "name", "x", "y", "size", "color"],
+        ),
+        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("icon_add_result"))}],
+        "errors": MUTATION_CONTRACTS["icon_add"]["errors"],
+    },
+    "icon.list": {
+        "kind": "cli",
+        "summary": "List the built-in vector icon names available for icon nodes and icon bullets.",
+        "cli_command": _cli_command("icon", "list"),
+        "input_schema": _object_schema({}),
+        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("icon_list_result"))}],
+        "errors": [],
     },
     "init": {
         "kind": "cli",

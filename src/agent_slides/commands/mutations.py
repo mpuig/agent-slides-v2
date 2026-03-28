@@ -18,6 +18,7 @@ from agent_slides.errors import (
     INVALID_SLOT,
     SCHEMA_ERROR,
 )
+from agent_slides.icons import normalize_hex_color, require_icon
 from agent_slides.model import ChartSpec, Deck, Node, NodeContent, Slide
 from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model.types import CHART_TYPE_VALUES
@@ -74,6 +75,13 @@ def _require_non_negative_int(args: dict[str, Any], key: str, *, default: int = 
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative integer")
     return value
+
+
+def _require_number(args: dict[str, Any], key: str) -> float:
+    value = args.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a number")
+    return float(value)
 
 
 def _require_object(args: dict[str, Any], key: str) -> dict[str, Any]:
@@ -410,6 +418,11 @@ def apply_mutation(
         node.image_path = image_path
         node.image_fit = image_fit
         node.chart_spec = None
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
         node.style_overrides.pop("placeholder", None)
 
         if "font_size" in args:
@@ -427,7 +440,7 @@ def apply_mutation(
             "node_id": node.node_id,
             "type": node.type,
             "text": node.content.to_plain_text(),
-            "content": node.content.model_dump(mode="json"),
+            "content": node.content.model_dump(mode="json", exclude_none=True),
             "image_path": node.image_path,
             "image_fit": node.image_fit,
             "font_size": node.style_overrides.get("font_size"),
@@ -500,6 +513,11 @@ def apply_mutation(
         node.image_path = None
         node.image_fit = "contain"
         node.chart_spec = chart_spec
+        node.icon_name = None
+        node.x = None
+        node.y = None
+        node.size = None
+        node.color = None
         node.style_overrides.pop("placeholder", None)
 
         return {
@@ -535,6 +553,30 @@ def apply_mutation(
             "node_id": node.node_id,
             "chart_type": chart_spec.chart_type,
             "updated": True,
+        }
+
+    if command == "icon_add":
+        slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
+        icon_name = _require_string(args, "name")
+        require_icon(icon_name)
+        node = Node(
+            node_id=deck.next_node_id(),
+            type="icon",
+            icon_name=icon_name,
+            x=_require_number(args, "x"),
+            y=_require_number(args, "y"),
+            size=_require_number(args, "size"),
+            color=normalize_hex_color(args.get("color"), field_name="color"),
+        )
+        slide.nodes.append(node)
+        return {
+            "slide_id": slide.slide_id,
+            "node_id": node.node_id,
+            "name": node.icon_name,
+            "x": node.x,
+            "y": node.y,
+            "size": node.size,
+            "color": node.color,
         }
 
     raise AgentSlidesError(
