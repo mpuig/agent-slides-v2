@@ -111,6 +111,7 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             continue
 
         if slot.role == "image" or node.type == "image":
+            image_fit = "stretch" if slot.full_bleed and node.image_fit == "contain" else node.image_fit
             computed[node.node_id] = ComputedNode(
                 x=x,
                 y=y,
@@ -125,7 +126,7 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
                 text_overflow=False,
                 revision=revision,
                 content_type="image",
-                image_fit=str(node.style_overrides.get("image_fit", "contain")),
+                image_fit=image_fit,
             )
             continue
 
@@ -151,6 +152,7 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             bg_transparency=slot.bg_transparency,
             font_bold=bool(style["font_bold"]),
             text_overflow=text_overflow,
+            image_fit=node.image_fit,
             revision=revision,
             content_type="text",
         )

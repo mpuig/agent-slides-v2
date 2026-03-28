@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import warnings
 from math import isclose
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -20,8 +19,6 @@ from agent_slides.errors import (
 STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
-MAX_IMAGE_SIZE_WARNING_BYTES = 5 * 1024 * 1024
-SUPPORTED_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".svg"})
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
@@ -45,9 +42,9 @@ class ComputedNode(AgentSlidesModel):
     y: float
     width: float
     height: float
-    font_size_pt: float
-    font_family: str
-    color: str
+    font_size_pt: float = 0.0
+    font_family: str = ""
+    color: str = "#000000"
     bg_color: str | None = None
     bg_transparency: float = 0.0
     font_bold: bool = False
@@ -222,8 +219,9 @@ class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
     type: NodeType
-    content: NodeContent | str = Field(default_factory=NodeContent)
+    content: NodeContent = Field(default_factory=NodeContent)
     image_path: str | None = None
+    image_fit: ImageFit = "contain"
     chart_spec: ChartSpec | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
@@ -256,8 +254,8 @@ class Node(AgentSlidesModel):
                 data["content"] = NodeContent.model_validate(content)
             if data.get("chart_spec") is not None:
                 data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"]).model_dump(mode="json")
-        elif node_type == "image" and (content is None or content == "") and data.get("image_path") is not None:
-            data["content"] = data["image_path"]
+        else:
+            data["content"] = NodeContent.model_validate(content)
 
         return data
 
@@ -277,13 +275,13 @@ class Node(AgentSlidesModel):
                 raise ValueError("image nodes cannot define chart_spec")
             if not self.image_path:
                 if self.style_overrides.get("placeholder"):
-                    self.content = ""
                     return self
                 raise ValueError("image nodes require image_path")
-            if not isinstance(self.content, str):
-                raise ValueError("image nodes must serialize content as a file path string")
-
-            self.image_path = _validate_and_resolve_image_path(self.image_path)
+            if not isinstance(self.content, NodeContent):
+                self.content = NodeContent.model_validate(self.content)
+            if not self.content.is_empty():
+                raise ValueError("image nodes cannot define text content")
+            self.image_path = self.image_path.strip()
             return self
 
         if self.image_path is not None:
@@ -389,36 +387,6 @@ class LayoutDef(AgentSlidesModel):
     slots: dict[str, SlotDef]
     grid: GridDef
     text_fitting: dict[str, TextFitting]
-
-
-def _validate_and_resolve_image_path(value: str) -> str:
-    path = Path(value).expanduser()
-    resolved_path = path.resolve(strict=False)
-    suffix = resolved_path.suffix.lower()
-
-    if suffix not in SUPPORTED_IMAGE_EXTENSIONS:
-        supported = ", ".join(sorted(ext.lstrip(".") for ext in SUPPORTED_IMAGE_EXTENSIONS))
-        raise ValueError(f"image_path must use a supported image format: {supported}")
-    if not resolved_path.exists():
-        raise ValueError(f"image_path does not exist: {resolved_path}")
-    if not resolved_path.is_file():
-        raise ValueError(f"image_path must point to a file: {resolved_path}")
-
-    try:
-        with resolved_path.open("rb"):
-            pass
-    except OSError as exc:
-        raise ValueError(f"image_path is not readable: {resolved_path}") from exc
-
-    size_bytes = resolved_path.stat().st_size
-    if size_bytes > MAX_IMAGE_SIZE_WARNING_BYTES:
-        warnings.warn(
-            f"Image file '{resolved_path}' is larger than 5MB and may bloat output decks.",
-            UserWarning,
-            stacklevel=3,
-        )
-
-    return str(resolved_path)
 
 
 class Counters(AgentSlidesModel):
