@@ -211,15 +211,11 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     from agent_slides.engine.reflow import reflow_deck
 
     deck = read_deck(path)
-    manifest_path = resolve_manifest_path(path, deck)
-    provider = resolve_layout_provider(manifest_path)
+    provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
-    if manifest_path is None:
-        reflow_deck(deck, provider)
-    else:
-        reflow_deck(deck, provider, manifest_path=manifest_path)
+    reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 

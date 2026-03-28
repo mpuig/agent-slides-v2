@@ -10,7 +10,7 @@ import click
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
 from agent_slides.io.sidecar import init_deck
 from agent_slides.model import load_design_rules
-from agent_slides.model.template_manifest import TemplateLayoutRegistry, load_template_theme
+from agent_slides.model.template_layouts import TemplateLayoutRegistry
 from agent_slides.model.themes import load_theme
 
 
@@ -37,11 +37,10 @@ def init_command(
 
     if template_manifest is not None:
         manifest_path = Path(template_manifest)
-        TemplateLayoutRegistry(manifest_path)
-        active_theme = load_template_theme(manifest_path)
+        registry = TemplateLayoutRegistry(str(manifest_path))
         deck = init_deck(
             path,
-            theme=active_theme.name,
+            theme=registry.theme.name,
             design_rules=rules_name,
             force=force,
             template_manifest=str(manifest_path),

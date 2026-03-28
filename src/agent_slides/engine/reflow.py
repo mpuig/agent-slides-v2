@@ -12,7 +12,6 @@ from agent_slides.model.layouts import (
     SLIDE_HEIGHT_PT,
     SLIDE_WIDTH_PT,
 )
-from agent_slides.model.template_manifest import load_template_theme
 from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
 
@@ -40,6 +39,9 @@ def _span_extent(
 
 def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
     slot = layout_def.slots[slot_name]
+    if None not in (slot.x, slot.y, slot.width, slot.height):
+        return float(slot.x), float(slot.y), float(slot.width), float(slot.height)
+
     grid = layout_def.grid
     margin = 0.0 if slot.full_bleed else theme.spacing.margin
     gutter = 0.0 if slot.full_bleed else theme.spacing.gutter
@@ -144,16 +146,11 @@ def reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme) -> None:
     _reflow_slide(slide, layout_def, theme, revision=0)
 
 
-def reflow_deck(
-    deck: Deck,
-    provider: LayoutProvider | None = None,
-    *,
-    manifest_path: str | None = None,
-) -> None:
+def reflow_deck(deck: Deck, provider: LayoutProvider | None = None) -> None:
     """Reflow every slide in the deck using the deck theme."""
 
     active_provider = provider or BuiltinLayoutProvider()
-    theme = load_template_theme(manifest_path) if manifest_path is not None else load_theme(deck.theme)
+    theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
     for slide in deck.slides:
         layout_getter = active_provider.get_layout
         _reflow_slide(slide, layout_getter(slide.layout), theme, revision=deck.revision)

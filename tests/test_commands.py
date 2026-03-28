@@ -283,33 +283,54 @@ def test_init_applies_explicit_theme_and_rules_options(tmp_path: Path) -> None:
 def test_init_with_template_sets_relative_manifest_and_uses_manifest_layouts(tmp_path: Path) -> None:
     deck_path = tmp_path / "decks" / "deck.json"
     manifest_path = tmp_path / "templates" / "client-brand.manifest.json"
+    template_path = tmp_path / "templates" / "client-brand.pptx"
     deck_path.parent.mkdir(parents=True)
     manifest_path.parent.mkdir(parents=True)
+    template_path.write_bytes(b"pptx")
     write_json(
         manifest_path,
         {
             "source": "client-brand.pptx",
-            "slide_masters": [
-                {
-                    "layouts": [
-                        {
-                            "name": "Title Slide",
-                            "slug": "title_slide",
-                            "slot_mapping": {"heading": 0, "subheading": 1},
-                        },
-                        {
-                            "name": "Two Content",
-                            "slug": "two_content",
-                            "slot_mapping": {"heading": 0, "col1": 1, "col2": 2},
-                        },
-                    ]
-                }
-            ],
+            "source_hash": "abc123",
             "theme": {
                 "colors": {"primary": "#112233"},
                 "fonts": {"heading": "Aptos Display", "body": "Aptos"},
                 "spacing": {"base_unit": 10, "margin": 60, "gutter": 20},
             },
+            "layouts": [
+                {
+                    "slug": "title_slide",
+                    "usable": True,
+                    "slot_mapping": {
+                        "heading": {
+                            "role": "heading",
+                            "bounds": {"x": 72, "y": 72, "width": 560, "height": 96},
+                        },
+                        "subheading": {
+                            "role": "body",
+                            "bounds": {"x": 72, "y": 192, "width": 560, "height": 180},
+                        },
+                    },
+                },
+                {
+                    "slug": "two_content",
+                    "usable": True,
+                    "slot_mapping": {
+                        "heading": {
+                            "role": "heading",
+                            "bounds": {"x": 72, "y": 72, "width": 560, "height": 72},
+                        },
+                        "col1": {
+                            "role": "body",
+                            "bounds": {"x": 72, "y": 168, "width": 260, "height": 240},
+                        },
+                        "col2": {
+                            "role": "body",
+                            "bounds": {"x": 360, "y": 168, "width": 260, "height": 240},
+                        },
+                    },
+                }
+            ],
         },
     )
 
@@ -350,12 +371,13 @@ def test_init_returns_error_when_theme_and_template_are_both_provided(tmp_path: 
         manifest_path,
         {
             "source": "client-brand.pptx",
-            "slide_masters": [],
+            "source_hash": "abc123",
             "theme": {
                 "colors": {"primary": "#112233"},
                 "fonts": {"heading": "Aptos Display", "body": "Aptos"},
                 "spacing": {"base_unit": 10, "margin": 60, "gutter": 20},
             },
+            "layouts": [],
         },
     )
 
