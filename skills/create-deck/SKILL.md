@@ -8,6 +8,7 @@ description: Orchestrate end-to-end deck creation from a natural-language brief 
 Use this skill when the user gives a topic such as "make a deck about X" and wants a complete presentation built with `agent-slides`.
 
 Keep this skill focused on orchestration. Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
+Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
 
 ## Quick Workflow
 
@@ -24,6 +25,11 @@ If `agent-slides` is not already on `PATH`, run the same commands through the re
 ## Plan First
 
 Before touching the CLI, turn the brief into a slide plan:
+
+- Start with the recommendation or answer, not the background.
+- If the brief is under-specified, ask or infer the five pre-flight inputs from `references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
+- Organize the deck as answer -> 2-4 supporting arguments -> evidence.
+- Give each content slide one message and an action title that states the takeaway.
 
 - Default to 5 slides for a simple topic.
 - Use 6-8 slides when the topic needs setup, comparison, and takeaway slides.
