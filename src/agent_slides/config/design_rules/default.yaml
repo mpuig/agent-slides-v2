@@ -72,3 +72,11 @@ conditional_formatting:
         fill: "#FFF1C7"
         text: "#8A5A00"
         bold: true
+block_spacing:
+  heading_to_paragraph: 12.0
+  heading_to_bullet: 10.0
+  paragraph_to_paragraph: 6.0
+  paragraph_to_bullet: 8.0
+  bullet_to_bullet: 4.0
+  bullet_to_paragraph: 8.0
+  default: 6.0

@@ -14,6 +14,7 @@ from agent_slides.errors import (
 )
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import (
+    BlockPosition,
     ChartSpec,
     ChartStyle,
     ComputedDeck,
@@ -23,6 +24,7 @@ from agent_slides.model.types import (
     Node,
     NodeContent,
     Slide,
+    SlotDef,
     TableSpec,
     TextBlock,
     TextFitting,
@@ -214,6 +216,16 @@ def test_computed_node_includes_resolved_style_fields() -> None:
         font_bold=False,
         revision=1,
         content_type="image",
+        block_positions=[
+            BlockPosition(
+                block_index=0,
+                x=8.0,
+                y=8.0,
+                width=200.0,
+                height=28.0,
+                font_size_pt=18.0,
+            )
+        ],
     )
 
     assert computed.font_family == "IBM Plex Sans"
@@ -222,6 +234,7 @@ def test_computed_node_includes_resolved_style_fields() -> None:
     assert computed.font_bold is False
     assert computed.content_type == "image"
     assert computed.image_fit == "contain"
+    assert computed.block_positions[0].font_size_pt == 18.0
 
 
 def test_computed_node_accepts_chart_content_type() -> None:
@@ -238,7 +251,14 @@ def test_computed_node_accepts_chart_content_type() -> None:
     )
 
     assert computed.content_type == "chart"
-    assert computed.font_size_pt == 0.0
+
+
+def test_slot_def_defaults_include_padding_and_top_alignment() -> None:
+    slot = SlotDef(grid_row=1, grid_col=1, role="body")
+
+    assert slot.padding == 8.0
+    assert slot.vertical_align == "top"
+    assert slot.peer_group is None
 
 
 def test_computed_node_accepts_table_content_type() -> None:
