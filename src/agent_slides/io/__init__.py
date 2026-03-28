@@ -9,6 +9,7 @@ from agent_slides.io.sidecar import (
     write_computed_deck,
     write_deck,
 )
+from agent_slides.io.template_reader import read_template_manifest
 from agent_slides.io.pptx_writer import render_text_node, write_pptx
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "mutate_deck",
     "read_computed_deck",
     "read_deck",
+    "read_template_manifest",
     "render_text_node",
     "write_computed_deck",
     "write_deck",
