@@ -6,7 +6,16 @@ import pytest
 from pydantic import ValidationError
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
-from agent_slides.model.types import ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.model.types import (
+    ComputedDeck,
+    ComputedNode,
+    Counters,
+    Deck,
+    Node,
+    NodeContent,
+    Slide,
+    TextBlock,
+)
 
 
 def build_deck() -> Deck:
@@ -49,7 +58,9 @@ def test_models_are_importable_and_constructible() -> None:
     deck = build_deck()
 
     assert deck.deck_id == "deck-1"
-    assert deck.slides[0].nodes[0].content == "Hello world"
+    assert deck.slides[0].nodes[0].content == NodeContent(
+        blocks=[TextBlock(type="paragraph", text="Hello world")]
+    )
 
 
 def test_deck_json_round_trip_uses_counters_alias() -> None:
@@ -64,6 +75,12 @@ def test_deck_json_round_trip_uses_counters_alias() -> None:
     restored = Deck.model_validate_json(payload)
 
     assert json.loads(restored.model_dump_json()) == decoded
+
+
+def test_legacy_string_content_is_coerced_to_structured_paragraphs() -> None:
+    node = Node(node_id="n-1", type="text", content="Hello world")
+
+    assert node.content == NodeContent(blocks=[TextBlock(type="paragraph", text="Hello world")])
 
 
 def test_next_ids_increment_counters() -> None:

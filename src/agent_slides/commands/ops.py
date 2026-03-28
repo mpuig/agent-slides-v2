@@ -7,7 +7,7 @@ import json
 from agent_slides.engine.reflow import rebind_slots, reflow_deck
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT, SCHEMA_ERROR
 from agent_slides.io import mutate_deck, read_deck, write_pptx
-from agent_slides.model import Deck, Node, Slide, get_layout
+from agent_slides.model import Deck, Node, NodeContent, Slide, get_layout
 
 
 def parse_slide_ref(value: str) -> str | int:
@@ -104,7 +104,7 @@ def set_slot_text(path: str, slide_ref: str | int, slot_name: str, text: str) ->
             )
             slide.nodes.append(node)
 
-        node.content = text
+        node.content = NodeContent.from_text(text)
         return {
             "slide_id": slide.slide_id,
             "slot": slot_name,
