@@ -10,78 +10,185 @@ Use this skill when the user gives a topic such as "make a deck about X" and wan
 Keep this skill focused on orchestration. Do not restate or invent design rules here. Design rules live in `config/design_rules/` and are enforced by `agent-slides validate`.
 Story structure rules live in `references/storytelling.md`. Follow that guide for Pyramid Principle, SCQA flow, action titles, WWWH framing, and the five pre-flight questions.
 
-## Quick Workflow
+## Workflow
 
-1. Plan a 5-10 slide outline from the brief.
-2. Choose a theme and initialize the deck.
-3. Add title and closing slides with explicit layouts, then create content slides with `--auto-layout`.
-4. Fill any remaining explicit-layout slots, preferably with one `batch` call.
-5. Run `validate`, fix warnings, then validate again.
-6. Build the `.pptx`.
-7. Optionally run `preview`.
+Run this as a 4-phase workflow:
+
+1. Phase 0: Pre-flight questioning.
+2. Phase 1: Storyline review.
+3. Phase 2: Build.
+4. Phase 3: QA review.
 
 If `agent-slides` is not already on `PATH`, run the same commands through the repo wrapper the project uses, for example `uv run agent-slides ...`.
 
-## Plan First
+## Phase 0: Pre-flight Questioning
 
-Before touching the CLI, turn the brief into a slide plan:
+Do not plan slides immediately. First clarify the story.
 
-- Start with the recommendation or answer, not the background.
-- If the brief is under-specified, ask or infer the five pre-flight inputs from `references/storytelling.md`: audience, objective, recommendation, scope, and target slide count.
+Mode detection:
+
+- If the user says "just do it", skip questions, infer reasonable defaults, and state the assumptions briefly.
+- For a quick deck of about 5 slides, ask only:
+  1. objective
+  2. recommendation
+- For a strategy deck of 8 or more slides, ask all five:
+  1. audience
+  2. objective
+  3. recommendation
+  4. scope
+  5. target slide count
+
+Questioning rules:
+
+- Ask one question at a time, not as a survey dump.
+- Challenge vague premises before moving on.
+- If one or two answers are missing, infer the smallest reasonable assumption and say so.
+- Never default to a neutral summary when the recommendation is missing. Propose a recommendation candidate.
+
+Phase 0 reference loading:
+
+- No reference docs are required beyond asking the questions cleanly.
+
+## Phase 1: Storyline Review
+
+Before touching the CLI, read:
+
+- `references/storytelling.md`
+- `references/layout-selection.md`
+
+Turn the brief into a recommendation-first storyline using the Pyramid Principle:
+
+```text
+Title: [Deck title]
+Answer: [Core recommendation]
+Arguments:
+  1. [Supporting argument] -> Slides N-M
+  2. [Supporting argument] -> Slides N-M
+  3. [Supporting argument] -> Slides N-M
+```
+
+Planning rules:
+
+- Start with the answer, not the background.
 - Organize the deck as answer -> 2-4 supporting arguments -> evidence.
 - Give each content slide one message and an action title that states the takeaway.
-
-- Default to 5 slides for a simple topic.
-- Use 6-8 slides when the topic needs setup, comparison, and takeaway slides.
-- Stay under 10 slides unless the user explicitly asks for more.
-- Put one idea on each slide.
-- Prefer short headings and concise bullet text.
-- Draft the outline before generating commands so slide order, layouts, and slot names are clear.
-
-Good default 5-slide structure:
-
-1. Title slide
-2. Problem or context
-3. Main points or comparison
-4. Proof, quote, or example
-5. Closing / takeaway
-
-Decide which slides are fixed-structure versus content-shaped before generating commands:
-
+- Default to 5 slides for a simple topic, 8-10 for strategy, and 15+ only when the brief clearly needs it.
 - Usually keep slide 1 explicit as `title`.
 - Usually keep the last slide explicit as `closing`.
-- Default every middle content slide to `--auto-layout` so the engine can choose from the actual content shape.
-- Reach for explicit `--layout` on a content slide only when the structure is already obvious before generation or when you are correcting a bad auto pick.
+- Default middle content slides to `--auto-layout` unless the structure is predetermined or you are correcting a bad auto pick.
 
-## Choose Layouts From Content Shape
+Challenge the storyline section by section before building:
+
+- Does the argument support the answer?
+- Are the slides under it sufficient evidence?
+- Is each content title an action title with a verb and a clear "so what"?
+- Does the body content prove the title?
+- Is the layout choice isomorphic to the content relationship?
+
+Use stop points when something is weak:
+
+- Raise one issue at a time.
+- Fix gaps in the outline before generating commands.
+- Turn uncovered messages into slides to add, not hand-wavy notes.
+
+Produce a message coverage diagram after the storyline draft:
+
+```text
+STORYLINE COVERAGE
+===========================
+[+] Deck: "[title]"
+    |
+    |-- [✓] Answer: "[core recommendation]"
+    |
+    |-- Argument 1: [name]
+    |   |-- [✓] Slide 2: "[message]"
+    |   `-- [GAP] Missing [evidence]
+    |
+    `-- Argument 2: [name]
+        `-- [✓] Slide N: "[message]"
+-------------------------
+COVERAGE: X/Y messages covered (Z%)
+GAPS: N ([gap names])
+```
+
+Coverage rules:
+
+- Mark every answer, argument, and supporting message as covered or missing.
+- Treat each `[GAP]` as a required slide or evidence insert.
+- Ask for approval on the storyline and coverage before building when the workflow is interactive.
+
+Optional outside voice:
+
+- After the storyline review, offer a second-opinion pass on the narrative.
+- If accepted, send the storyline to another model or agent and fold useful feedback back into the plan.
+
+## Layout Selection Via Isomorphism
 
 Use only built-in layouts that exist:
 
-- `title`: title slide with `heading` and `subheading` slots. Aliases `title` and `subtitle` also work for slot setting. If you want a title-only opener, remove the unused subtitle slot with a batch `slot_clear`.
-- `title_content`: one heading plus one body area. Best default for explanation, agenda, summary, or bullets.
-- `two_col`: one heading plus two body columns. Aliases `left` and `right` also work for slot setting.
-- `comparison`: structured comparison with `heading`, `left_header`, `left_body`, `right_header`, `right_body`.
+- `title`: title slide with `heading` and `subheading` slots. Aliases `title` and `subtitle` also work for slot setting.
+- `title_content`: one heading plus one body area. Best default for explanation, agenda, summary, or a linear argument.
+- `two_col`: one heading plus two body columns.
+- `comparison`: `heading`, `left_header`, `left_body`, `right_header`, `right_body`.
 - `three_col`: one heading plus three short columns.
 - `quote`: `quote` plus `attribution`.
 - `closing`: single `body` slot for final takeaway or call to action.
 - `blank`: only when you intentionally need an empty slide.
 
-Layout selection heuristics:
+Apply the Isomorphism Principle from `references/layout-selection.md`:
 
-- Intro / cover -> `title`
-- Agenda / summary / simple explanation -> `title_content`
-- Two competing options / before-vs-after -> `two_col` or `comparison`
-- Three pillars / three steps -> `three_col`
-- Testimonial / key quote -> `quote`
-- Final takeaway / thank-you / CTA -> `closing`
+- Equal pillars or themes -> `three_col`
+- Two contrasting approaches -> `two_col` or `comparison`
+- Structured comparison with headers -> `comparison`
+- Sequential narrative or one claim with proof -> `title_content`
+- Data trend or composition -> `title_content` plus `chart_add`
+- Key quote or statement -> `quote`
 
-Default creation strategy:
+Flag these anti-patterns before building:
 
-- Use explicit `--layout title` for the opener.
-- Use explicit `--layout closing` for the last slide.
-- For content slides, prefer `agent-slides slide add deck.json --auto-layout --content '...'`.
-- `--auto-layout` and `--layout` are mutually exclusive. Do not pass both on the same command.
-- Keep explicit layout selection in reserve for slides where the structure is predetermined or where auto-layout chose poorly.
+- Equal columns for unequal items
+- The same layout on 3 or more consecutive slides
+- A chart without a takeaway title and annotation
+
+## Phase 2: Build
+
+Before adding charts, read `references/chart-guide.md` if the plan includes data visualization.
+
+Execution rules:
+
+- Choose a theme and initialize the deck.
+- Use explicit `--layout title` for the opener and `--layout closing` for the ending.
+- Prefer `agent-slides slide add deck.json --auto-layout --content '...'` for content slides.
+- Use `slide set-layout` only when the conceptual relationship or auto-layout result requires correction.
+- Prefer one `batch` call for multi-slide creation and cleanup when possible.
+- Add charts where the storyline calls for data proof.
+- In decks longer than 6 slides, use at least 2 to 3 layouts.
+
+## Phase 3: QA Review
+
+Before the QA pass, read `references/common-mistakes.md`.
+
+Run the QA in this order:
+
+1. `agent-slides validate deck.json`
+2. Content QA checklist:
+   - every content slide has an action title
+   - body proves title on every slide
+   - no slide has more than 6 bullets
+   - no topic-label titles such as "Market Overview"
+   - source lines are present for data claims
+   - layout variety is used in 6+ slide decks
+   - charts have both a title and a visible annotation or callout
+3. Completion summary:
+
+```text
+Deck QA Summary:
+- Slides: N total (N content + title + closing)
+- Action titles: N/N compliant
+- Layout variety: N unique layouts
+- Warnings: N from validate
+- Gaps: N from coverage diagram
+```
 
 ## Choose a Theme
 
