@@ -784,6 +784,7 @@ def test_preview_command_starts_server_opens_browser_and_stops_cleanly(
     browser_calls: list[str] = []
     result_box: dict[str, Result] = {}
     runner = CliRunner()
+    port = find_free_port()
 
     monkeypatch.setattr(
         "agent_slides.commands.preview._wait_for_shutdown",
@@ -795,12 +796,12 @@ def test_preview_command_starts_server_opens_browser_and_stops_cleanly(
     )
 
     def invoke() -> None:
-        result_box["result"] = runner.invoke(cli, ["preview", str(deck_path)])
+        result_box["result"] = runner.invoke(cli, ["preview", str(deck_path), "--port", str(port)])
 
     thread = threading.Thread(target=invoke, daemon=True)
     thread.start()
 
-    status, body = wait_for_http("http://127.0.0.1:8765/api/deck")
+    status, body = wait_for_http(f"http://127.0.0.1:{port}/api/deck")
     assert status == 200
     assert json.loads(body)["deck_id"] == "deck-clean"
     assert thread.is_alive()
@@ -814,11 +815,11 @@ def test_preview_command_starts_server_opens_browser_and_stops_cleanly(
 
     assert result.exit_code == 0
     assert result.stderr == ""
-    assert browser_calls == ["http://localhost:8765"]
+    assert browser_calls == [f"http://localhost:{port}"]
     assert json.loads(lines[0]) == {
         "ok": True,
         "data": {
-            "url": "http://localhost:8765",
+            "url": f"http://localhost:{port}",
             "watching": "deck.json",
         },
     }

@@ -1,120 +1,162 @@
-"""HTTP and WebSocket preview server."""
+"""HTTP and WebSocket preview server for live deck updates."""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
-import threading
+import logging
+import signal
 from http import HTTPStatus
+from importlib import resources
 from pathlib import Path
+from typing import Any
 
-from websockets.asyncio.server import ServerConnection, broadcast, serve
+from websockets.asyncio.server import Server, ServerConnection, broadcast, serve
 
-from agent_slides.io import read_deck
-from agent_slides.preview.watcher import DeckWatcher
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
+from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 
-CLIENT_HTML = (Path(__file__).with_name("client.html")).read_text(encoding="utf-8")
+LOGGER = logging.getLogger(__name__)
+CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
+    encoding="utf-8"
+)
 
 
 class PreviewServer:
-    """Serve live preview assets and deck updates on a single port."""
+    """Serve the preview client, deck payload, and live deck updates."""
 
-    def __init__(self, deck_path: str | Path, *, host: str = "127.0.0.1", port: int = 8765) -> None:
-        self._deck_path = Path(deck_path).resolve()
-        self._host = host
-        self._port = port
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread: threading.Thread | None = None
-        self._ready = threading.Event()
-        self._startup_error: Exception | None = None
-        self._stop_future: asyncio.Future[None] | None = None
-        self._server = None
-        self._watcher: DeckWatcher | None = None
-        self._payload_json = ""
-        self._revision: int | None = None
-        self._connections: set[ServerConnection] = set()
+    def __init__(
+        self,
+        sidecar_path: str | Path,
+        *,
+        host: str = "localhost",
+        port: int = 8765,
+        debounce_ms: int | None = None,
+        debounce_interval: float | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self.sidecar_path = Path(sidecar_path).resolve()
+        self.host = host
+        self.port = port
+        effective_debounce_ms = debounce_ms
+        if debounce_interval is not None:
+            effective_debounce_ms = int(debounce_interval * 1000)
+        if effective_debounce_ms is None:
+            effective_debounce_ms = 50
+        self._logger = logger or LOGGER
+        self._watcher = SidecarWatcher(
+            self.sidecar_path,
+            self._broadcast_update,
+            debounce_ms=effective_debounce_ms,
+            logger=self._logger,
+        )
+        self._server: Server | None = None
+        self._clients: set[ServerConnection] = set()
+
+    @property
+    def origin(self) -> str:
+        return f"http://{self.host}:{self.port}"
 
     @property
     def url(self) -> str:
-        return f"http://localhost:{self._port}"
+        return f"ws://{self.host}:{self.port}/ws"
 
-    def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="agent-slides-preview", daemon=True)
-        self._thread.start()
-        if not self._ready.wait(timeout=5):
-            raise RuntimeError("Preview server did not start within 5 seconds.")
-        if self._startup_error is not None:
-            raise self._startup_error
+    @property
+    def is_running(self) -> bool:
+        return self._server is not None
 
-    def stop(self) -> None:
-        if self._loop is None or self._stop_future is None:
-            return
+    async def __aenter__(self) -> PreviewServer:
+        return await self.start()
 
-        def _stop() -> None:
-            if self._stop_future is not None and not self._stop_future.done():
-                self._stop_future.set_result(None)
+    async def __aexit__(self, *_: object) -> None:
+        await self.stop()
 
-        self._loop.call_soon_threadsafe(_stop)
-        if self._thread is not None:
-            self._thread.join(timeout=5)
+    async def start(self) -> PreviewServer:
+        if self._server is not None:
+            return self
 
-    def _run(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        try:
-            self._loop.run_until_complete(self._serve())
-        except Exception as exc:  # pragma: no cover - startup failures are surfaced via start()
-            self._startup_error = exc
-            self._ready.set()
-        finally:
-            pending = asyncio.all_tasks(self._loop)
-            for task in pending:
-                task.cancel()
-            if pending:
-                self._loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True),
-                )
-            self._loop.close()
-
-    async def _serve(self) -> None:
-        self._reload_payload(force=True)
-        self._stop_future = asyncio.get_running_loop().create_future()
         self._server = await serve(
             self._handle_websocket,
-            self._host,
-            self._port,
+            self.host,
+            self.port,
             process_request=self._process_request,
         )
-        self._watcher = DeckWatcher(self._deck_path, self._notify_file_change)
-        self._watcher.start()
-        self._ready.set()
 
-        try:
-            await self._stop_future
-        finally:
-            if self._watcher is not None:
-                self._watcher.stop()
-            self._server.close()
-            await self._server.wait_closed()
+        socket = next(iter(self._server.sockets or []), None)
+        if socket is not None:
+            self.port = int(socket.getsockname()[1])
+
+        await self._watcher.start()
+        return self
+
+    async def stop(self) -> None:
+        await self._watcher.stop()
+
+        if self._server is None:
+            return
+
+        self._server.close()
+        await self._server.wait_closed()
+        self._server = None
+
+    async def close(self) -> None:
+        await self.stop()
+
+    async def serve_forever(self, stop_event: asyncio.Event | None = None) -> None:
+        local_stop = stop_event or asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, local_stop.set)
+            except NotImplementedError:
+                pass
+
+        async with self:
+            await local_stop.wait()
+
+    async def broadcast_payload(self, payload: dict[str, Any]) -> None:
+        if not self._clients:
+            return
+
+        broadcast(self._clients, json.dumps(payload))
+
+    async def _broadcast_update(self, payload: dict[str, Any]) -> None:
+        await self.broadcast_payload(self._build_update_message(payload))
 
     async def _handle_websocket(self, websocket: ServerConnection) -> None:
-        self._connections.add(websocket)
-        await websocket.send(self._payload_json)
+        if websocket.request.path != "/ws":
+            return
+
+        self._clients.add(websocket)
+        self._logger.info("Preview client connected: %s", websocket.remote_address)
+
         try:
             await websocket.wait_closed()
         finally:
-            self._connections.discard(websocket)
+            self._clients.discard(websocket)
+            self._logger.info("Preview client disconnected: %s", websocket.remote_address)
 
-    def _process_request(self, connection: ServerConnection, request):
-        path = request.path.split("?", 1)[0]
-        if path == "/ws":
+    def _process_request(self, connection: ServerConnection, request: Any) -> Any:
+        if request.path == "/ws":
             return None
-        if path == "/":
+
+        if request.path == "/":
             response = connection.respond(HTTPStatus.OK, CLIENT_HTML)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
-        if path == "/api/deck":
-            response = connection.respond(HTTPStatus.OK, self._payload_json)
+
+        if request.path == "/api/deck":
+            try:
+                payload = self._read_deck_json()
+            except AgentSlidesError as exc:
+                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                response = connection.respond(status, f"{exc.message}\n")
+                response.headers["Content-Type"] = "text/plain; charset=utf-8"
+                return response
+
+            response = connection.respond(HTTPStatus.OK, payload)
             response.headers["Content-Type"] = "application/json; charset=utf-8"
             return response
 
@@ -122,22 +164,55 @@ class PreviewServer:
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
-    def _notify_file_change(self) -> None:
-        if self._loop is None:
-            return
-        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._broadcast_latest()))
+    def _read_deck_json(self) -> str:
+        _, payload = load_deck_payload(self.sidecar_path)
+        return json.dumps(payload)
 
-    async def _broadcast_latest(self) -> None:
-        if not self._reload_payload(force=False):
-            return
-        if self._connections:
-            broadcast(self._connections, self._payload_json)
+    def _build_update_message(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "event": "deck.updated",
+            "path": str(self.sidecar_path),
+            "revision": payload["revision"],
+            "deck": payload,
+        }
 
-    def _reload_payload(self, *, force: bool) -> bool:
-        deck = read_deck(str(self._deck_path))
-        if not force and deck.revision == self._revision:
-            return False
 
-        self._revision = deck.revision
-        self._payload_json = json.dumps(deck.model_dump(mode="json", by_alias=True))
-        return True
+async def run_preview_server(
+    sidecar_path: str | Path,
+    *,
+    host: str = "localhost",
+    port: int = 8765,
+    debounce_ms: int = 50,
+) -> None:
+    """Run the preview server until interrupted."""
+
+    server = PreviewServer(
+        sidecar_path,
+        host=host,
+        port=port,
+        debounce_ms=debounce_ms,
+    )
+    await server.serve_forever()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the agent-slides live preview server.")
+    parser.add_argument("path", help="Path to the sidecar deck JSON file.")
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--debounce-ms", type=int, default=50)
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    asyncio.run(
+        run_preview_server(
+            args.path,
+            host=args.host,
+            port=args.port,
+            debounce_ms=args.debounce_ms,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

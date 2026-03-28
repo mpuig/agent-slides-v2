@@ -1,5 +1,6 @@
-"""Live preview runtime package."""
+"""Live preview server components."""
 
-from .server import PreviewServer
+from agent_slides.preview.server import PreviewServer, run_preview_server
+from agent_slides.preview.watcher import SidecarWatcher
 
-__all__ = ["PreviewServer"]
+__all__ = ["PreviewServer", "SidecarWatcher", "run_preview_server"]
