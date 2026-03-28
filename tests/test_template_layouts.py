@@ -311,7 +311,7 @@ def test_layout_providers_expose_get_variants_consistently(tmp_path: Path) -> No
     builtin = BuiltinLayoutProvider()
     template = TemplateLayoutRegistry(str(manifest_path))
 
-    assert builtin.get_variants("two_col") == []
+    assert [variant.name for variant in builtin.get_variants("two_col")] == ["title_content"]
     assert [variant.name for variant in template.get_variants("peer_bodies")] == ["title_content", "two_col"]
 
 

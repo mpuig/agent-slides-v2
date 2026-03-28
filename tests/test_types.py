@@ -279,6 +279,23 @@ def test_computed_node_defaults_support_image_nodes() -> None:
     assert computed.font_size_pt == 0.0
 
 
+def test_computed_node_supports_layout_fallback_metadata() -> None:
+    computed = ComputedNode(
+        x=10.0,
+        y=20.0,
+        width=200.0,
+        height=100.0,
+        revision=1,
+        layout_used="image_right",
+        layout_fallback_reason="Forced primary failure",
+        layout_overflow_reason="text overflow in body",
+    )
+
+    assert computed.layout_used == "image_right"
+    assert computed.layout_fallback_reason == "Forced primary failure"
+    assert computed.layout_overflow_reason == "text overflow in body"
+
+
 def test_text_fitting_supports_custom_ladders() -> None:
     fitting = TextFitting(default_size=20, min_size=10, ladder=[20, 16, 12])
 
