@@ -25,8 +25,8 @@ from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, Te
 from agent_slides.model.themes import load_theme
 
 BLANK_LAYOUT_INDEX = 6
-HEADING_SIZE_FACTOR = 1.35
 BULLET_MARGIN_STEP_PT = 18.0
+HEADING_SIZE_FACTOR = 1.35
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -86,7 +86,9 @@ def hex_to_rgb(value: str) -> RGBColor:
     return RGBColor.from_string(normalized)
 
 
-def _block_font_size(computed: ComputedNode, block: TextBlock) -> float:
+def _block_font_size(computed: ComputedNode, block: TextBlock, *, default_font_size: float | None = None) -> float:
+    if default_font_size is not None:
+        return default_font_size
     if block.type == "heading":
         return computed.font_size_pt * HEADING_SIZE_FACTOR
     return computed.font_size_pt
@@ -96,10 +98,16 @@ def _block_line_runs(block: TextBlock) -> list[list[TextRun]]:
     return split_text_runs_by_line(block)
 
 
-def _run_font_size(computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> float:
+def _run_font_size(
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> float:
     if run_spec.font_size is not None:
         return run_spec.font_size
-    return _block_font_size(computed, block)
+    return _block_font_size(computed, block, default_font_size=default_font_size)
 
 
 def _set_run_strikethrough(run, enabled: bool) -> None:
@@ -125,9 +133,16 @@ def _apply_template_run_styles(run, run_spec: TextRun) -> None:
         _set_run_strikethrough(run, True)
 
 
-def _apply_text_run_defaults(run, computed: ComputedNode, block: TextBlock, run_spec: TextRun) -> None:
+def _apply_text_run_defaults(
+    run,
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> None:
     run.font.name = computed.font_family
-    run.font.size = Pt(_run_font_size(computed, block, run_spec))
+    run.font.size = Pt(_run_font_size(computed, block, run_spec, default_font_size=default_font_size))
     run.font.bold = computed.font_bold if run_spec.bold is None else run_spec.bold
     if block.type == "heading" and run_spec.bold is None:
         run.font.bold = True
@@ -291,6 +306,24 @@ def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
     pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
 
 
+def _configure_text_frame(text_frame) -> None:
+    text_frame.clear()
+    text_frame.word_wrap = True
+    text_frame.auto_size = MSO_AUTO_SIZE.NONE
+    text_frame.vertical_anchor = MSO_ANCHOR.TOP
+    text_frame.margin_left = 0
+    text_frame.margin_right = 0
+    text_frame.margin_top = 0
+    text_frame.margin_bottom = 0
+
+
+def _apply_run_style(run, *, font_family: str, font_size_pt: float, bold: bool, color: str) -> None:
+    run.font.name = font_family
+    run.font.size = Pt(font_size_pt)
+    run.font.bold = bold
+    run.font.color.rgb = hex_to_rgb(color)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -423,20 +456,55 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
         shape.fill.background()
 
     text_frame = shape.text_frame
-    text_frame.clear()
-    text_frame.word_wrap = True
-    text_frame.auto_size = MSO_AUTO_SIZE.NONE
-    text_frame.margin_left = 0
-    text_frame.margin_right = 0
-    text_frame.margin_top = 0
-    text_frame.margin_bottom = 0
-
+    _configure_text_frame(text_frame)
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
+    if computed.block_positions:
+        positions_by_index = {position.block_index: position for position in computed.block_positions}
+        first_position = computed.block_positions[0]
+        last_position = computed.block_positions[-1]
+        left_margin = max(first_position.x - computed.x, 0.0)
+        top_margin = max(first_position.y - computed.y, 0.0)
+        right_margin = max((computed.x + computed.width) - (first_position.x + first_position.width), 0.0)
+        bottom_margin = max((computed.y + computed.height) - (last_position.y + last_position.height), 0.0)
+
+        text_frame.margin_left = points_to_emu(left_margin)
+        text_frame.margin_right = points_to_emu(right_margin)
+        text_frame.margin_top = points_to_emu(top_margin)
+        text_frame.margin_bottom = points_to_emu(bottom_margin)
+
+        paragraph_index = 0
+        for index, block in enumerate(blocks):
+            position = positions_by_index.get(index)
+            if position is None:
+                continue
+
+            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+            _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            next_position = positions_by_index.get(index + 1)
+            gap_after = 0.0 if next_position is None else max(next_position.y - (position.y + position.height), 0.0)
+            paragraph.space_after = Pt(gap_after)
+
+            for run_spec in block.resolved_runs():
+                run = paragraph.add_run()
+                run.text = run_spec.text
+                _apply_text_run_defaults(
+                    run,
+                    computed,
+                    block,
+                    run_spec,
+                    default_font_size=position.font_size_pt,
+                )
+            paragraph_index += 1
+        return
+
     paragraph_index = 0
     for block in blocks:
         for line_runs in _block_line_runs(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             _configure_paragraph_bullets(paragraph, block)
+            paragraph.space_before = Pt(0)
+            paragraph.space_after = Pt(0)
             for run_spec in line_runs:
                 run = paragraph.add_run()
                 run.text = run_spec.text
