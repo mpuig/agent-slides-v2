@@ -21,8 +21,8 @@ from pptx.util import Emu, Inches, Pt
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
 from agent_slides.io.assets import resolve_image_path
+from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock, TextRun, split_text_runs_by_line
 from agent_slides.model.themes import load_theme
-from agent_slides.model.types import ComputedNode, Deck, EMU_PER_POINT, Node, TextBlock
 
 BLANK_LAYOUT_INDEX = 6
 BULLET_MARGIN_STEP_PT = 18.0
@@ -86,9 +86,71 @@ def hex_to_rgb(value: str) -> RGBColor:
     return RGBColor.from_string(normalized)
 
 
-def _block_lines(block: TextBlock) -> list[str]:
-    lines = block.text.splitlines()
-    return lines or [""]
+def _block_font_size(computed: ComputedNode, block: TextBlock, *, default_font_size: float | None = None) -> float:
+    if default_font_size is not None:
+        return default_font_size
+    if block.type == "heading":
+        return computed.font_size_pt * HEADING_SIZE_FACTOR
+    return computed.font_size_pt
+
+
+def _block_line_runs(block: TextBlock) -> list[list[TextRun]]:
+    return split_text_runs_by_line(block)
+
+
+def _run_font_size(
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> float:
+    if run_spec.font_size is not None:
+        return run_spec.font_size
+    return _block_font_size(computed, block, default_font_size=default_font_size)
+
+
+def _set_run_strikethrough(run, enabled: bool) -> None:
+    rPr = run._r.get_or_add_rPr()
+    if enabled:
+        rPr.set("strike", "sngStrike")
+    elif "strike" in rPr.attrib:
+        del rPr.attrib["strike"]
+
+
+def _apply_template_run_styles(run, run_spec: TextRun) -> None:
+    if run_spec.bold is not None:
+        run.font.bold = run_spec.bold
+    if run_spec.italic is not None:
+        run.font.italic = run_spec.italic
+    if run_spec.color:
+        run.font.color.rgb = hex_to_rgb(run_spec.color)
+    if run_spec.font_size is not None:
+        run.font.size = Pt(run_spec.font_size)
+    if run_spec.underline:
+        run.font.underline = True
+    if run_spec.strikethrough:
+        _set_run_strikethrough(run, True)
+
+
+def _apply_text_run_defaults(
+    run,
+    computed: ComputedNode,
+    block: TextBlock,
+    run_spec: TextRun,
+    *,
+    default_font_size: float | None = None,
+) -> None:
+    run.font.name = computed.font_family
+    run.font.size = Pt(_run_font_size(computed, block, run_spec, default_font_size=default_font_size))
+    run.font.bold = computed.font_bold if run_spec.bold is None else run_spec.bold
+    if block.type == "heading" and run_spec.bold is None:
+        run.font.bold = True
+    run.font.italic = run_spec.italic or False
+    run.font.color.rgb = hex_to_rgb(run_spec.color or computed.color)
+    if run_spec.underline:
+        run.font.underline = True
+    _set_run_strikethrough(run, run_spec.strikethrough)
 
 
 def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
@@ -213,15 +275,15 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
     return bindings
 
 
-def _node_paragraphs(node: Node) -> list[tuple[TextBlock, str]]:
+def _node_paragraphs(node: Node) -> list[tuple[TextBlock, list[TextRun]]]:
     if isinstance(node.content, str):
         block = TextBlock(type="paragraph", text=node.content)
-        return [(block, line) for line in _block_lines(block)]
+        return [(block, line_runs) for line_runs in _block_line_runs(block)]
 
-    paragraphs: list[tuple[TextBlock, str]] = []
+    paragraphs: list[tuple[TextBlock, list[TextRun]]] = []
     for block in node.content.blocks:
-        paragraphs.extend((block, line) for line in _block_lines(block))
-    return paragraphs or [(TextBlock(type="paragraph", text=""), "")]
+        paragraphs.extend((block, line_runs) for line_runs in _block_line_runs(block))
+    return paragraphs or [(TextBlock(type="paragraph", text=""), [TextRun(text="")])]
 
 
 def _configure_paragraph_bullets(paragraph, block: TextBlock) -> None:
@@ -346,10 +408,13 @@ def _fill_placeholder(node: Node, slot_mapping: dict[str, int], slide) -> None:
     text_frame.clear()
 
     paragraphs = _node_paragraphs(node)
-    for paragraph_index, (block, line) in enumerate(paragraphs):
+    for paragraph_index, (block, line_runs) in enumerate(paragraphs):
         paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
         _configure_paragraph_bullets(paragraph, block)
-        paragraph.add_run().text = line
+        for run_spec in line_runs:
+            run = paragraph.add_run()
+            run.text = run_spec.text
+            _apply_template_run_styles(run, run_spec)
 
 
 def _write_template_pptx(deck: Deck, output_path: str) -> None:
@@ -420,35 +485,30 @@ def _render_text_node(slide_shape_collection: SlideShapes, node: Node, computed:
             gap_after = 0.0 if next_position is None else max(next_position.y - (position.y + position.height), 0.0)
             paragraph.space_after = Pt(gap_after)
 
-            run = paragraph.add_run()
-            run.text = block.text
-            _apply_run_style(
-                run,
-                font_family=computed.font_family,
-                font_size_pt=position.font_size_pt,
-                bold=computed.font_bold or block.type == "heading",
-                color=computed.color,
-            )
+            for run_spec in block.resolved_runs():
+                run = paragraph.add_run()
+                run.text = run_spec.text
+                _apply_text_run_defaults(
+                    run,
+                    computed,
+                    block,
+                    run_spec,
+                    default_font_size=position.font_size_pt,
+                )
             paragraph_index += 1
         return
 
     paragraph_index = 0
     for block in blocks:
-        for line in _block_lines(block):
+        for line_runs in _block_line_runs(block):
             paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
             _configure_paragraph_bullets(paragraph, block)
             paragraph.space_before = Pt(0)
             paragraph.space_after = Pt(0)
-
-            run = paragraph.add_run()
-            run.text = line
-            _apply_run_style(
-                run,
-                font_family=computed.font_family,
-                font_size_pt=computed.font_size_pt * HEADING_SIZE_FACTOR if block.type == "heading" else computed.font_size_pt,
-                bold=computed.font_bold or block.type == "heading",
-                color=computed.color,
-            )
+            for run_spec in line_runs:
+                run = paragraph.add_run()
+                run.text = run_spec.text
+                _apply_text_run_defaults(run, computed, block, run_spec)
             paragraph_index += 1
 
 

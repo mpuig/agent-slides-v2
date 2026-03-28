@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil
@@ -9,7 +10,15 @@ from math import ceil
 from PIL import ImageFont
 
 from agent_slides.model.design_rules import BlockSpacingRules
-from agent_slides.model.types import BlockPosition, NodeContent, SlotVerticalAlign, TextBlock, TextFitting
+from agent_slides.model.types import (
+    BlockPosition,
+    NodeContent,
+    SlotVerticalAlign,
+    TextBlock,
+    TextFitting,
+    TextRun,
+    split_text_runs_by_line,
+)
 
 TYPE_LADDERS = {
     "heading": [36.0, 32.0, 28.0, 24.0],
@@ -37,6 +46,7 @@ HEADING_SIZE_FACTOR = 1.35
 HEADING_LINE_HEIGHT_FACTOR = 1.1
 BULLET_INDENT_PT = 18.0
 BULLET_GLYPH_WIDTH_CHARS = 2.0
+TOKEN_PATTERN = re.compile(r"\s+|\S+")
 
 
 @dataclass(frozen=True)
@@ -378,18 +388,10 @@ def _block_width(width: float, block: TextBlock, font_size: float, *, font_famil
     return max(available_width, 1.0)
 
 
-def _estimate_lines(text: str, width: float, font_size: float, *, font_family: str | None) -> int:
-    avg_char_width = _width_factor(font_family) * font_size
-
-    if avg_char_width <= 0:
-        return max(len(text), 1)
-
-    chars_per_line = width / avg_char_width
-
-    if chars_per_line < 1:
-        return max(len(text), 1)
-
-    return max(sum(ceil(len(line) / chars_per_line) or 1 for line in text.splitlines()), 1)
+def _estimate_text_width(text: str, font_size: float, *, font_family: str | None) -> float:
+    if text == "":
+        return 0.0
+    return len(text) * _width_factor(font_family) * font_size
 
 
 def _fallback_font_name(font_family: str | None) -> str:
@@ -429,44 +431,176 @@ def _measure_precise_line_height(font: ImageFont.ImageFont) -> float:
     return float(getattr(font, "size", 0) or 1.0)
 
 
-def _wrap_precise_line(text: str, width: float, font: ImageFont.ImageFont) -> list[str]:
-    if text == "":
-        return [""]
-
-    lines: list[str] = []
-    remaining = text
-    while remaining:
-        if _measure_precise_width(remaining, font) <= width:
-            lines.append(remaining)
-            break
-
-        last_fit = 0
-        last_whitespace = 0
-        for index in range(1, len(remaining) + 1):
-            chunk = remaining[:index]
-            if _measure_precise_width(chunk, font) > width:
-                break
-            last_fit = index
-            if chunk[-1].isspace():
-                last_whitespace = index
-
-        split_at = last_whitespace or last_fit or 1
-        line = remaining[:split_at].rstrip() or remaining[:split_at]
-        lines.append(line)
-        remaining = remaining[split_at:].lstrip()
-
-    return lines or [""]
+def _effective_run_font_size(block: TextBlock, font_size: float, run: TextRun) -> float:
+    if run.font_size is not None:
+        return run.font_size
+    return font_size * _font_size_factor(block)
 
 
-def _estimate_lines_precise(text: str, width: float, font: ImageFont.ImageFont) -> tuple[int, float]:
-    paragraphs = text.splitlines() or [""]
-    lines = 0
-    max_height = 0.0
-    for paragraph in paragraphs:
-        wrapped = _wrap_precise_line(paragraph, width, font)
-        lines += len(wrapped)
-        max_height = max(max_height, _measure_precise_line_height(font))
-    return max(lines, 1), max(max_height, 1.0)
+def _tokenize_runs(runs: list[TextRun]) -> list[TextRun]:
+    tokens: list[TextRun] = []
+    for run in runs:
+        parts = TOKEN_PATTERN.findall(run.text) or [run.text]
+        for part in parts:
+            tokens.append(run.model_copy(update={"text": part}))
+    return tokens
+
+
+def _measure_run_width(
+    run: TextRun,
+    *,
+    font_family: str | None,
+    font_size: float,
+    block: TextBlock,
+    use_precise: bool,
+    font_cache: dict[float, ImageFont.ImageFont],
+) -> float:
+    effective_size = _effective_run_font_size(block, font_size, run)
+    if use_precise:
+        font = font_cache.get(effective_size)
+        if font is None:
+            font = _load_precise_font(font_family, effective_size)
+            font_cache[effective_size] = font
+        return _measure_precise_width(run.text, font)
+    return _estimate_text_width(run.text, effective_size, font_family=font_family)
+
+
+def _break_long_token(
+    token: TextRun,
+    width: float,
+    *,
+    font_family: str | None,
+    font_size: float,
+    block: TextBlock,
+    use_precise: bool,
+    font_cache: dict[float, ImageFont.ImageFont],
+) -> list[TextRun]:
+    parts: list[TextRun] = []
+    current = ""
+
+    for character in token.text:
+        candidate = f"{current}{character}"
+        candidate_run = token.model_copy(update={"text": candidate})
+        if current and _measure_run_width(
+            candidate_run,
+            font_family=font_family,
+            font_size=font_size,
+            block=block,
+            use_precise=use_precise,
+            font_cache=font_cache,
+        ) > width:
+            parts.append(token.model_copy(update={"text": current}))
+            current = character
+        else:
+            current = candidate
+
+    if current:
+        parts.append(token.model_copy(update={"text": current}))
+    return parts or [token]
+
+
+def _wrap_line_runs(
+    line_runs: list[TextRun],
+    width: float,
+    *,
+    font_size: float,
+    block: TextBlock,
+    font_family: str | None,
+    use_precise: bool,
+    font_cache: dict[float, ImageFont.ImageFont],
+) -> list[list[TextRun]]:
+    if not line_runs:
+        return [[TextRun(text="")]]
+
+    tokens = _tokenize_runs(line_runs)
+    wrapped: list[list[TextRun]] = []
+    current: list[TextRun] = []
+    current_width = 0.0
+    def finish_line() -> None:
+        nonlocal current, current_width
+        while current and current[-1].text.isspace():
+            current.pop()
+        wrapped.append(current or [TextRun(text="")])
+        current = []
+        current_width = 0.0
+
+    for token in tokens:
+        if token.text.isspace() and not current:
+            continue
+
+        token_width = _measure_run_width(
+            token,
+            font_family=font_family,
+            font_size=font_size,
+            block=block,
+            use_precise=use_precise,
+            font_cache=font_cache,
+        )
+
+        if token_width > width and not token.text.isspace():
+            if current:
+                finish_line()
+            for chunk in _break_long_token(
+                token,
+                width,
+                font_family=font_family,
+                font_size=font_size,
+                block=block,
+                use_precise=use_precise,
+                font_cache=font_cache,
+            ):
+                chunk_width = _measure_run_width(
+                    chunk,
+                    font_family=font_family,
+                    font_size=font_size,
+                    block=block,
+                    use_precise=use_precise,
+                    font_cache=font_cache,
+                )
+                if current and current_width + chunk_width > width:
+                    finish_line()
+                current.append(chunk)
+                current_width += chunk_width
+            continue
+
+        if current and current_width + token_width > width:
+            finish_line()
+            if token.text.isspace():
+                continue
+
+        current.append(token)
+        current_width += token_width
+
+    if current or not wrapped:
+        finish_line()
+
+    return wrapped
+
+
+def _line_height(
+    line_runs: list[TextRun],
+    *,
+    block: TextBlock,
+    font_size: float,
+    font_family: str | None,
+    use_precise: bool,
+    font_cache: dict[float, ImageFont.ImageFont],
+) -> float:
+    if use_precise:
+        heights = []
+        for run in line_runs:
+            effective_size = _effective_run_font_size(block, font_size, run)
+            font = font_cache.get(effective_size)
+            if font is None:
+                font = _load_precise_font(font_family, effective_size)
+                font_cache[effective_size] = font
+            heights.append(_measure_precise_line_height(font))
+        base_height = max(heights or [font_size * _font_size_factor(block)])
+    else:
+        sizes = [_effective_run_font_size(block, font_size, run) for run in line_runs if run.text]
+        base_height = max(sizes or [font_size * _font_size_factor(block)])
+
+    return base_height * _line_height_factor(block)
 
 
 def _measured_text_height(
@@ -479,17 +613,31 @@ def _measured_text_height(
 ) -> float:
     lines_height = 0.0
     blocks = content.blocks or [TextBlock(type="paragraph", text="")]
-    for index, block in enumerate(blocks):
-        block_font_size = font_size * _font_size_factor(block)
-        block_width = _block_width(width, block, block_font_size, font_family=font_family)
-        if use_precise:
-            font = _load_precise_font(font_family, block_font_size)
-            lines, line_height = _estimate_lines_precise(block.text, block_width, font)
-        else:
-            lines = _estimate_lines(block.text, block_width, block_font_size, font_family=font_family)
-            line_height = block_font_size
+    font_cache: dict[float, ImageFont.ImageFont] = {}
 
-        lines_height += lines * line_height * _line_height_factor(block)
+    for index, block in enumerate(blocks):
+        block_width = _block_width(width, block, font_size, font_family=font_family)
+        for line_runs in split_text_runs_by_line(block):
+            wrapped_lines = _wrap_line_runs(
+                line_runs,
+                block_width,
+                font_size=font_size,
+                block=block,
+                font_family=font_family,
+                use_precise=use_precise,
+                font_cache=font_cache,
+            )
+            lines_height += sum(
+                _line_height(
+                    visual_line,
+                    block=block,
+                    font_size=font_size,
+                    font_family=font_family,
+                    use_precise=use_precise,
+                    font_cache=font_cache,
+                )
+                for visual_line in wrapped_lines
+            )
         if index < len(blocks) - 1:
             lines_height += font_size * BLOCK_SPACING_FACTOR
 
