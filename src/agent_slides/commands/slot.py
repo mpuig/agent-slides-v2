@@ -87,6 +87,7 @@ def slot_set(path: str, slide_ref: str, slot_name: str, text: str, font_size_pt:
         node.content = text
         node.style_overrides["role"] = role
         if font_size_pt is not None:
+            node.style_overrides["font_size"] = font_size_pt
             node.style_overrides["font_size_pt"] = font_size_pt
             node.style_overrides["text_fit_disabled"] = True
         return {"slide_id": slide.slide_id, "slot": slot_name, "text": text}

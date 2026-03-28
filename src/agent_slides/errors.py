@@ -22,10 +22,11 @@ THEME_ROLE_NOT_FOUND = "THEME_ROLE_NOT_FOUND"
 class AgentSlidesError(Exception):
     """Single application error type used across the CLI."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, details: dict[str, object] | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details or {}
 
     def __str__(self) -> str:
         return self.message
