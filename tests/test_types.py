@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLIDE
-from agent_slides.model.types import ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.model.types import ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
 
 
 def build_deck() -> Deck:
@@ -123,3 +123,18 @@ def test_computed_node_includes_resolved_style_fields() -> None:
     assert computed.color == "#111111"
     assert computed.bg_color == "#FAFAFA"
     assert computed.font_bold is False
+
+
+def test_computed_deck_round_trip_applies_only_matching_revision() -> None:
+    deck = build_deck()
+    computed = ComputedDeck.from_deck(deck)
+
+    deck.slides[0].computed = {}
+    computed.apply_to_deck(deck)
+
+    assert deck.slides[0].computed["n-1"].font_size_pt == 28.0
+
+    deck.bump_revision()
+    computed.apply_to_deck(deck)
+
+    assert deck.slides[0].computed == {}

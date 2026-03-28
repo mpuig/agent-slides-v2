@@ -171,3 +171,43 @@ class Deck(AgentSlidesModel):
                 return slide
 
         raise AgentSlidesError(INVALID_SLIDE, f"Slide {ref!r} does not exist")
+
+
+class ComputedSlide(AgentSlidesModel):
+    slide_id: str
+    computed: dict[str, ComputedNode] = Field(default_factory=dict)
+
+
+class ComputedDeck(AgentSlidesModel):
+    version: int = 1
+    deck_id: str
+    revision: int = 0
+    slides: list[ComputedSlide] = Field(default_factory=list)
+
+    @classmethod
+    def from_deck(cls, deck: Deck) -> ComputedDeck:
+        return cls(
+            deck_id=deck.deck_id,
+            revision=deck.revision,
+            slides=[
+                ComputedSlide(
+                    slide_id=slide.slide_id,
+                    computed=slide.computed,
+                )
+                for slide in deck.slides
+            ],
+        )
+
+    def apply_to_deck(self, deck: Deck) -> None:
+        for slide in deck.slides:
+            slide.computed = {}
+
+        if self.deck_id != deck.deck_id or self.revision != deck.revision:
+            return
+
+        slides_by_id = {slide.slide_id: slide for slide in deck.slides}
+        for computed_slide in self.slides:
+            slide = slides_by_id.get(computed_slide.slide_id)
+            if slide is None:
+                continue
+            slide.computed = dict(computed_slide.computed)
