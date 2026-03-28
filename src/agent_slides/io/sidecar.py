@@ -168,6 +168,15 @@ def resolve_manifest_path(deck_path: str, deck: Deck) -> str | None:
     return os.path.join(deck_dir, deck.template_manifest)
 
 
+def _relative_manifest_path(deck_path: Path, manifest_path: str | Path | None) -> str | None:
+    if manifest_path is None:
+        return None
+
+    resolved_manifest = Path(manifest_path).expanduser().resolve(strict=False)
+    deck_dir = deck_path.parent.resolve(strict=False)
+    return os.path.relpath(resolved_manifest, deck_dir)
+
+
 def read_computed_deck(path: str) -> ComputedDeck:
     """Load, parse, and validate a computed deck sidecar."""
 
@@ -209,18 +218,30 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     """Run the shared read-mutate-reflow-lock-write pipeline."""
 
     from agent_slides.engine.reflow import reflow_deck
+    from agent_slides.engine.template_reflow import template_reflow
+    from agent_slides.model.layout_provider import TemplateLayoutRegistry
 
     deck = read_deck(path)
-    provider = resolve_layout_provider(deck.template_manifest)
+    provider = resolve_layout_provider(resolve_manifest_path(path, deck))
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()
-    reflow_deck(deck, provider)
+    if isinstance(provider, TemplateLayoutRegistry):
+        template_reflow(deck, provider)
+    else:
+        reflow_deck(deck, provider)
     write_deck(path, deck, expected_revision)
     return deck, result
 
 
-def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
+def init_deck(
+    path: str,
+    theme: str,
+    design_rules: str,
+    force: bool,
+    *,
+    template_manifest: str | Path | None = None,
+) -> Deck:
     """Create a new sidecar deck file."""
 
     deck_path = Path(path)
@@ -232,6 +253,7 @@ def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
         revision=0,
         theme=theme,
         design_rules=design_rules,
+        template_manifest=_relative_manifest_path(deck_path, template_manifest),
     )
     _write_bundle_atomic(deck_path, deck)
     return deck
