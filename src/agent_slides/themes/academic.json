@@ -1,0 +1,21 @@
+{
+  "name": "academic",
+  "colors": {
+    "primary": "#111827",
+    "secondary": "#374151",
+    "accent": "#1D4ED8",
+    "background": "#FFFFFF",
+    "text": "#1F2937",
+    "heading_text": "#111827",
+    "subtle_text": "#4B5563"
+  },
+  "fonts": {
+    "heading": "Georgia",
+    "body": "Times New Roman"
+  },
+  "spacing": {
+    "base_unit": 8,
+    "margin": 48,
+    "gutter": 16
+  }
+}
