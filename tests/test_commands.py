@@ -528,6 +528,103 @@ def test_theme_apply_returns_error_for_invalid_theme(tmp_path: Path) -> None:
     assert read_deck(str(deck_path)).theme == "default"
 
 
+def test_suggest_layout_returns_ranked_suggestions_for_inline_content() -> None:
+    result = invoke_cli(
+        [
+            "suggest-layout",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Quarterly update"},
+                        {"type": "bullet", "text": "Revenue up 24%"},
+                        {"type": "bullet", "text": "Margin improved"},
+                        {"type": "bullet", "text": "Hiring plan"},
+                        {"type": "bullet", "text": "Upsell motion"},
+                        {"type": "bullet", "text": "Pricing refresh"},
+                        {"type": "bullet", "text": "Channel rollout"},
+                    ]
+                }
+            ),
+        ]
+    )
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+
+    payload = json.loads(result.output)
+    suggestions = payload["data"]["suggestions"]
+
+    assert payload["ok"] is True
+    assert suggestions[0]["layout"] == "two_col"
+    assert suggestions[0]["score"] == 0.7
+    assert [item["score"] for item in suggestions] == sorted(
+        [item["score"] for item in suggestions],
+        reverse=True,
+    )
+
+
+def test_suggest_layout_accepts_file_reference(tmp_path: Path) -> None:
+    content_path = tmp_path / "content.json"
+    write_json(
+        content_path,
+        {
+            "blocks": [
+                {"type": "heading", "text": "Launch plan"},
+                {"type": "paragraph", "text": "Sequence the rollout in a single narrative arc."},
+            ]
+        },
+    )
+
+    result = invoke_cli(["suggest-layout", "--content", f"@{content_path}"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+
+    assert payload["ok"] is True
+    assert any(item["layout"] == "title_content" for item in payload["data"]["suggestions"])
+
+
+def test_suggest_layout_image_count_surfaces_image_layouts() -> None:
+    result = invoke_cli(
+        [
+            "suggest-layout",
+            "--content",
+            json.dumps(
+                {
+                    "blocks": [
+                        {"type": "heading", "text": "Customer story"},
+                        {"type": "paragraph", "text": "Show the product in use with supporting context."},
+                    ]
+                }
+            ),
+            "--image-count",
+            "2",
+        ]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    layouts = [item["layout"] for item in payload["data"]["suggestions"]]
+
+    assert payload["ok"] is True
+    assert set(layouts) <= {"gallery", "title", "title_content"}
+    assert layouts[0] == "gallery"
+
+
+def test_suggest_layout_returns_json_error_for_invalid_content() -> None:
+    result = invoke_cli(["suggest-layout", "--content", "{bad json"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr) == {
+        "ok": False,
+        "error": {
+            "code": SCHEMA_ERROR,
+            "message": "Content JSON is not valid: `--content`",
+        },
+    }
+
+
 def test_theme_apply_changes_subsequent_build_output(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     default_output = tmp_path / "default.pptx"
