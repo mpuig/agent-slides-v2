@@ -2,83 +2,54 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable
 from math import isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
+from agent_slides.engine.constraints import constraints_from_layout, solve
 from agent_slides.engine.slide_revisions import resolve_slide_revision
-from agent_slides.engine.text_fit import fit_text
+from agent_slides.engine.text_fit import fit_text, measure_text_height
 from agent_slides.model import Deck, LayoutDef, Slide
 from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
-from agent_slides.model.layouts import (
-    SLIDE_HEIGHT_PT,
-    SLIDE_WIDTH_PT,
-)
+from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
 
 
-def _normalize_grid_indices(index: int | list[int]) -> list[int]:
-    values = [index] if isinstance(index, int) else list(index)
-    return sorted(value - 1 for value in values)
-
-
-def _span_extent(
-    *,
-    proportions: Iterable[float],
-    start_index: int,
-    end_index: int,
-    available_size: float,
-    gutter: float,
-) -> tuple[float, float]:
-    values = list(proportions)
-    offset = sum(values[:start_index]) * available_size + (start_index * gutter)
-    span = sum(values[start_index : end_index + 1]) * available_size
-    if end_index > start_index:
-        span += (end_index - start_index) * gutter
-    return offset, span
-
-
-def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
-    slot = layout_def.slots[slot_name]
-    if None not in (slot.x, slot.y, slot.width, slot.height):
-        return float(slot.x), float(slot.y), float(slot.width), float(slot.height)
-
-    grid = layout_def.grid
-    margin = 0.0 if slot.full_bleed else theme.spacing.margin
-    gutter = 0.0 if slot.full_bleed else theme.spacing.gutter
-    available_width = SLIDE_WIDTH_PT - (2 * margin)
-    available_height = SLIDE_HEIGHT_PT - (2 * margin)
-
-    rows = _normalize_grid_indices(slot.grid_row)
-    row_start = rows[0]
-    row_end = rows[-1]
-    columns = _normalize_grid_indices(slot.grid_col)
-    col_start = columns[0]
-    col_end = columns[-1]
-
-    x_offset, width = _span_extent(
-        proportions=grid.col_widths,
-        start_index=col_start,
-        end_index=col_end,
-        available_size=available_width,
-        gutter=gutter,
-    )
-    y_offset, height = _span_extent(
-        proportions=grid.row_heights,
-        start_index=row_start,
-        end_index=row_end,
-        available_size=available_height,
-        gutter=gutter,
-    )
-    return margin + x_offset, margin + y_offset, width, height
-
-
-def _text_fit_rules(layout_def: LayoutDef, node: Node) -> TextFitting:
+def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None) -> TextFitting:
     slot_name = node.slot_binding or ""
     slot = layout_def.slots[slot_name]
-    return layout_def.text_fitting[slot.role]
+    if provider is not None:
+        return provider.get_text_fitting(layout_def.name, slot.role)
+    if slot.role in layout_def.text_fitting:
+        return layout_def.text_fitting[slot.role]
+    if slot.role == "heading":
+        return DEFAULT_TEXT_FITTING["heading"]
+    return DEFAULT_TEXT_FITTING["body"]
+
+
+def _resolve_theme(deck: Deck, provider: LayoutProvider) -> Theme:
+    return getattr(provider, "theme", None) or load_theme(deck.theme)
+
+
+def _content_by_slot(slide: Slide) -> dict[str, Node]:
+    return {
+        node.slot_binding: node
+        for node in slide.nodes
+        if node.slot_binding is not None
+    }
+
+
+def _measure_slot_height_factory(layout_def: LayoutDef, provider: LayoutProvider) -> Callable[[str, object | None, float], float]:
+    def measure(slot_name: str, content: object | None, width: float) -> float:
+        node = content if isinstance(content, Node) else None
+        if node is None:
+            return 0.0
+        fit_rules = _text_fit_rules(layout_def, node, provider)
+        return measure_text_height(node.content, width, fit_rules.default_size)
+
+    return measure
 
 
 def _resolve_text_ladder(
@@ -151,10 +122,15 @@ def _reflow_slide(
     theme: Theme,
     *,
     revision: int,
+    provider: LayoutProvider | None = None,
     design_rules: DesignRules | None = None,
 ) -> None:
     computed: dict[str, ComputedNode] = {}
     slide.revision = revision
+    active_provider = provider or BuiltinLayoutProvider()
+    slot_constraints = constraints_from_layout(layout_def, theme)
+    content_by_slot = _content_by_slot(slide)
+    rects = solve(slot_constraints, content_by_slot, _measure_slot_height_factory(layout_def, active_provider))
 
     for node in slide.nodes:
         if node.slot_binding is None:
@@ -166,19 +142,24 @@ def _reflow_slide(
             )
 
         slot = layout_def.slots[node.slot_binding]
-        x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding, theme)
+        rect = rects[node.slot_binding]
+        x = rect.x
+        y = rect.y
+        width = rect.width
+        height = rect.height
         if node.type == "chart":
+            style = resolve_style(theme, slot.role)
             computed[node.node_id] = ComputedNode(
                 x=x,
                 y=y,
                 width=width,
                 height=height,
                 font_size_pt=0.0,
-                font_family=theme.fonts.body,
-                color=theme.colors.text,
+                font_family=str(style["font_family"]),
+                color=str(style["color"]),
                 bg_color=None,
                 bg_transparency=0.0,
-                font_bold=False,
+                font_bold=bool(style["font_bold"]),
                 text_overflow=False,
                 revision=revision,
                 content_type="chart",
@@ -206,7 +187,7 @@ def _reflow_slide(
             continue
 
         style = resolve_style(theme, slot.role)
-        fit_rules = _text_fit_rules(layout_def, node)
+        fit_rules = _text_fit_rules(layout_def, node, active_provider)
         ladder = _resolve_text_ladder(fit_rules, slot.role, design_rules)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
@@ -254,10 +235,9 @@ def reflow_deck(
     """Reflow every slide in the deck using the deck theme."""
 
     active_provider = provider or BuiltinLayoutProvider()
-    theme = getattr(active_provider, "theme", None) or load_theme(deck.theme)
+    theme = _resolve_theme(deck, active_provider)
     design_rules = load_design_rules(deck.design_rules)
     for slide in deck.slides:
-        layout_getter = active_provider.get_layout
         slide_revision = resolve_slide_revision(
             slide,
             deck_revision=deck.revision,
@@ -265,9 +245,10 @@ def reflow_deck(
         )
         _reflow_slide(
             slide,
-            layout_getter(slide.layout),
+            active_provider.get_layout(slide.layout),
             theme,
             revision=slide_revision,
+            provider=active_provider,
             design_rules=design_rules,
         )
     _normalize_deck_font_sizes(deck, active_provider, design_rules)

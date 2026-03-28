@@ -49,6 +49,7 @@ def fit_text(
     use_precise: bool = False,
 ) -> tuple[float, bool]:
     """Estimate a font size that fits text into a bounded area."""
+
     content = _normalize_content(text)
     sizes = _resolve_ladder(role, default_size=default_size, min_size=min_size, ladder=ladder)
     largest_size = sizes[0]
@@ -68,6 +69,27 @@ def fit_text(
             return font_size, False
 
     return smallest_size, True
+
+
+def measure_text_height(
+    text: str | NodeContent,
+    width: float,
+    font_size: float,
+    *,
+    font_family: str | None = None,
+    use_precise: bool = False,
+) -> float:
+    """Estimate rendered text height at a fixed font size."""
+
+    if width <= 0:
+        return 0.0
+    return _measured_text_height(
+        _normalize_content(text),
+        width,
+        font_size,
+        font_family=font_family,
+        use_precise=use_precise,
+    )
 
 
 def _normalize_content(text: str | NodeContent) -> NodeContent:
@@ -249,15 +271,14 @@ def _estimate_lines_precise(text: str, width: float, font: ImageFont.ImageFont) 
     return max(lines, 1), max(max_height, 1.0)
 
 
-def _fits(
+def _measured_text_height(
     content: NodeContent,
     width: float,
-    height: float,
     font_size: float,
     *,
     font_family: str | None,
     use_precise: bool,
-) -> bool:
+) -> float:
     lines_height = 0.0
     blocks = content.blocks or [TextBlock(type="paragraph", text="")]
     for index, block in enumerate(blocks):
@@ -274,4 +295,22 @@ def _fits(
         if index < len(blocks) - 1:
             lines_height += font_size * BLOCK_SPACING_FACTOR
 
-    return lines_height <= height
+    return lines_height
+
+
+def _fits(
+    content: NodeContent,
+    width: float,
+    height: float,
+    font_size: float,
+    *,
+    font_family: str | None,
+    use_precise: bool,
+) -> bool:
+    return _measured_text_height(
+        content,
+        width,
+        font_size,
+        font_family=font_family,
+        use_precise=use_precise,
+    ) <= height
