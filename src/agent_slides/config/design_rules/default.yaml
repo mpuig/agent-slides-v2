@@ -1,0 +1,18 @@
+name: default
+content_limits:
+  max_bullets_per_slide: 6
+  max_words_per_column: 50
+  max_slides: 20
+hierarchy:
+  heading:
+    min_size: 24
+    max_size: 44
+  body:
+    min_size: 10
+    max_size: 18
+overflow_policy:
+  strategy: shrink
+  min_font_size: 10
+deck_structure:
+  recommend_title_slide: true
+  recommend_closing_slide: true
