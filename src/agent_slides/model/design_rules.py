@@ -1,5 +1,7 @@
 """Design-rules models and packaged profile loading."""
 
+from __future__ import annotations
+
 from importlib import resources
 from pathlib import Path
 from typing import Literal
@@ -7,7 +9,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from agent_slides.errors import AgentSlidesError
+from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 
 
 class ContentLimits(BaseModel):
@@ -65,14 +67,20 @@ def load_design_rules(name: str) -> DesignRules:
 
     resource = _design_rules_dir().joinpath(f"{name}.yaml")
     if not resource.is_file():
-        raise AgentSlidesError(f"Design rules profile '{name}' was not found.")
+        raise AgentSlidesError(
+            FILE_NOT_FOUND,
+            f"Design rules profile '{name}' was not found.",
+        )
 
     try:
         with resource.open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle)
         return DesignRules.model_validate(payload)
     except (OSError, yaml.YAMLError, ValidationError) as exc:
-        raise AgentSlidesError(f"Failed to load design rules profile '{name}'.") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Failed to load design rules profile '{name}'.",
+        ) from exc
 
 
 def list_design_rules() -> list[str]:

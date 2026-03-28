@@ -1,30 +1,32 @@
 [build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "agent-slides"
 version = "0.1.0"
-description = "Semantic slide engine for deterministic presentation generation."
-requires-python = ">=3.12"
+description = "CLI for semantic slide operations and PPTX generation."
+readme = "README.md"
+requires-python = ">=3.11"
 dependencies = [
-  "pydantic>=2,<3",
+  "click>=8.1",
+  "python-pptx>=1.0.2",
+  "pydantic>=2.0",
   "PyYAML>=6.0",
 ]
 
+[project.scripts]
+agent-slides = "agent_slides.cli:cli"
+
 [dependency-groups]
 dev = [
-  "pytest>=8,<9",
+  "pytest>=8.0",
+  "ruff>=0.11",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_slides"]
+include = ["src/agent_slides/config/design_rules/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-"agent_slides.config.design_rules" = ["*.yaml"]
