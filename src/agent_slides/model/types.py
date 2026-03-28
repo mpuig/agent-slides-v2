@@ -33,6 +33,7 @@ class ComputedNode(AgentSlidesModel):
     font_family: str
     color: str
     bg_color: str | None = None
+    bg_transparency: float = 0.0
     font_bold: bool = False
     text_overflow: bool = False
     revision: int
@@ -87,8 +88,9 @@ class NodeContent(AgentSlidesModel):
 class Node(AgentSlidesModel):
     node_id: str
     slot_binding: str | None = None
-    type: Literal["text"]
+    type: Literal["text", "image"]
     content: NodeContent = Field(default_factory=NodeContent)
+    image_path: str | None = None
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -136,9 +138,19 @@ class Theme(AgentSlidesModel):
 
 
 class SlotDef(AgentSlidesModel):
-    grid_row: int
+    grid_row: int | list[int]
     grid_col: int | list[int]
     role: str
+    full_bleed: bool = False
+    bg_color: str | None = None
+    bg_transparency: float = 0.0
+
+    @field_validator("bg_transparency")
+    @classmethod
+    def validate_bg_transparency(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("bg_transparency must be between 0.0 and 1.0")
+        return value
 
 
 class GridDef(AgentSlidesModel):

@@ -12,9 +12,9 @@ from agent_slides.model.themes import load_theme, resolve_style
 from agent_slides.model.types import ComputedNode, Node, TextFitting, Theme
 
 
-def _normalize_columns(grid_col: int | list[int]) -> list[int]:
-    columns = [grid_col] if isinstance(grid_col, int) else list(grid_col)
-    return sorted(column - 1 for column in columns)
+def _normalize_grid_indices(index: int | list[int]) -> list[int]:
+    values = [index] if isinstance(index, int) else list(index)
+    return sorted(value - 1 for value in values)
 
 
 def _span_extent(
@@ -36,13 +36,15 @@ def _span_extent(
 def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> tuple[float, float, float, float]:
     slot = layout_def.slots[slot_name]
     grid = layout_def.grid
-    margin = theme.spacing.margin
-    gutter = theme.spacing.gutter
+    margin = 0.0 if slot.full_bleed else theme.spacing.margin
+    gutter = 0.0 if slot.full_bleed else theme.spacing.gutter
     available_width = SLIDE_WIDTH_PT - (2 * margin)
     available_height = SLIDE_HEIGHT_PT - (2 * margin)
 
-    row_index = slot.grid_row - 1
-    columns = _normalize_columns(slot.grid_col)
+    rows = _normalize_grid_indices(slot.grid_row)
+    row_start = rows[0]
+    row_end = rows[-1]
+    columns = _normalize_grid_indices(slot.grid_col)
     col_start = columns[0]
     col_end = columns[-1]
 
@@ -55,8 +57,8 @@ def _compute_slot_frame(layout_def: LayoutDef, slot_name: str, theme: Theme) -> 
     )
     y_offset, height = _span_extent(
         proportions=grid.row_heights,
-        start_index=row_index,
-        end_index=row_index,
+        start_index=row_start,
+        end_index=row_end,
         available_size=available_height,
         gutter=gutter,
     )
@@ -83,6 +85,23 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
 
         slot = layout_def.slots[node.slot_binding]
         x, y, width, height = _compute_slot_frame(layout_def, node.slot_binding, theme)
+        if slot.role == "image":
+            computed[node.node_id] = ComputedNode(
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                font_size_pt=0.0,
+                font_family=theme.fonts.body,
+                color=theme.colors.text,
+                bg_color=None,
+                bg_transparency=0.0,
+                font_bold=False,
+                text_overflow=False,
+                revision=revision,
+            )
+            continue
+
         fit_rules = _text_fit_rules(layout_def, node)
         font_size_pt, text_overflow = fit_text(
             text=node.content,
@@ -101,7 +120,8 @@ def _reflow_slide(slide: Slide, layout_def: LayoutDef, theme: Theme, *, revision
             font_size_pt=font_size_pt,
             font_family=str(style["font_family"]),
             color=str(style["color"]),
-            bg_color=theme.colors.background,
+            bg_color=slot.bg_color if slot.bg_color is not None else theme.colors.background,
+            bg_transparency=slot.bg_transparency,
             font_bold=bool(style["font_bold"]),
             text_overflow=text_overflow,
             revision=revision,
@@ -144,11 +164,12 @@ def rebind_slots(deck: Deck, slide: Slide, new_layout: LayoutDef) -> list[str]:
     for slot_name in desired_slots:
         if slot_name in claimed_slots:
             continue
+        slot = new_layout.slots[slot_name]
         slide.nodes.append(
             Node(
                 node_id=deck.next_node_id(),
                 slot_binding=slot_name,
-                type="text",
+                type="image" if slot.role == "image" else "text",
             )
         )
 

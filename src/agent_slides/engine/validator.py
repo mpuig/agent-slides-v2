@@ -60,6 +60,9 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
 
     total_bullets = 0
     for node in slide.nodes:
+        if node.type == "image":
+            continue
+
         total_bullets += _count_bullets(node.content)
 
         if node.slot_binding is not None:
