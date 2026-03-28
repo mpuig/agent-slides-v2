@@ -242,7 +242,7 @@ def test_template_changed_warning(tmp_path: Path) -> None:
     output_path = tmp_path / "deck.pptx"
     build_result = invoke(["build", str(deck_path), "-o", str(output_path)])
     assert build_result.exit_code == 0
-    assert parse_last_json_line(build_result.output)["ok"] is True
+    assert json.loads(build_result.stdout)["ok"] is True
 
     warning = json.loads(build_result.stderr)
     assert warning["warning"]["code"] == TEMPLATE_CHANGED
