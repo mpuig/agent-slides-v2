@@ -28,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
     encoding="utf-8"
 )
+APPROXIMATE_PREVIEW_NOTICE = "Approximate preview (LibreOffice unavailable)"
 
 
 class PreviewServer:
@@ -69,6 +70,7 @@ class PreviewServer:
         if self._renderer is None:
             self._renderer = SlideRenderer(self.sidecar_path)
         self._logged_png_fallback_warning = False
+        self._logged_png_cache_fallback_warning = False
 
     @property
     def origin(self) -> str:
@@ -139,24 +141,68 @@ class PreviewServer:
 
         broadcast(self._preview_clients, json.dumps(payload))
 
+    def _set_svg_preview(self) -> None:
+        self._preview_backend = "svg"
+        self._slide_previews = []
+        self._rendering_payload = None
+
+    def _missing_slide_previews(
+        self,
+        payload: dict[str, Any],
+        slide_indices: list[int] | None = None,
+    ) -> list[int]:
+        if self._renderer is None:
+            if slide_indices is not None:
+                return list(slide_indices)
+            return list(range(len(payload.get("slides", []))))
+
+        slides = payload.get("slides", [])
+        deck_revision = int(payload["revision"])
+        indices = slide_indices if slide_indices is not None else list(range(len(slides)))
+        missing: list[int] = []
+        for index in indices:
+            if index < 0 or index >= len(slides):
+                continue
+            slide = slides[index]
+            slide_id = str(slide["slide_id"])
+            slide_revision = self._slide_revision(slide, deck_revision)
+            if self._renderer.get_cached(slide_id, slide_revision) is None:
+                missing.append(index)
+        return missing
+
+    def _log_missing_png_cache_warning(self, missing_indices: list[int]) -> None:
+        if self._logged_png_cache_fallback_warning:
+            return
+        self._logged_png_cache_fallback_warning = True
+        self._logger.warning(
+            "PNG preview render did not produce cached slide images for indices %s; falling back to SVG preview.",
+            missing_indices,
+        )
+
+    def _preview_deck_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        preview_payload = dict(payload)
+        preview_payload["preview_backend"] = self._preview_backend
+        if self._preview_backend == "png":
+            preview_payload["slide_previews"] = list(self._slide_previews)
+        elif payload.get("slides"):
+            preview_payload["preview_notice"] = APPROXIMATE_PREVIEW_NOTICE
+        return preview_payload
+
     async def _prime_preview_state(self) -> None:
         try:
             _, payload = load_deck_payload(self.sidecar_path)
         except AgentSlidesError:
-            self._preview_backend = "svg"
+            self._set_svg_preview()
             self._preview_payload = None
-            self._slide_previews = []
             return
 
         self._preview_payload = payload
         if self._renderer is None:
-            self._preview_backend = "svg"
-            self._slide_previews = []
+            self._set_svg_preview()
             return
 
         if not self._renderer.is_available:
-            self._preview_backend = "svg"
-            self._slide_previews = []
+            self._set_svg_preview()
             self._log_png_fallback_warning()
             return
 
@@ -164,9 +210,13 @@ class PreviewServer:
             await self._render_all_slides(payload)
         except SlideRenderError as exc:
             self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
-            self._preview_backend = "svg"
-            self._slide_previews = []
-            self._rendering_payload = None
+            self._set_svg_preview()
+            return
+
+        missing_indices = self._missing_slide_previews(payload)
+        if missing_indices:
+            self._log_missing_png_cache_warning(missing_indices)
+            self._set_svg_preview()
             return
 
         self._preview_backend = "png"
@@ -190,6 +240,11 @@ class PreviewServer:
             return
 
         await self._render_indices(payload, changed_indices)
+        missing_indices = self._missing_slide_previews(payload, changed_indices)
+        if missing_indices:
+            raise SlideRenderError(
+                f"Renderer did not produce cached PNG previews for slide indices {missing_indices}."
+            )
         self._preview_backend = "png"
 
     def _build_rendering_message(self, slide_index: int, total: int) -> dict[str, Any]:
@@ -321,9 +376,7 @@ class PreviewServer:
             self._slide_previews = self._build_slide_previews(payload)
         except SlideRenderError as exc:
             self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
-            self._preview_backend = "svg"
-            self._rendering_payload = None
-            self._slide_previews = []
+            self._set_svg_preview()
             await self.broadcast_payload(self._build_update_message(payload))
             return
 
@@ -469,12 +522,7 @@ class PreviewServer:
                 if exc.code == FILE_NOT_FOUND:
                     return self._build_waiting_payload()
                 raise
-
-        payload = dict(self._preview_payload)
-        payload["preview_backend"] = self._preview_backend
-        if self._preview_backend == "png":
-            payload["slide_previews"] = list(self._slide_previews)
-        return payload
+        return self._preview_deck_payload(self._preview_payload)
 
     def _build_waiting_payload(self) -> dict[str, Any]:
         return {
@@ -518,6 +566,8 @@ class PreviewServer:
         slide_revision = self._slide_revision(slide, int(self._preview_payload["revision"]))
         rendered = self._renderer.get_cached(slide_id, slide_revision)
         if rendered is None:
+            self._set_svg_preview()
+            self._log_missing_png_cache_warning([slide_index])
             raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
 
         return rendered.read_bytes(), "image/png"
@@ -565,7 +615,7 @@ class PreviewServer:
             "event": "deck.updated",
             "path": str(self.sidecar_path),
             "revision": payload["revision"],
-            "deck": payload,
+            "deck": self._preview_deck_payload(payload),
         }
 
     def _not_found_response(self, connection: ServerConnection) -> Any:
