@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from agent_slides.commands.mutations import SUPPORTED_MUTATION_COMMANDS, apply_mutation
+from agent_slides.contract import LEGACY_ORCHESTRATOR_PROFILE, get_tool_definitions
 from agent_slides.engine.reflow import reflow_deck
 from agent_slides.engine.template_reflow import template_reflow
 from agent_slides.engine.validator import validate_deck
-from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
+from agent_slides.errors import AgentSlidesError, INVALID_TOOL_INPUT, INVALID_TOOL_NAME, SCHEMA_ERROR
 from agent_slides.io import mutate_deck, read_deck, resolve_manifest_path, write_computed_deck, write_pptx
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.layout_provider import TemplateLayoutRegistry, resolve_layout_provider
@@ -20,94 +21,7 @@ DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 DEFAULT_MAX_TOKENS = 1024
 MAX_MODEL_ROUNDS = 8
 
-TOOL_SCHEMAS = [
-    {
-        "name": "slide_add",
-        "description": "Add a slide using a built-in semantic layout.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "layout": {"type": "string"},
-                "auto_layout": {"type": "boolean"},
-                "content": {"type": "object"},
-                "image_count": {"type": "integer"},
-            },
-        },
-    },
-    {
-        "name": "slide_set_layout",
-        "description": "Switch a slide to a different semantic layout.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-                "layout": {"type": "string"},
-            },
-            "required": ["slide", "layout"],
-        },
-    },
-    {
-        "name": "slot_set",
-        "description": "Set text or image content in a slide slot.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-                "slot": {"type": "string"},
-                "text": {"type": "string"},
-                "content": {"type": "object"},
-                "image": {"type": "string"},
-                "font_size": {"type": "number"},
-            },
-            "required": ["slide", "slot"],
-        },
-    },
-    {
-        "name": "slot_clear",
-        "description": "Remove content from a slot on a slide.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-                "slot": {"type": "string"},
-            },
-            "required": ["slide", "slot"],
-        },
-    },
-    {
-        "name": "slot_bind",
-        "description": "Bind an existing node to a slot.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "node": {"type": "string"},
-                "slot": {"type": "string"},
-            },
-            "required": ["node", "slot"],
-        },
-    },
-    {
-        "name": "slide_remove",
-        "description": "Remove a slide by index or slide id.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "slide": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
-            },
-            "required": ["slide"],
-        },
-    },
-    {
-        "name": "build",
-        "description": "Build the current deck into a PPTX file.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "output": {"type": "string"},
-            },
-        },
-    },
-]
+TOOL_SCHEMAS = get_tool_definitions(profile=LEGACY_ORCHESTRATOR_PROFILE)
 
 _MISSING = object()
 
@@ -289,7 +203,7 @@ class DeckConversationOrchestrator:
         name = tool_use.get("name")
         raw_input = tool_use.get("input", {})
         if not isinstance(raw_input, dict):
-            error = AgentSlidesError(SCHEMA_ERROR, f"Tool {name!r} requires an object input payload")
+            error = AgentSlidesError(INVALID_TOOL_INPUT, f"Tool {name!r} requires an object input payload")
             return {"ok": False, "tool": name, "error": _serialize_error(error)}, True
 
         try:
@@ -298,7 +212,7 @@ class DeckConversationOrchestrator:
 
             if name not in SUPPORTED_MUTATION_COMMANDS:
                 raise AgentSlidesError(
-                    SCHEMA_ERROR,
+                    INVALID_TOOL_NAME,
                     f"Unsupported tool {name!r}. Supported tools: {', '.join(sorted((*SUPPORTED_MUTATION_COMMANDS, 'build')))}",
                 )
 
@@ -318,14 +232,14 @@ class DeckConversationOrchestrator:
             return {"ok": False, "tool": name, "error": _serialize_error(exc)}, True
 
     def _execute_build(self, args: dict[str, Any]) -> dict[str, Any]:
-        output_value = args.get("output")
+        output_value = args.get("output_path", args.get("output"))
         if output_value is None:
             output_path = self.output_dir / f"{self.deck_path.stem}.pptx"
         elif isinstance(output_value, str) and output_value.strip():
             candidate = Path(output_value.strip())
             output_path = candidate if candidate.is_absolute() else self.output_dir / candidate
         else:
-            raise AgentSlidesError(SCHEMA_ERROR, "Build tool argument 'output' must be a non-empty string")
+            raise AgentSlidesError(SCHEMA_ERROR, "Build tool argument 'output_path' must be a non-empty string")
 
         deck = read_deck(str(self.deck_path))
         manifest_path = resolve_manifest_path(str(self.deck_path), deck)

@@ -8,6 +8,7 @@ description: Run rendered visual QA on an `agent-slides` deck using LibreOffice 
 Use this skill when the user asks for deck QA, visual review, design review, screenshot-based critique, or wants to know whether a PPTX deck actually looks good after render.
 
 In this repo, prefer `uv run agent-slides ...` so the checked-out CLI and assets are used.
+For command semantics and error handling, use `uv run agent-slides contract` as the canonical contract.
 
 This skill is the rendered counterpart to `agent-slides validate`. `validate` checks structural design rules. `review` checks the real rendered output.
 
