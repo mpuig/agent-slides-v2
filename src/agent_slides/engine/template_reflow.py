@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.slide_revisions import resolve_slide_revision
+from agent_slides.engine.reflow import _normalize_deck_font_sizes, _resolve_text_ladder
 from agent_slides.engine.text_fit import fit_text
+from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.layout_provider import TemplateLayoutRegistry
 from agent_slides.model.themes import resolve_style
 from agent_slides.model.types import ComputedNode, Deck
@@ -19,6 +21,7 @@ def template_reflow(
     """Populate computed nodes from template placeholder bounds and theme."""
 
     theme = registry.theme
+    design_rules = load_design_rules(deck.design_rules)
     for slide in deck.slides:
         slide_revision = resolve_slide_revision(
             slide,
@@ -71,12 +74,16 @@ def template_reflow(
                 continue
 
             fit_rules = registry.get_text_fitting(slide.layout, slot.role)
+            ladder = _resolve_text_ladder(fit_rules, slot.role, design_rules)
             font_size_pt, text_overflow = fit_text(
                 text=node.content,
                 width=width,
                 height=height,
                 default_size=fit_rules.default_size,
                 min_size=fit_rules.min_size,
+                role=slot.role,
+                font_family=str(style["font_family"]),
+                ladder=ladder,
             )
             computed[node.node_id] = ComputedNode(
                 x=x,
@@ -95,3 +102,5 @@ def template_reflow(
             )
 
         slide.computed = computed
+
+    _normalize_deck_font_sizes(deck, registry, design_rules)
