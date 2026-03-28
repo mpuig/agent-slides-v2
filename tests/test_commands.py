@@ -209,6 +209,92 @@ def make_theme_switch_deck(theme_name: str = "default") -> Deck:
     )
 
 
+def test_icon_list_command_reports_built_in_icons() -> None:
+    result = invoke_cli(["icon", "list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert 25 <= payload["data"]["count"] <= 30
+    assert "checkmark" in payload["data"]["icons"]
+    assert "warning" in payload["data"]["icons"]
+
+
+def test_icon_add_command_creates_absolute_icon_node(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=True)
+    add_slide = invoke_cli(["slide", "add", str(deck_path), "--layout", "title"])
+    assert add_slide.exit_code == 0
+
+    result = invoke_cli(
+        [
+            "icon",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--name",
+            "checkmark",
+            "--x",
+            "65",
+            "--y",
+            "200",
+            "--size",
+            "16",
+            "--color",
+            "#1A73E8",
+        ]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["name"] == "checkmark"
+    assert payload["data"]["color"] == "#1A73E8"
+
+    deck = read_deck(str(deck_path))
+    slide = deck.slides[0]
+    icon_node = next(node for node in slide.nodes if node.type == "icon")
+    computed = slide.computed[icon_node.node_id]
+
+    assert icon_node.slot_binding is None
+    assert icon_node.icon_name == "checkmark"
+    assert icon_node.x == 65.0
+    assert icon_node.y == 200.0
+    assert icon_node.size == 16.0
+    assert icon_node.color == "#1A73E8"
+    assert computed.content_type == "icon"
+    assert computed.icon_svg_path
+    assert computed.width == pytest.approx(16.0)
+    assert computed.height == pytest.approx(16.0)
+
+
+def test_slot_set_accepts_bullet_icons_in_structured_content(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    init_deck(str(deck_path), theme="default", design_rules="default", force=True)
+    add_slide = invoke_cli(["slide", "add", str(deck_path), "--layout", "title_content"])
+    assert add_slide.exit_code == 0
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--content",
+            json.dumps({"blocks": [{"type": "bullet", "text": "On track for Q3", "icon": "checkmark"}]}),
+        ]
+    )
+
+    assert result.exit_code == 0
+
+    deck = read_deck(str(deck_path))
+    body_node = next(node for node in deck.slides[0].nodes if node.slot_binding == "body")
+    assert body_node.content.blocks[0].icon == "checkmark"
+
+
 def render_slide_signature(path: Path) -> tuple[tuple[int, int, int, str, str, str], ...]:
     presentation = Presentation(path)
     slide = presentation.slides[0]
