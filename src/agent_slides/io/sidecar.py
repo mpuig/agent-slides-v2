@@ -220,18 +220,30 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
     return deck, result
 
 
-def init_deck(path: str, theme: str, design_rules: str, force: bool) -> Deck:
+def init_deck(
+    path: str,
+    theme: str,
+    design_rules: str,
+    force: bool,
+    *,
+    template_manifest: str | None = None,
+) -> Deck:
     """Create a new sidecar deck file."""
 
     deck_path = Path(path)
     if deck_path.exists() and not force:
         raise AgentSlidesError(FILE_EXISTS, f"Deck file already exists: {deck_path}")
 
+    relative_manifest: str | None = None
+    if template_manifest is not None:
+        relative_manifest = os.path.relpath(template_manifest, start=deck_path.resolve().parent)
+
     deck = Deck(
         deck_id=str(uuid4()),
         revision=0,
         theme=theme,
         design_rules=design_rules,
+        template_manifest=relative_manifest,
     )
     _write_bundle_atomic(deck_path, deck)
     return deck
