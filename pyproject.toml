@@ -26,7 +26,10 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_slides"]
-include = ["src/agent_slides/config/design_rules/*.yaml"]
+include = [
+  "src/agent_slides/config/design_rules/*.yaml",
+  "src/agent_slides/themes/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
