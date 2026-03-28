@@ -10,7 +10,7 @@ from pathlib import Path
 import click
 
 from agent_slides.io import read_deck
-from agent_slides.preview import PreviewServer
+from agent_slides.preview_runtime import PreviewServer
 
 
 def _wait_for_shutdown() -> None:

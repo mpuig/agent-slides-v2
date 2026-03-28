@@ -28,7 +28,7 @@ requires-dist = [
     { name = "python-pptx", specifier = ">=1.0.2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "watchdog", specifier = ">=6.0" },
-    { name = "websockets", specifier = ">=15.0" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [package.metadata.requires-dev]
