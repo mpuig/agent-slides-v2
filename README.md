@@ -1,8 +1,8 @@
 # agent-slides
 
-`agent-slides` is a Python CLI for building PowerPoint decks from a semantic scene graph instead of hand-editing slides. You mutate a JSON sidecar, the engine reflows content into layout slots, validates against design rules, and emits a `.pptx` artifact.
+A Python CLI for building PowerPoint decks from a semantic scene graph. Mutate a JSON sidecar, the engine reflows content into layout slots, validates against design rules, and emits a `.pptx` file.
 
-The whoa moment is that deck edits stay structural. You can add a slide, switch layouts, rewrite a slot, and regenerate the presentation without chasing coordinates or manually fixing text boxes.
+The key idea: deck edits are structural. Add a slide, switch layouts, set slot content, add a chart, and regenerate the presentation without pixel-pushing or manual alignment.
 
 ## Installation
 
@@ -10,97 +10,151 @@ The whoa moment is that deck edits stay structural. You can add a slide, switch 
 pip install agent-slides
 ```
 
-Or install it as an isolated CLI:
+Or with chat mode (conversational UI via Anthropic API):
 
 ```bash
-pipx install agent-slides
+pip install agent-slides[chat]
 ```
 
 ## Quick Start
 
-Five commands from empty directory to generated PowerPoint:
-
 ```bash
-agent-slides init demo.json --theme startup
-agent-slides slide add demo.json --layout title
-agent-slides slot set demo.json --slide slide-1 --slot heading --text "Ship the board deck in minutes"
-agent-slides slot set demo.json --slide slide-1 --slot subheading --text "Semantic operations, deterministic reflow, PowerPoint output"
-agent-slides build demo.json --output demo.pptx
+agent-slides init deck.json
+agent-slides slide add deck.json --layout title
+agent-slides slot set deck.json --slide 0 --slot heading --text "Ship the board deck in minutes"
+agent-slides slot set deck.json --slide 0 --slot subheading --text "Semantic operations, deterministic reflow, PowerPoint output"
+agent-slides build deck.json -o deck.pptx
 ```
-
-What that does:
-
-- Creates a sidecar JSON deck file with the built-in `startup` theme and default design rules.
-- Appends a new `title` slide with stable `slide_id` and slot definitions.
-- Fills semantic slots rather than editing text boxes directly.
-- Reflows the slide and writes a `demo.pptx` file.
 
 ## Command Reference
 
+### Deck management
+
 | Command | Description |
 | --- | --- |
-| `agent-slides init PATH [--theme THEME] [--rules RULES] [--force]` | Create a new deck sidecar JSON file. |
-| `agent-slides slide add PATH --layout LAYOUT` | Append a slide using a named built-in layout. |
-| `agent-slides slide remove PATH --slide REF` | Remove a slide by index or stable `slide_id`. |
-| `agent-slides slide set-layout PATH --slide REF --layout LAYOUT` | Change a slide layout and rebind slot-bound nodes. |
-| `agent-slides slot set PATH --slide REF --slot SLOT --text TEXT` | Set text for a slot on a specific slide. |
-| `agent-slides theme list` | List the built-in themes available to the CLI. |
-| `agent-slides theme apply PATH --theme THEME` | Switch an existing deck to a different built-in theme. |
-| `agent-slides build PATH --output FILE` | Reflow the deck, persist computed layout data, and render a `.pptx`. |
-| `agent-slides review PATH [--output-dir DIR] [--dpi N] [--fix]` | Build the deck, render slide screenshots through LibreOffice + `pdftoppm`, score visual quality, and optionally apply common auto-fixes. |
-| `agent-slides validate PATH` | Run design-rule validation and emit structured warnings. |
-| `agent-slides info PATH` | Print the full sidecar JSON with indentation. |
-| `agent-slides preview PATH [--port PORT] [--no-open]` | Start the live preview server and optionally suppress automatic browser launch. |
-| `agent-slides batch PATH` | Read a JSON array of mutations from stdin and apply them atomically. |
+| `init PATH [--theme THEME] [--rules RULES] [--template MANIFEST] [--force]` | Create a new deck. `--template` and `--theme` are mutually exclusive. |
+| `build PATH -o FILE` | Reflow, persist computed data, render `.pptx`. |
+| `validate PATH` | Check design rules, emit structured warnings. |
+| `info PATH` | Print the full sidecar JSON. |
+| `preview PATH [--port PORT] [--no-open]` | Start live preview server with LibreOffice-rendered slide PNGs. |
+| `review PATH [--output-dir DIR] [--dpi N] [--fix]` | Visual QA: render slides to PNG, score against checklist, optionally auto-fix. |
+| `batch PATH` | Read JSON array of mutations from stdin, apply atomically. |
+
+### Slide operations
+
+| Command | Description |
+| --- | --- |
+| `slide add PATH --layout LAYOUT` | Append a slide with the given layout. |
+| `slide add PATH --auto-layout --content JSON [--image-count N]` | Append a slide with engine-suggested layout based on content. |
+| `slide remove PATH --slide REF` | Remove a slide by index or slide_id. |
+| `slide set-layout PATH --slide REF --layout LAYOUT` | Change layout, rebind content to matching slots. |
+
+### Slot operations
+
+| Command | Description |
+| --- | --- |
+| `slot set PATH --slide REF --slot SLOT --text TEXT` | Set text content in a slot. |
+| `slot set PATH --slide REF --slot SLOT --image PATH` | Set image content in a slot. |
+| `slot set PATH --slide REF --slot SLOT --content JSON` | Set structured content (TextBlocks). |
+| `slot clear PATH --slide REF --slot SLOT` | Clear a slot's content. |
+| `slot bind PATH --node NODE_ID --slot SLOT` | Rebind an unbound node to a slot. |
+
+### Chart operations
+
+| Command | Description |
+| --- | --- |
+| `chart add PATH --slide REF --slot SLOT --type TYPE --data JSON` | Add a native PowerPoint chart. Types: bar, column, line, pie, scatter, area, doughnut. |
+| `chart update PATH --node NODE_ID --data JSON` | Update chart data on an existing chart node. |
+
+### Theme operations
+
+| Command | Description |
+| --- | --- |
+| `theme list` | List built-in themes. |
+| `theme apply PATH --theme THEME` | Switch a deck to a different theme. |
+
+### Template ingestion
+
+| Command | Description |
+| --- | --- |
+| `learn TEMPLATE.pptx [-o MANIFEST.json]` | Extract layouts, placeholders, and theme from a PPTX template. |
+| `inspect MANIFEST.json` | Show what the learner found: usable layouts, slots, theme. |
+
+### Layout suggestion
+
+| Command | Description |
+| --- | --- |
+| `suggest-layout --content JSON [--image-count N]` | Get ranked layout recommendations for given content. |
 
 ## Layout Reference
 
-Built-in layouts ship with semantic slot names instead of absolute coordinates:
+### Text layouts
 
 | Layout | Slots |
 | --- | --- |
-| `blank` | none |
-| `closing` | `body` |
-| `comparison` | `heading`, `left_header`, `left_body`, `right_header`, `right_body` |
-| `quote` | `quote`, `attribution` |
-| `three_col` | `heading`, `col1`, `col2`, `col3` |
 | `title` | `heading`, `subheading` |
 | `title_content` | `heading`, `body` |
 | `two_col` | `heading`, `col1`, `col2` |
+| `three_col` | `heading`, `col1`, `col2`, `col3` |
+| `comparison` | `heading`, `left_header`, `left_body`, `right_header`, `right_body` |
+| `quote` | `quote`, `attribution` |
+| `closing` | `body` |
+| `blank` | (none) |
+
+### Image layouts
+
+| Layout | Slots |
+| --- | --- |
+| `image_left` | `image`, `heading`, `body` |
+| `image_right` | `heading`, `body`, `image` |
+| `hero_image` | `image`, `heading`, `subheading` |
+| `gallery` | `heading`, `img1`, `img2`, `img3`, `img4` |
 
 ## Theme Reference
 
-Five built-in themes are packaged with the CLI today:
-
 | Theme | Character | Heading / body fonts |
 | --- | --- | --- |
-| `academic` | Clean serif presentation style for reports and lectures | `Georgia` / `Times New Roman` |
-| `corporate` | Neutral executive deck with restrained accent color | `Georgia` / `Arial` |
-| `dark` | Dark-surface presentation with high-contrast text | `Arial` / `Calibri` |
-| `default` | Balanced baseline theme for general-purpose decks | `Calibri` / `Calibri` |
-| `startup` | High-energy theme with wider spacing and warm accent color | `Helvetica` / `Arial` |
+| `academic` | Serif style for reports and lectures | Georgia / Times New Roman |
+| `corporate` | Neutral executive deck | Georgia / Arial |
+| `dark` | Dark surface, high contrast | Arial / Calibri |
+| `default` | Balanced baseline | Calibri / Calibri |
+| `startup` | High energy, warm accent | Helvetica / Arial |
 
-## Architecture Overview
+## Skills
 
-`agent-slides` follows a scene-graph architecture:
+Three skills ship with the project in `skills/`:
 
-- The sidecar JSON is the source of truth for deck structure, slides, nodes, theme selection, design rules, and revision state.
-- CLI mutation commands update semantic objects such as slides, slots, and layouts instead of raw PowerPoint coordinates.
-- The reflow engine converts those semantic objects into computed layout data using the selected layout template, theme spacing, and text-fitting rules.
-- The validator checks the deck against packaged design rules and emits structured warnings before or after rendering.
-- The PPTX writer consumes the computed scene graph and produces the final `.pptx` artifact.
-- The preview server serves the same computed model to a browser client for live iteration.
+| Skill | Purpose |
+| --- | --- |
+| `create-deck` | Build a deck from a brief: pre-flight questions, Pyramid Principle storyline, build, QA. |
+| `edit-slide` | Modify an existing deck: inspect, smallest mutation, validate. |
+| `review-deck` | Visual QA: LibreOffice-rendered screenshots scored against a checklist. |
 
-## Visual QA
+Symlink to `.claude/skills/` for Claude Code integration:
 
-`agent-slides review` is the rendered QA companion to `validate`.
+```bash
+ln -sf $(pwd)/skills/create-deck .claude/skills/create-deck
+ln -sf $(pwd)/skills/edit-slide .claude/skills/edit-slide
+ln -sf $(pwd)/skills/review-deck .claude/skills/review-deck
+```
 
-- `validate` checks structural rules such as overflow, hierarchy, and content limits from computed deck state.
-- `review` builds the `.pptx`, renders it to slide PNGs via LibreOffice headless and `pdftoppm`, then scores the deck against a visual checklist with screenshot-backed evidence.
-- `review --fix` applies a small set of common mechanical fixes, rerenders the deck, and records before/after comparison artifacts.
+## Architecture
 
-By default the review artifacts land in `<deck-stem>.review/` next to the source deck and include `report.md`, `report.json`, and rendered slide PNGs.
+Scene-graph model with two-file persistence:
 
-## Development Notes
+- `deck.json` is the source of truth (slides, nodes, theme, layout bindings)
+- `deck.computed.json` is the derived cache (positions, resolved styles)
+- `.pptx` is the output artifact
+- The preview server watches `deck.computed.json` and pushes updates via WebSocket
 
-For deeper design and architecture rationale, see [docs/decisions/0001-structured-text-model.md](./docs/decisions/0001-structured-text-model.md).
+Node types: `text` (structured TextBlocks with paragraph, bullet, heading types), `image`, `chart` (native editable PowerPoint charts).
+
+The LayoutProvider protocol abstracts built-in layouts from template-learned layouts, so commands work identically in both modes.
+
+## Development
+
+```bash
+uv sync --group dev          # install dependencies
+uv run pytest -v             # run tests
+uv run agent-slides --help   # CLI help
+```
