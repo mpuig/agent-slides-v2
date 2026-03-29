@@ -18,3 +18,5 @@ __pycache__/
 !/examples/images/
 !/examples/images/*.svg
 /.claude/skills/
+/examples/icons/
+/examples/images/
