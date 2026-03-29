@@ -8,15 +8,17 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Mapping
 from xml.etree import ElementTree as ET
 from zipfile import BadZipFile
 
 from pptx import Presentation
-from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
 from agent_slides.model.layouts import DEFAULT_GUTTER_PT, DEFAULT_MARGIN_PT
 from agent_slides.model.types import EMU_PER_POINT
+from agent_slides.template_slots import infer_template_slot_role
 
 DEFAULT_BASE_UNIT_PT = 10.0
 BODY_ROW_THRESHOLD_PT = 54.0
@@ -24,6 +26,9 @@ OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 THEME_RELATIONSHIP = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
 DRAWINGML_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
+NON_PLACEHOLDER_IDX_OFFSET = 1_000_000
+BODY_SLOT_TYPES = {"BODY", "TEXT_BOX", "TABLE", "CHART", "GROUP"}
+SPECIAL_SLOT_TYPES = {"quote", "attribution"}
 
 _PLACEHOLDER_TYPE_MAP = {
     PP_PLACEHOLDER.TITLE: "TITLE",
@@ -35,12 +40,12 @@ _PLACEHOLDER_TYPE_MAP = {
     PP_PLACEHOLDER.VERTICAL_BODY: "BODY",
     PP_PLACEHOLDER.VERTICAL_OBJECT: "BODY",
     PP_PLACEHOLDER.PICTURE: "PICTURE",
+    PP_PLACEHOLDER.TABLE: "TABLE",
+    PP_PLACEHOLDER.CHART: "CHART",
 }
 _WARNING_ONLY_PLACEHOLDERS = {
-    PP_PLACEHOLDER.CHART,
     PP_PLACEHOLDER.MEDIA_CLIP,
     PP_PLACEHOLDER.ORG_CHART,
-    PP_PLACEHOLDER.TABLE,
 }
 
 
@@ -113,7 +118,7 @@ def _build_manifest(template_path: Path, manifest_path: Path, presentation: Pres
             warnings.extend(layout_warnings)
 
             slug = _unique_slug(layout_name, slug_counts)
-            usable = bool(placeholders) or layout_name.casefold() == "blank"
+            usable = bool(placeholders) or _is_blank_layout_name(layout_name)
             if usable:
                 usable_layouts += 1
 
@@ -173,19 +178,25 @@ def _extract_layout(slide_layout: object, layout_name: str) -> tuple[list[dict[s
                 )
             continue
 
-        placeholders.append(
-            {
-                "idx": int(placeholder.placeholder_format.idx),
-                "type": placeholder_type,
-                "name": placeholder.name,
-                "bounds": {
-                    "x": _emu_to_points(placeholder.left),
-                    "y": _emu_to_points(placeholder.top),
-                    "w": _emu_to_points(placeholder.width),
-                    "h": _emu_to_points(placeholder.height),
-                },
-            }
+        placeholder_record = _shape_record(
+            idx=int(placeholder.placeholder_format.idx),
+            type_tag=placeholder_type,
+            name=placeholder.name,
+            left=placeholder.left,
+            top=placeholder.top,
+            width=placeholder.width,
+            height=placeholder.height,
+            shape_id=getattr(placeholder, "shape_id", None),
+            shape_kind="placeholder",
         )
+        placeholders.append(placeholder_record)
+
+    for shape in getattr(slide_layout, "shapes", []):
+        if getattr(shape, "is_placeholder", False):
+            continue
+        extracted = _extract_non_placeholder_shape(shape)
+        if extracted is not None:
+            placeholders.append(extracted)
 
     placeholders.sort(key=lambda item: int(item["idx"]))
     return placeholders, _build_slot_mapping(placeholders), warnings
@@ -206,7 +217,25 @@ def _build_slot_mapping(placeholders: list[dict[str, object]]) -> dict[str, int]
     if subtitles:
         slot_mapping["subheading"] = int(sorted(subtitles, key=_sort_key_by_position)[0]["idx"])
 
-    bodies = sorted(_placeholders_of_type(placeholders, "BODY"), key=_sort_key_by_position)
+    claimed_indexes = set(slot_mapping.values())
+    suggestions = _collect_suggested_slots(placeholders)
+    for slot_name in sorted(SPECIAL_SLOT_TYPES):
+        suggested = suggestions.get(slot_name, [])
+        if len(suggested) == 1:
+            placeholder_idx = int(suggested[0]["idx"])
+            slot_mapping[slot_name] = placeholder_idx
+            claimed_indexes.add(placeholder_idx)
+
+    unmapped_body_like = [
+        placeholder
+        for placeholder in placeholders
+        if placeholder["type"] in BODY_SLOT_TYPES and int(placeholder["idx"]) not in claimed_indexes
+    ]
+    preferred_types = {"BODY"} if any(placeholder["type"] == "BODY" for placeholder in unmapped_body_like) else BODY_SLOT_TYPES
+    bodies = sorted(
+        [placeholder for placeholder in unmapped_body_like if placeholder["type"] in preferred_types],
+        key=_sort_key_by_position,
+    )
     if len(bodies) == 1:
         slot_mapping["body"] = int(bodies[0]["idx"])
     elif len(bodies) > 1:
@@ -240,6 +269,128 @@ def _sort_key_by_position(placeholder: dict[str, object]) -> tuple[float, float,
 def _sort_key_by_x(placeholder: dict[str, object]) -> tuple[float, int]:
     bounds = placeholder["bounds"]
     return float(bounds["x"]), int(placeholder["idx"])
+
+
+def _extract_non_placeholder_shape(shape: Any) -> dict[str, object] | None:
+    base = _shape_record(
+        idx=_synthetic_shape_idx(getattr(shape, "shape_id", 0)),
+        type_tag="UNKNOWN",
+        name=getattr(shape, "name", "Shape"),
+        left=getattr(shape, "left", 0),
+        top=getattr(shape, "top", 0),
+        width=getattr(shape, "width", 0),
+        height=getattr(shape, "height", 0),
+        shape_id=getattr(shape, "shape_id", None),
+        shape_kind=_shape_kind(shape),
+    )
+
+    if getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.GROUP:
+        base["type"] = "GROUP"
+        base["group"] = {"children": len(getattr(shape, "shapes", []))}
+        base["suggested_slot"] = _suggest_slot_name(base)
+        return base
+
+    if getattr(shape, "has_table", False):
+        table = shape.table
+        base["type"] = "TABLE"
+        base["table"] = {"rows": len(table.rows), "cols": len(table.columns)}
+        base["suggested_slot"] = _suggest_slot_name(base)
+        return base
+
+    if getattr(shape, "has_chart", False):
+        base["type"] = "CHART"
+        base["chart"] = {"chart_type": int(shape.chart.chart_type)}
+        base["suggested_slot"] = _suggest_slot_name(base)
+        return base
+
+    if getattr(shape, "has_text_frame", False) and _shape_text(shape).strip():
+        base["type"] = "TEXT_BOX"
+        base["text"] = _shape_text(shape)
+        base["suggested_slot"] = _suggest_slot_name(base)
+        return base
+
+    return None
+
+
+def _shape_record(
+    *,
+    idx: int,
+    type_tag: str,
+    name: str,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    shape_id: int | None,
+    shape_kind: str,
+) -> dict[str, object]:
+    placeholder: dict[str, object] = {
+        "idx": idx,
+        "type": type_tag,
+        "name": name,
+        "bounds": {
+            "x": _emu_to_points(left),
+            "y": _emu_to_points(top),
+            "w": _emu_to_points(width),
+            "h": _emu_to_points(height),
+        },
+        "shape_kind": shape_kind,
+    }
+    if shape_id is not None:
+        placeholder["shape_id"] = int(shape_id)
+    placeholder["suggested_slot"] = _suggest_slot_name(placeholder)
+    return placeholder
+
+
+def _synthetic_shape_idx(shape_id: int) -> int:
+    return NON_PLACEHOLDER_IDX_OFFSET + int(shape_id)
+
+
+def _shape_kind(shape: Any) -> str:
+    shape_type = getattr(shape, "shape_type", None)
+    if shape_type is None:
+        return "shape"
+    name = getattr(shape_type, "name", None)
+    if isinstance(name, str) and name:
+        return name.casefold()
+    return str(shape_type).casefold()
+
+
+def _shape_text(shape: Any) -> str:
+    if getattr(shape, "has_text_frame", False):
+        return shape.text_frame.text
+    return ""
+
+
+def _collect_suggested_slots(placeholders: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    suggestions: dict[str, list[dict[str, object]]] = {}
+    for placeholder in placeholders:
+        slot_name = placeholder.get("suggested_slot")
+        if isinstance(slot_name, str) and slot_name:
+            suggestions.setdefault(slot_name, []).append(placeholder)
+    return suggestions
+
+
+def _suggest_slot_name(placeholder: Mapping[str, object]) -> str | None:
+    placeholder_type = placeholder.get("type")
+    if placeholder_type == "TITLE":
+        return "heading"
+    if placeholder_type == "SUBTITLE":
+        return "subheading"
+    if placeholder_type == "PICTURE":
+        return "image"
+    if placeholder_type not in BODY_SLOT_TYPES:
+        return None
+
+    role = infer_template_slot_role(str(placeholder.get("name", "")), placeholder)
+    if role in {"quote", "attribution"}:
+        return role
+    return "body"
+
+
+def _is_blank_layout_name(layout_name: str) -> bool:
+    tokens = {token for token in SLUG_PATTERN.split(layout_name.casefold()) if token}
+    return "blank" in tokens
 
 
 def _unique_slug(layout_name: str, slug_counts: dict[str, int]) -> str:
@@ -338,4 +489,3 @@ def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
 
 def _emu_to_points(value: int) -> float:
     return round(float(value) / EMU_PER_POINT, 3)
-
