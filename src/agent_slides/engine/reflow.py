@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from math import isclose
+from math import ceil, isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.constraints import Rect, constraints_from_layout, solve
@@ -48,19 +48,49 @@ def _adjust_text_fitting_for_slot(fitting: TextFitting, slot: SlotDef) -> TextFi
     )
     if has_explicit_bounds and slot.height is not None and float(slot.height) > 0:
         padding = slot.padding
-        available = max(float(slot.height) - 2 * padding, 0.0)
+        available_height = max(float(slot.height) - 2 * padding, 0.0)
+        available_width = max(float(slot.width) - 2 * padding, 0.0) if slot.width is not None else 0.0
         # A single line of text at font_size S occupies roughly S * line_height_factor.
         # For headings the effective size is S * heading_size_factor * heading_lh_factor.
         # Use a conservative 1.5 multiplier to cover heading scaling.
-        height_limit = available / 1.5
+        height_limit = available_height / 1.5
         if height_limit < min_size:
             min_size = max(height_limit, 8.0)
         # Text may wrap to multiple lines in narrow template placeholders,
         # requiring a smaller font than the single-line estimate suggests.
-        # Allow shrinking to half the height limit to accommodate 2-line wrap.
-        multi_line_limit = max(height_limit * 0.5, 8.0)
-        if multi_line_limit < min_size:
-            min_size = multi_line_limit
+        # Estimate wrap lines needed for a typical heading (~40 chars) at the
+        # current min_size.  Use a binary search to find the font size where
+        # the text fits within both width and height constraints.
+        if available_width > 0 and available_height > 0:
+            typical_chars = 40.0 if slot.role == "heading" else 60.0
+            size_factor = 1.35 if slot.role == "heading" else 1.0
+            lh_factor = 1.1 if slot.role == "heading" else 1.2
+            lo, hi = 8.0, min_size
+            # Check whether the current min_size already fits
+            eff = min_size * size_factor
+            cpl = available_width / max(eff * 0.55, 1.0)
+            lines_needed = ceil(typical_chars / max(cpl, 1.0))
+            total_h = lines_needed * eff * lh_factor
+            if total_h > available_height:
+                # Binary search for a font size that fits
+                for _ in range(20):
+                    mid = (lo + hi) / 2
+                    eff = mid * size_factor
+                    cpl = available_width / max(eff * 0.55, 1.0)
+                    ln = ceil(typical_chars / max(cpl, 1.0))
+                    lh = eff * lh_factor
+                    if ln * lh <= available_height:
+                        lo = mid
+                    else:
+                        hi = mid
+                width_aware_min = max(lo, 8.0)
+                if width_aware_min < min_size:
+                    min_size = width_aware_min
+        else:
+            # Fallback: allow shrinking to half the height limit for 2-line wrap
+            multi_line_limit = max(height_limit * 0.5, 8.0)
+            if multi_line_limit < min_size:
+                min_size = multi_line_limit
 
     if default_size == fitting.default_size and min_size == fitting.min_size:
         return fitting

@@ -264,7 +264,7 @@ def main():
     parser = argparse.ArgumentParser(description="Demo research runner")
     parser.add_argument(
         "--benchmarks",
-        default="bcg-strategy,bcg-update,minimal-title-body",
+        default="minimal-title-body,bcg-update,bcg-strategy,layout-showcase",
         help="Comma-separated benchmark names",
     )
     parser.add_argument("--run-id", default=None, help="Run ID (default: timestamp)")

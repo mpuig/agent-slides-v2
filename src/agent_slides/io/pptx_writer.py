@@ -676,6 +676,37 @@ def _resolve_layout(prs: Presentation, slide_layout: str, binding: TemplateLayou
         ) from exc
 
 
+def _fill_image_placeholder(
+    node: Node,
+    slot_mapping: dict[str, int],
+    slide,
+    *,
+    asset_base_dir: str | Path | None = None,
+) -> None:
+    """Insert an image into a PICTURE placeholder in template mode."""
+    if node.slot_binding is None or node.type != "image":
+        return
+    if node.image_path is None:
+        return
+
+    placeholder_idx = slot_mapping.get(node.slot_binding)
+    if placeholder_idx is None:
+        return
+
+    try:
+        placeholder = slide.placeholders[placeholder_idx]
+    except KeyError:
+        return
+
+    # Only fill PICTURE-type placeholders
+    from pptx.enum.shapes import PP_PLACEHOLDER
+    if placeholder.placeholder_format.type != PP_PLACEHOLDER.PICTURE:
+        return
+
+    image_path = resolve_image_path(node.image_path, base_dir=asset_base_dir)
+    placeholder.insert_picture(str(image_path))
+
+
 def _fill_placeholder(
     node: Node,
     binding: TemplateLayoutBinding,
@@ -780,7 +811,7 @@ def _text_box_frame_for_slot(slide, target: dict[str, Any]):
     return text_frame
 
 
-def _write_template_pptx(deck: Deck, output_path: str) -> None:
+def _write_template_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
     registry = TemplateLayoutRegistry(deck.template_manifest)
     template_path = registry.source_path
     conditional_formatting = load_design_rules(deck.design_rules).conditional_formatting
@@ -815,6 +846,12 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
                 pptx_slide,
                 computed=slide.computed.get(node.node_id),
                 conditional_formatting=conditional_formatting,
+            )
+            _fill_image_placeholder(
+                node,
+                binding.slot_mapping,
+                pptx_slide,
+                asset_base_dir=asset_base_dir,
             )
 
     presentation.save(Path(output_path))
@@ -1241,7 +1278,7 @@ def write_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | Non
     """Write a deck to PowerPoint using either the v0 or template-backed writer."""
 
     if deck.template_manifest:
-        _write_template_pptx(deck, output_path)
+        _write_template_pptx(deck, output_path, asset_base_dir=asset_base_dir)
         return
 
     _write_v0_pptx(deck, output_path, asset_base_dir=asset_base_dir)

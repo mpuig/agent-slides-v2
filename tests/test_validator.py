@@ -187,6 +187,49 @@ def test_validate_slide_warns_when_slot_word_count_exceeds_limit() -> None:
     assert word_limit_constraint.node_id == "n-1"
 
 
+def test_validate_slide_scales_word_limit_by_placeholder_area() -> None:
+    """Large template placeholders allow more words proportionally."""
+    rules = load_design_rules("default")
+    base_limit = rules.content_limits.max_words_per_column  # 50
+    # 55 words exceeds the base limit but not the scaled limit for a large placeholder
+    content = "word " * 55
+
+    # Large placeholder: 600x400 = 240,000 sq pt (~2.3x reference area of 105,000)
+    # Scaling is capped at 2x, so effective limit = 100 words
+    large_computed = ComputedNode(
+        x=60.0, y=70.0, width=600.0, height=400.0,
+        font_size_pt=14.0, font_family="Aptos", color="#333333",
+        bg_color="#FFFFFF", font_bold=False, text_overflow=False, revision=1,
+    )
+    slide = make_slide(
+        "s-1",
+        "content",
+        nodes=[Node(node_id="n-1", slot_binding="body", type="text", content=content.strip())],
+        computed={"n-1": large_computed},
+    )
+    constraints = validate_slide(slide, rules)
+    assert all(c.code != MAX_WORDS_PER_COLUMN_EXCEEDED for c in constraints), (
+        f"55 words should be allowed in a large placeholder (base limit={base_limit})"
+    )
+
+    # Small placeholder should still flag the same content
+    small_computed = ComputedNode(
+        x=60.0, y=70.0, width=300.0, height=200.0,
+        font_size_pt=14.0, font_family="Aptos", color="#333333",
+        bg_color="#FFFFFF", font_bold=False, text_overflow=False, revision=1,
+    )
+    slide_small = make_slide(
+        "s-2",
+        "content",
+        nodes=[Node(node_id="n-2", slot_binding="body", type="text", content=content.strip())],
+        computed={"n-2": small_computed},
+    )
+    constraints_small = validate_slide(slide_small, rules)
+    assert any(c.code == MAX_WORDS_PER_COLUMN_EXCEEDED for c in constraints_small), (
+        f"55 words should be flagged in a small placeholder (base limit={base_limit})"
+    )
+
+
 def test_validate_slide_warns_when_bullet_count_exceeds_limit() -> None:
     rules = load_design_rules("default")
     bullet_content = NodeContent(
@@ -342,3 +385,46 @@ def test_validate_slide_subheading_uses_body_range() -> None:
 
     constraints = validate_slide(slide, rules)
     assert all(c.code != FONT_SIZE_OUT_OF_RANGE for c in constraints)
+
+
+def test_validate_slide_suppresses_font_size_for_constrained_heading() -> None:
+    """Headings in physically short placeholders (< 2 lines at min size) should not
+    trigger FONT_SIZE_OUT_OF_RANGE when text fitting shrinks without overflow."""
+    rules = load_design_rules("default")
+    # Placeholder height 37pt is too short for 24pt heading min (needs 57.6pt for 2 lines)
+    short_computed = ComputedNode(
+        x=72.0, y=54.0, width=493.0, height=37.0,
+        font_size_pt=20.0, font_family="Aptos", color="#333333",
+        font_bold=False, text_overflow=False, revision=1,
+    )
+    slide = make_slide(
+        "s-1",
+        "content",
+        nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Title")],
+        computed={"n-1": short_computed},
+    )
+
+    constraints = validate_slide(slide, rules)
+    assert all(c.code != FONT_SIZE_OUT_OF_RANGE for c in constraints)
+
+
+def test_validate_slide_flags_font_size_for_normal_height_heading() -> None:
+    """Headings in normal-height placeholders should still trigger FONT_SIZE_OUT_OF_RANGE
+    even when font size is below the heading minimum."""
+    rules = load_design_rules("default")
+    # Placeholder height 80pt is tall enough for heading min (needs 57.6pt)
+    normal_computed = ComputedNode(
+        x=72.0, y=54.0, width=576.0, height=80.0,
+        font_size_pt=20.0, font_family="Aptos", color="#333333",
+        font_bold=False, text_overflow=False, revision=1,
+    )
+    slide = make_slide(
+        "s-1",
+        "content",
+        nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Title")],
+        computed={"n-1": normal_computed},
+    )
+
+    constraints = validate_slide(slide, rules)
+    font_constraint = next(c for c in constraints if c.code == FONT_SIZE_OUT_OF_RANGE)
+    assert font_constraint.severity == "warning"

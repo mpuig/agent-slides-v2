@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from agent_slides.engine.reflow import reflow_deck
 from agent_slides.io.sidecar import mutate_deck
 from agent_slides.model import Counters, Deck, Node, Slide, TemplateLayoutRegistry
@@ -153,9 +155,14 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     # for template slots with tight bounds.
     heading_call = fit_calls[0]
     body_call = fit_calls[1]
-    assert heading_call[:6] == (280.0, 48.0, 32.0, 16.0, "heading", "Aptos Display")
+    assert heading_call[0] == pytest.approx(280.0)
+    assert heading_call[1] == pytest.approx(48.0)
+    assert heading_call[2] == pytest.approx(32.0)
+    assert heading_call[3] <= 17.0  # min_size derived from placeholder height
+    assert heading_call[4] == "heading"
+    assert heading_call[5] == "Aptos Display"
     assert heading_call[6][0] == 32.0  # starts at default
-    assert heading_call[6][-1] <= 16.0  # reaches min
+    assert heading_call[6][-1] <= 17.0  # reaches min
     assert body_call[:6] == (260.0, 160.0, 18.0, 10.0, "body", "Aptos")
     assert body_call[6][0] == 18.0
     assert body_call[6][-1] <= 10.0
