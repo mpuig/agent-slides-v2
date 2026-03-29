@@ -346,7 +346,6 @@ def test_template_layout_registry_generates_semantic_variants_for_peer_bodies(tm
     assert variants[0].slots["col1"].peer_group == "columns"
     assert list(variants[1].slots) == ["heading", "col1", "col2", "col3"]
 
-
 def test_template_layout_registry_generates_image_free_variant_for_mixed_text_and_image_peers(
     tmp_path: Path,
 ) -> None:
@@ -363,6 +362,25 @@ def test_template_layout_registry_generates_image_free_variant_for_mixed_text_an
     assert list(variants[0].slots) == ["heading", "body"]
     assert variants[0].slots["body"].x == 72
     assert variants[0].slots["body"].width == 576
+
+
+def test_template_layout_registry_generates_four_column_variant_for_peer_bodies(tmp_path: Path) -> None:
+    manifest_path = _build_variant_manifest(
+        tmp_path,
+        body_bounds=[
+            {"x": 72, "y": 156, "w": 126, "h": 220},
+            {"x": 216, "y": 156, "w": 126, "h": 220},
+            {"x": 360, "y": 156, "w": 126, "h": 220},
+            {"x": 504, "y": 156, "w": 126, "h": 220},
+        ],
+    )
+    registry = TemplateLayoutRegistry(str(manifest_path))
+
+    variants = registry.get_variants("peer_bodies")
+
+    assert [variant.name for variant in variants] == ["two_col", "three_col", "four_col"]
+    assert list(variants[-1].slots) == ["heading", "col1", "col2", "col3", "col4"]
+    assert all(variants[-1].slots[f"col{index}"].peer_group == "columns" for index in range(1, 5))
 
 
 def test_template_layout_registry_skips_variants_when_peer_invariants_fail(tmp_path: Path) -> None:
