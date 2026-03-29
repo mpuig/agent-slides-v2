@@ -1,4 +1,4 @@
-# BCG Quarterly Update Brief
+# Quarterly Update Brief
 
 ## Template
 examples/bcg.pptx

@@ -1,4 +1,4 @@
-# BCG Strategy Brief
+# Strategy Deck Brief
 
 ## Template
 examples/bcg.pptx

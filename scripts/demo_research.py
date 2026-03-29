@@ -2,7 +2,7 @@
 """Demo research runner: executes the full benchmark pipeline and outputs scores.
 
 Usage:
-    python scripts/demo_research.py [--benchmarks bcg-strategy,bcg-update] [--run-id RUN_ID]
+    python scripts/demo_research.py [--benchmarks strategy-deck,quarterly-update] [--run-id RUN_ID]
 
 Each benchmark produces:
     runs/<run_id>/<benchmark_name>/
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -25,15 +26,27 @@ ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = ROOT / "benchmarks"
 RUNS_DIR = ROOT / "runs"
 
-# Deterministic score weights
+# Score weights — review_quality is the rendered visual quality from LibreOffice
+# screenshots, not a structural proxy. It uses passed/total from the 38-item
+# checklist (typography, hierarchy, layout, content, deck-level, AI slop).
 WEIGHTS = {
-    "validate_clean": 20,       # no validation warnings
-    "no_overflow": 15,          # no text overflow in computed nodes
-    "no_unbound": 15,           # no unbound slot warnings
-    "placeholder_fill": 20,     # % of expected slots actually filled
-    "layout_variety": 10,       # distinct layouts used / expected minimum
+    "review_quality": 25,       # rendered slide quality (passed/total from review)
+    "validate_clean": 10,       # no validation warnings
+    "no_overflow": 10,          # no text overflow in computed nodes
+    "no_unbound": 10,           # no unbound slot warnings
+    "placeholder_fill": 10,     # % of expected slots actually filled
+    "layout_coverage": 15,      # required layouts present (not just count)
     "slide_count_match": 10,    # actual vs expected slide count
     "build_success": 10,        # PPTX builds without error
+}
+
+# Letter grade to numeric (0-1 scale)
+GRADE_MAP = {
+    "A+": 1.0, "A": 0.95, "A-": 0.90,
+    "B+": 0.85, "B": 0.80, "B-": 0.75,
+    "C+": 0.70, "C": 0.65, "C-": 0.60,
+    "D+": 0.55, "D": 0.50, "D-": 0.45,
+    "F": 0.30,
 }
 
 
@@ -74,7 +87,6 @@ def parse_brief(brief_path: Path) -> dict:
             in_slide_count = True
             continue
         if in_slide_count and line_stripped:
-            # Parse "8-10" or "3"
             parts = line_stripped.split("-")
             try:
                 fields["min_slides"] = int(parts[0])
@@ -86,7 +98,6 @@ def parse_brief(brief_path: Path) -> dict:
             in_layout_variety = True
             continue
         if in_layout_variety and line_stripped:
-            # Extract number from "At least N distinct..."
             for word in line_stripped.split():
                 try:
                     fields["min_layouts"] = int(word)
@@ -95,14 +106,31 @@ def parse_brief(brief_path: Path) -> dict:
                     continue
             in_layout_variety = False
 
+    # Parse required layouts from numbered list items like "1. **title_slide** — ..."
+    required_layouts = []
+    for line in text.splitlines():
+        match = re.match(r'\s*\d+\.\s+\*\*(\w+)\*\*', line)
+        if match:
+            required_layouts.append(match.group(1))
+    if required_layouts:
+        fields["required_layouts"] = required_layouts
+
+    # Parse image-required layouts (lines mentioning "Fill image slot" or "MUST have real images")
+    image_layouts = []
+    for line in text.splitlines():
+        match = re.match(r'\s*\d+\.\s+\*\*(\w+)\*\*', line)
+        if match and ("image" in line.lower() and ("fill" in line.lower() or "must" in line.lower())):
+            image_layouts.append(match.group(1))
+    if image_layouts:
+        fields["image_required_layouts"] = image_layouts
+
     return fields
 
 
 def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
-    """Score a built deck against deterministic metrics."""
+    """Score a built deck against deterministic and visual metrics."""
     scores: dict = {}
 
-    # Run commands from the deck's directory so relative manifest/template paths resolve
     deck_cwd = deck_path.parent
 
     # 1. Build success
@@ -139,13 +167,41 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
             distance = min(abs(len(slides) - min_s), abs(len(slides) - max_s))
             scores["slide_count_match"] = max(0, 1.0 - distance * 0.2)
 
-        # Layout variety
+        # Layout coverage — check required layouts are present, not just count
         layouts_used = set()
         for slide in slides:
             layouts_used.add(slide.get("layout", "unknown"))
         scores["layouts_used"] = sorted(layouts_used)
-        min_layouts = brief.get("min_layouts", 2)
-        scores["layout_variety"] = min(1.0, len(layouts_used) / min_layouts)
+
+        required_layouts = brief.get("required_layouts", [])
+        if required_layouts:
+            present = sum(1 for l in required_layouts if l in layouts_used)
+            scores["layout_coverage"] = present / len(required_layouts)
+            scores["required_layouts_missing"] = sorted(
+                l for l in required_layouts if l not in layouts_used
+            )
+        else:
+            # Fallback to generic variety check
+            min_layouts = brief.get("min_layouts", 2)
+            scores["layout_coverage"] = min(1.0, len(layouts_used) / min_layouts)
+
+        # Image slot validation — check image-required layouts have actual images
+        image_required = brief.get("image_required_layouts", [])
+        if image_required:
+            image_filled = 0
+            image_expected = 0
+            for slide in slides:
+                if slide.get("layout") in image_required:
+                    image_expected += 1
+                    for node in slide.get("nodes", []):
+                        if node.get("type") == "image" and node.get("image_path"):
+                            image_filled += 1
+                            break
+            scores["image_fill"] = (image_filled / image_expected) if image_expected > 0 else 1.0
+            scores["image_expected"] = image_expected
+            scores["image_filled"] = image_filled
+        else:
+            scores["image_fill"] = 1.0
 
         # Overflow and unbound analysis
         overflow_count = 0
@@ -164,16 +220,12 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
                     if comp.get("text_overflow"):
                         overflow_count += 1
                 if node.get("slot_binding"):
-                    # Exclude image slots without image_path from scoring:
-                    # these can't be filled without real image assets and
-                    # should not penalize text-only deck builds.
                     is_unfillable_image = (
                         node.get("type") == "image" and not node.get("image_path")
                     )
                     if is_unfillable_image:
                         continue
                     total_slots += 1
-                    # Check if node has content
                     content = node.get("content", {})
                     blocks = content.get("blocks", [])
                     has_text = any(b.get("text", "").strip() for b in blocks)
@@ -191,17 +243,35 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         scores["filled_slots"] = filled_slots
         scores["total_slots"] = total_slots
     else:
-        for key in ["slide_count_match", "layout_variety", "no_overflow", "no_unbound", "placeholder_fill"]:
+        for key in ["slide_count_match", "layout_coverage", "no_overflow", "no_unbound", "placeholder_fill"]:
             scores[key] = 0.0
 
-    # 4. Review (render PNGs)
+    # 4. Review — rendered visual quality from LibreOffice screenshots
     review_dir = run_dir / "review"
     review_result = run_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
     if review_result and review_result.get("ok"):
-        scores["review_grade"] = review_result["data"].get("overall_grade", "F")
+        grade = review_result["data"].get("overall_grade", "F")
+        scores["review_grade"] = grade
         scores["review_slides"] = review_result["data"].get("slides", 0)
+        # Convert to numeric: use passed/total ratio from report.json if available,
+        # fall back to letter grade conversion
+        report_json = review_dir / "report.json"
+        if report_json.exists():
+            try:
+                report = json.loads(report_json.read_text())
+                overall = report.get("active", {}).get("overall", {})
+                passed = overall.get("passed", 0)
+                total = overall.get("total", 1)
+                scores["review_quality"] = passed / total if total > 0 else 0.0
+                scores["review_passed"] = passed
+                scores["review_total"] = total
+            except (json.JSONDecodeError, KeyError):
+                scores["review_quality"] = GRADE_MAP.get(grade, 0.3)
+        else:
+            scores["review_quality"] = GRADE_MAP.get(grade, 0.3)
     else:
         scores["review_grade"] = "N/A"
+        scores["review_quality"] = 0.0
 
     # 5. Composite score
     composite = 0.0
@@ -217,19 +287,11 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
 
 
 def ensure_symlinks(bench_dir: Path) -> None:
-    """Create symlinks so relative paths in deck.json resolve correctly.
-
-    Template decks reference the manifest via a relative path (e.g., "bcg.manifest.json")
-    and the manifest references the source PPTX (e.g., "../examples/bcg.pptx").
-    When decks live in runs/<id>/<bench>/, we symlink from there back to the project root
-    so these paths resolve.
-    """
-    # Symlink examples/ so manifest source paths resolve
+    """Create symlinks so relative paths in deck.json resolve correctly."""
     examples_link = bench_dir / "examples"
     if not examples_link.exists():
         examples_link.symlink_to(ROOT / "examples")
 
-    # Symlink .artifacts/ so manifest paths resolve when referenced
     artifacts_link = bench_dir / ".artifacts"
     if not artifacts_link.exists():
         artifacts_link.symlink_to(ROOT / ".artifacts")
@@ -244,7 +306,6 @@ def run_benchmark(brief_path: Path, run_dir: Path, manifest_path: Path | None = 
 
     deck_path = bench_dir / "deck.json"
 
-    # If a pre-built deck.json exists (created by the experiment cycle agent), score it directly
     if deck_path.exists():
         print(f"  Scoring existing deck: {deck_path}")
         scores = score_deck(deck_path, brief, bench_dir)
@@ -252,7 +313,6 @@ def run_benchmark(brief_path: Path, run_dir: Path, manifest_path: Path | None = 
         print(f"  No deck.json found at {deck_path}, skipping.")
         scores = {"composite": 0.0, "error": "no deck.json"}
 
-    # Save scores
     scores_path = bench_dir / "scores.json"
     scores_path.write_text(json.dumps(scores, indent=2))
     print(f"  Composite score: {scores['composite']}")
@@ -264,7 +324,7 @@ def main():
     parser = argparse.ArgumentParser(description="Demo research runner")
     parser.add_argument(
         "--benchmarks",
-        default="minimal-title-body,bcg-update,bcg-strategy,layout-showcase",
+        default="minimal-title-body,quarterly-update,strategy-deck,layout-showcase",
         help="Comma-separated benchmark names",
     )
     parser.add_argument("--run-id", default=None, help="Run ID (default: timestamp)")
@@ -289,7 +349,6 @@ def main():
         result = run_benchmark(brief_path, run_dir, manifest_path)
         results.append(result)
 
-    # Aggregate summary
     composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
     summary = {
         "run_id": run_id,
