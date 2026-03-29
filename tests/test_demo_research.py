@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -42,6 +43,29 @@ def _slide(layout: str, nodes: list[dict]) -> dict:
         "layout": layout,
         "nodes": nodes,
         "computed": {node["node_id"]: {} for node in nodes},
+    }
+
+
+def _brief() -> dict[str, int]:
+    return {"min_slides": 1, "max_slides": 1, "min_layouts": 1}
+
+
+def _info_payload() -> dict[str, object]:
+    return {
+        "slides": [
+            {
+                "layout": "title",
+                "computed": {"n-1": {}},
+                "nodes": [
+                    {
+                        "node_id": "n-1",
+                        "slot_binding": "heading",
+                        "type": "text",
+                        "content": {"blocks": [{"text": "Hello"}]},
+                    }
+                ],
+            }
+        ]
     }
 
 
@@ -136,11 +160,27 @@ def test_score_deck_reports_brief_compliance_and_required_layout_coverage(
             return {"ok": True, "data": {"warnings": []}}
         if command == "info":
             return {"slides": slides}
-        if command == "review":
-            return {"ok": True, "data": {"overall_grade": "A", "slides": len(slides)}}
         raise AssertionError(f"Unexpected command: {args}")
 
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            0,
+            {
+                "ok": True,
+                "data": {
+                    "overall_grade": "A",
+                    "slides": len(slides),
+                },
+            },
+            None,
+        )
+
     monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
 
     scores = module.score_deck(deck_path, brief, run_dir)
 
@@ -201,7 +241,7 @@ def test_score_deck_penalizes_missing_required_layouts_and_invalid_images(
                 _text_node("n-6", "col2", "Option B"),
             ],
         ),
-        _slide("closing", [_text_node("n-4", "body", "Thank you")]),
+        _slide("closing", [_text_node("n-7", "body", "Thank you")]),
     ]
 
     def fake_run_cli(*args: str, cwd: Path | None = None):
@@ -214,11 +254,27 @@ def test_score_deck_penalizes_missing_required_layouts_and_invalid_images(
             return {"ok": True, "data": {"warnings": []}}
         if command == "info":
             return {"slides": slides}
-        if command == "review":
-            return {"ok": True, "data": {"overall_grade": "B", "slides": len(slides)}}
         raise AssertionError(f"Unexpected command: {args}")
 
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            0,
+            {
+                "ok": True,
+                "data": {
+                    "overall_grade": "B",
+                    "slides": len(slides),
+                },
+            },
+            None,
+        )
+
     monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
 
     scores = module.score_deck(deck_path, brief, run_dir)
 
@@ -273,11 +329,27 @@ def test_score_deck_lists_five_missing_required_layouts(tmp_path: Path, monkeypa
             return {"ok": True, "data": {"warnings": []}}
         if command == "info":
             return {"slides": slides}
-        if command == "review":
-            return {"ok": True, "data": {"overall_grade": "B", "slides": len(slides)}}
         raise AssertionError(f"Unexpected command: {args}")
 
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            0,
+            {
+                "ok": True,
+                "data": {
+                    "overall_grade": "B",
+                    "slides": len(slides),
+                },
+            },
+            None,
+        )
+
     monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
 
     scores = module.score_deck(deck_path, brief, run_dir)
 
@@ -326,14 +398,182 @@ def test_score_deck_falls_back_to_generic_layout_scoring_without_required_layout
             return {"ok": True, "data": {"warnings": []}}
         if command == "info":
             return {"slides": slides}
-        if command == "review":
-            return {"ok": True, "data": {"overall_grade": "A", "slides": len(slides)}}
         raise AssertionError(f"Unexpected command: {args}")
 
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            0,
+            {
+                "ok": True,
+                "data": {
+                    "overall_grade": "A",
+                    "slides": len(slides),
+                },
+            },
+            None,
+        )
+
     monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
 
     scores = module.score_deck(deck_path, brief, run_dir)
 
     assert scores["layout_coverage"] == 1.0
     assert scores["layout_variety"] == 1.0
     assert scores["brief_compliance"]["required_layouts_missing"] == []
+
+
+def test_score_deck_records_review_quality_from_report_ratio(tmp_path: Path, monkeypatch) -> None:
+    module = _load_script_module()
+    deck_path = tmp_path / "deck.json"
+    deck_path.write_text("{}", encoding="utf-8")
+    report_json_path = tmp_path / "review-report.json"
+    report_json_path.write_text(
+        json.dumps({"active": {"overall": {"grade": "B", "passed": 8, "total": 10}}}),
+        encoding="utf-8",
+    )
+
+    def fake_run_cli(*args: str, cwd: Path | None = None) -> dict[str, object] | None:
+        if args[0] == "build":
+            Path(args[3]).write_bytes(b"pptx")
+            return {"ok": True}
+        if args[0] == "validate":
+            return {"ok": True, "data": {"warnings": []}}
+        if args[0] == "info":
+            return _info_payload()
+        raise AssertionError(f"unexpected command: {args}")
+
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            0,
+            {
+                "ok": True,
+                "data": {
+                    "overall_grade": "B",
+                    "slides": 1,
+                    "report_json_path": str(report_json_path),
+                },
+            },
+            None,
+        )
+
+    monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
+
+    scores = module.score_deck(deck_path, _brief(), tmp_path)
+
+    assert scores["review_available"] is True
+    assert scores["review_passed"] == 8
+    assert scores["review_total"] == 10
+    assert scores["review_quality"] == 0.8
+    assert scores["composite"] == 96.7
+
+
+def test_score_deck_excludes_unavailable_review_from_composite(tmp_path: Path, monkeypatch) -> None:
+    module = _load_script_module()
+    deck_path = tmp_path / "deck.json"
+    deck_path.write_text("{}", encoding="utf-8")
+
+    def fake_run_cli(*args: str, cwd: Path | None = None) -> dict[str, object] | None:
+        if args[0] == "build":
+            Path(args[3]).write_bytes(b"pptx")
+            return {"ok": True}
+        if args[0] == "validate":
+            return {"ok": True, "data": {"warnings": []}}
+        if args[0] == "info":
+            return _info_payload()
+        raise AssertionError(f"unexpected command: {args}")
+
+    def fake_invoke_cli(
+        *args: str,
+        cwd: Path | None = None,
+    ) -> tuple[int, dict[str, object] | None, dict[str, object] | None]:
+        assert args[0] == "review"
+        return (
+            1,
+            None,
+            {"error": {"message": "Visual review requires 'soffice' to be installed and available on PATH."}},
+        )
+
+    monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    monkeypatch.setattr(module, "invoke_cli", fake_invoke_cli)
+
+    scores = module.score_deck(deck_path, _brief(), tmp_path)
+
+    assert scores["review_available"] is False
+    assert scores["review_quality"] == 0.0
+    assert scores["review_passed"] == 0
+    assert scores["review_total"] == 0
+    assert "soffice" in scores["review_error"]
+    assert scores["composite"] == 100.0
+
+
+def test_run_benchmark_without_deck_still_writes_review_fields(tmp_path: Path) -> None:
+    module = _load_script_module()
+    brief_path = tmp_path / "minimal.md"
+    brief_path.write_text(
+        "# Minimal\n\n## Expected slide count\n1\n\n## Layout variety\nAt least 1 distinct layout\n",
+        encoding="utf-8",
+    )
+
+    result = module.run_benchmark(brief_path, tmp_path / "runs")
+
+    scores = result["scores"]
+    assert scores["review_available"] is False
+    assert scores["review_quality"] == 0.0
+    assert scores["review_passed"] == 0
+    assert scores["review_total"] == 0
+
+
+def test_build_summary_rejects_review_regressions_even_when_composite_improves(monkeypatch) -> None:
+    module = _load_script_module()
+    previous = {
+        "run_id": "baseline",
+        "mean_composite": 80.0,
+        "benchmarks": [
+            {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}},
+            {"benchmark": "beta", "scores": {"composite": 78.0, "review_available": True, "review_quality": 0.88}},
+        ],
+    }
+    results = [
+        {"benchmark": "alpha", "scores": {"composite": 83.0, "review_available": True, "review_quality": 0.84}},
+        {"benchmark": "beta", "scores": {"composite": 82.0, "review_available": True, "review_quality": 0.8}},
+    ]
+
+    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+
+    summary = module.build_summary(run_id="candidate", results=results)
+
+    assert summary["decision"] == "reject"
+    assert len(summary["reject_reasons"]) == 2
+    assert "alpha: review_quality regressed" in summary["reject_reasons"][0]
+    assert "beta: review_quality regressed" in summary["reject_reasons"][1]
+
+
+def test_build_summary_rejects_composite_regression_even_when_review_improves(monkeypatch) -> None:
+    module = _load_script_module()
+    previous = {
+        "run_id": "baseline",
+        "mean_composite": 81.0,
+        "benchmarks": [
+            {"benchmark": "alpha", "scores": {"composite": 81.0, "review_available": True, "review_quality": 0.7}}
+        ],
+    }
+    results = [
+        {"benchmark": "alpha", "scores": {"composite": 79.0, "review_available": True, "review_quality": 0.95}}
+    ]
+
+    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+
+    summary = module.build_summary(run_id="candidate", results=results)
+
+    assert summary["decision"] == "reject"
+    assert summary["reject_reasons"] == ["composite regressed from 81.0 to 79.0"]

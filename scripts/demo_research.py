@@ -21,10 +21,12 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = ROOT / "benchmarks"
 RUNS_DIR = ROOT / "runs"
+REVIEW_REGRESSION_THRESHOLD = 0.05
 
 # Deterministic score weights
 WEIGHTS = {
@@ -35,6 +37,7 @@ WEIGHTS = {
     "layout_coverage": 10,      # required layouts present / expected set, or generic variety fallback
     "slide_count_match": 10,    # actual vs expected slide count
     "build_success": 10,        # PPTX builds without error
+    "review_quality": 20,       # visual review passed/total ratio when available
 }
 
 BOLD_SLUG_PATTERN = re.compile(r"\*\*([a-z0-9_]+)\*\*")
@@ -134,18 +137,187 @@ def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path
     }
 
 
-def run_cli(*args: str, cwd: Path | None = None) -> dict | None:
-    """Run an agent-slides CLI command and return parsed JSON or None on failure."""
+def _parse_json(text: str) -> dict[str, Any] | None:
+    if not text.strip():
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def invoke_cli(*args: str, cwd: Path | None = None) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None]:
+    """Run an agent-slides CLI command and return the exit code plus parsed stdout/stderr JSON."""
     cmd = ["uv", "run", "--project", str(ROOT), "agent-slides", *args]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or ROOT)
+    stdout_payload = _parse_json(result.stdout)
+    stderr_payload = _parse_json(result.stderr)
     if result.returncode != 0:
         print(f"  FAIL: {' '.join(args)}", file=sys.stderr)
         print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
+    return result.returncode, stdout_payload, stderr_payload
+
+
+def run_cli(*args: str, cwd: Path | None = None) -> dict[str, Any] | None:
+    """Run an agent-slides CLI command and return parsed stdout JSON or None on failure."""
+    returncode, stdout_payload, _ = invoke_cli(*args, cwd=cwd)
+    if returncode != 0:
         return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
+    return stdout_payload
+
+
+def base_scores(*, error: str | None = None) -> dict[str, Any]:
+    scores: dict[str, Any] = {
+        "build_success": 0.0,
+        "validate_clean": 0.0,
+        "validate_warnings": -1,
+        "slide_count_match": 0.0,
+        "slide_count": 0,
+        "layout_variety": 0.0,
+        "layouts_used": [],
+        "overflow_count": 0,
+        "no_overflow": 0.0,
+        "unbound_count": 0,
+        "no_unbound": 0.0,
+        "placeholder_fill": 0.0,
+        "filled_slots": 0,
+        "total_slots": 0,
+        "review_grade": "N/A",
+        "review_slides": 0,
+        "review_quality": 0.0,
+        "review_passed": 0,
+        "review_total": 0,
+        "review_available": False,
+    }
+    if error is not None:
+        scores["error"] = error
+    return scores
+
+
+def compute_composite(scores: dict[str, Any]) -> float:
+    composite = 0.0
+    total_weight = 0
+    for metric, weight in WEIGHTS.items():
+        if metric == "review_quality" and not scores.get("review_available", False):
+            continue
+        value = scores.get(metric, 0.0)
+        if isinstance(value, (int, float)):
+            composite += value * weight
+            total_weight += weight
+    return round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
+
+
+def load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
         return None
+    return _parse_json(path.read_text(encoding="utf-8"))
+
+
+def load_review_metrics(report_json_path: Path) -> dict[str, Any]:
+    report = load_json(report_json_path) or {}
+    active = report.get("active", {})
+    overall = active.get("overall", {})
+    passed = int(overall.get("passed", 0) or 0)
+    total = int(overall.get("total", 0) or 0)
+    return {
+        "review_available": True,
+        "review_passed": passed,
+        "review_total": total,
+        "review_quality": round(passed / total, 4) if total > 0 else 0.0,
+        "review_grade": overall.get("grade", active.get("grade", "N/A")),
+    }
+
+
+def previous_best_summary(*, current_run_id: str) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    for summary_path in sorted(RUNS_DIR.glob("*/summary.json")):
+        if summary_path.parent.name == current_run_id:
+            continue
+        summary = load_json(summary_path)
+        if summary is None:
+            continue
+        if summary.get("decision") == "reject":
+            continue
+        if isinstance(summary.get("mean_composite"), (int, float)):
+            candidates.append(summary)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: float(item.get("mean_composite", 0.0)))
+
+
+def evaluate_reject_reasons(
+    results: list[dict[str, Any]],
+    *,
+    current_mean_composite: float,
+    baseline_summary: dict[str, Any] | None,
+) -> list[str]:
+    if baseline_summary is None:
+        return []
+
+    reject_reasons: list[str] = []
+    baseline_mean = float(baseline_summary.get("mean_composite", 0.0))
+    if current_mean_composite < baseline_mean:
+        reject_reasons.append(
+            f"composite regressed from {baseline_mean:.1f} to {current_mean_composite:.1f}"
+        )
+
+    baseline_scores = {
+        benchmark.get("benchmark"): benchmark.get("scores", {})
+        for benchmark in baseline_summary.get("benchmarks", [])
+        if isinstance(benchmark, dict)
+    }
+
+    for result in results:
+        benchmark_name = result.get("benchmark")
+        if not isinstance(benchmark_name, str):
+            continue
+        current_scores = result.get("scores", {})
+        if not isinstance(current_scores, dict):
+            continue
+        baseline_benchmark_scores = baseline_scores.get(benchmark_name)
+        if not isinstance(baseline_benchmark_scores, dict):
+            continue
+        if not current_scores.get("review_available") or not baseline_benchmark_scores.get("review_available"):
+            continue
+
+        current_quality = float(current_scores.get("review_quality", 0.0))
+        baseline_quality = float(baseline_benchmark_scores.get("review_quality", 0.0))
+        if baseline_quality - current_quality > REVIEW_REGRESSION_THRESHOLD:
+            reject_reasons.append(
+                f"{benchmark_name}: review_quality regressed from {baseline_quality:.3f} to {current_quality:.3f}"
+            )
+
+    return reject_reasons
+
+
+def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+    composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
+    mean_composite = round(sum(composites) / len(composites), 1) if composites else 0.0
+    baseline_summary = previous_best_summary(current_run_id=run_id)
+    reject_reasons = evaluate_reject_reasons(
+        results,
+        current_mean_composite=mean_composite,
+        baseline_summary=baseline_summary,
+    )
+    review_unavailable = [
+        result["benchmark"]
+        for result in results
+        if not result.get("scores", {}).get("review_available", False)
+    ]
+    summary: dict[str, Any] = {
+        "run_id": run_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "benchmarks": results,
+        "mean_composite": mean_composite,
+        "decision": "reject" if reject_reasons else "accept",
+        "reject_reasons": reject_reasons,
+        "review_unavailable_benchmarks": review_unavailable,
+    }
+    if baseline_summary is not None:
+        summary["previous_best_run_id"] = baseline_summary.get("run_id")
+        summary["previous_best_mean_composite"] = baseline_summary.get("mean_composite")
+    return summary
 
 
 def parse_brief(brief_path: Path) -> dict:
@@ -221,7 +393,7 @@ def parse_brief(brief_path: Path) -> dict:
 
 def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
     """Score a built deck against deterministic metrics."""
-    scores: dict = {}
+    scores = base_scores()
 
     # Run commands from the deck's directory so relative manifest/template paths resolve
     deck_cwd = deck_path.parent
@@ -340,23 +512,18 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
 
     # 4. Review (render PNGs)
     review_dir = run_dir / "review"
-    review_result = run_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
-    if review_result and review_result.get("ok"):
-        scores["review_grade"] = review_result["data"].get("overall_grade", "F")
-        scores["review_slides"] = review_result["data"].get("slides", 0)
-    else:
-        scores["review_grade"] = "N/A"
+    review_exit_code, review_result, review_error = invoke_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
+    if review_exit_code == 0 and review_result and review_result.get("ok"):
+        review_data = review_result.get("data", {})
+        scores["review_slides"] = review_data.get("slides", 0)
+        scores["review_grade"] = review_data.get("overall_grade", "N/A")
+        report_json_path = review_data.get("report_json_path")
+        if isinstance(report_json_path, str):
+            scores.update(load_review_metrics(Path(report_json_path)))
+    elif review_error:
+        scores["review_error"] = review_error.get("error", {}).get("message", "review failed")
 
-    # 5. Composite score
-    composite = 0.0
-    total_weight = 0
-    for metric, weight in WEIGHTS.items():
-        value = scores.get(metric, 0.0)
-        if isinstance(value, (int, float)):
-            composite += value * weight
-            total_weight += weight
-    composite_score = round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
-
+    composite_score = compute_composite(scores)
     brief_compliance = scores.get("brief_compliance", {})
     compliance_cap = 1.0
     required_layouts = brief.get("required_layouts", [])
@@ -408,7 +575,8 @@ def run_benchmark(brief_path: Path, run_dir: Path, manifest_path: Path | None = 
         scores = score_deck(deck_path, brief, bench_dir)
     else:
         print(f"  No deck.json found at {deck_path}, skipping.")
-        scores = {"composite": 0.0, "error": "no deck.json"}
+        scores = base_scores(error="no deck.json")
+        scores["composite"] = compute_composite(scores)
 
     # Save scores
     scores_path = bench_dir / "scores.json"
@@ -448,13 +616,7 @@ def main():
         results.append(result)
 
     # Aggregate summary
-    composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
-    summary = {
-        "run_id": run_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "benchmarks": results,
-        "mean_composite": round(sum(composites) / len(composites), 1) if composites else 0.0,
-    }
+    summary = build_summary(run_id=run_id, results=results)
 
     summary_path = run_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))

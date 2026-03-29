@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Network coverage view</title>
+  <desc id="desc">A simplified operating network graphic for service coverage.</desc>
+  <rect width="1280" height="720" fill="#EEF3EE"/>
+  <rect x="64" y="64" width="1152" height="592" rx="40" fill="#FFFFFF" stroke="#BFD2C0" stroke-width="4"/>
+  <text x="108" y="136" fill="#1C3B2A" font-family="Georgia, serif" font-size="40" font-weight="700">
+    Service coverage depends on local bench depth, not just national headcount
+  </text>
+  <g fill="#2D6A4F">
+    <rect x="168" y="232" width="180" height="92" rx="18"/>
+    <rect x="460" y="184" width="180" height="92" rx="18"/>
+    <rect x="460" y="404" width="180" height="92" rx="18"/>
+    <rect x="782" y="294" width="180" height="92" rx="18"/>
+  </g>
+  <g fill="#FFFFFF" font-family="Arial, sans-serif" font-size="28" font-weight="700" text-anchor="middle">
+    <text x="258" y="288">West hub</text>
+    <text x="550" y="240">Central routing</text>
+    <text x="550" y="460">Flex labor pool</text>
+    <text x="872" y="350">Priority markets</text>
+  </g>
+  <g stroke="#8A9F8C" stroke-width="10" stroke-linecap="round">
+    <line x1="348" y1="278" x2="460" y2="230"/>
+    <line x1="348" y1="278" x2="460" y2="450"/>
+    <line x1="640" y1="230" x2="782" y2="340"/>
+    <line x1="640" y1="450" x2="782" y2="340"/>
+  </g>
+  <text x="108" y="612" fill="#506256" font-family="Arial, sans-serif" font-size="28">
+    The diagram highlights where routing and staffing interventions converge.
+  </text>
+</svg>

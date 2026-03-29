@@ -1,0 +1,62 @@
+{
+  "long_heading": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Regional demand has accelerated faster than workforce capacity, forcing leaders to rebalance coverage before service levels deteriorate further",
+          "type": "heading"
+        }
+      ]
+    },
+    "subheading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "The imbalance is sharpest where demand spikes collided with slower technician hiring.",
+          "type": "paragraph"
+        }
+      ]
+    }
+  },
+  "narrow_safe": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Stabilize priority markets",
+          "type": "heading"
+        }
+      ]
+    },
+    "subheading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Focus on the six markets with the largest backlog.",
+          "type": "paragraph"
+        }
+      ]
+    }
+  },
+  "nominal": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    },
+    "subheading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "The imbalance is sharpest where demand spikes collided with slower technician hiring.",
+          "type": "paragraph"
+        }
+      ]
+    }
+  }
+}

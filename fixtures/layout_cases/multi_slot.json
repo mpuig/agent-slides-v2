@@ -1,0 +1,289 @@
+{
+  "dense_body": {
+    "col1": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand hot spots",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Revenue exposure is highest in locations with the thinnest bench.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Supervisors are reallocating senior technicians to stabilize first-time fix rates.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "The queue length falls fastest when dispatch locks same-day overflow windows.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Decision needed",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Approve temporary overtime in districts that already have qualified labor.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Sequence new hiring after route redesign to avoid absorbing avoidable cost.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "col2": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity bottlenecks",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Revenue exposure is highest in locations with the thinnest bench.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Supervisors are reallocating senior technicians to stabilize first-time fix rates.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "The queue length falls fastest when dispatch locks same-day overflow windows.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Decision needed",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Approve temporary overtime in districts that already have qualified labor.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Sequence new hiring after route redesign to avoid absorbing avoidable cost.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "col3": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Intervention levers",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Revenue exposure is highest in locations with the thinnest bench.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Supervisors are reallocating senior technicians to stabilize first-time fix rates.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "The queue length falls fastest when dispatch locks same-day overflow windows.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Decision needed",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Approve temporary overtime in districts that already have qualified labor.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Sequence new hiring after route redesign to avoid absorbing avoidable cost.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "long_heading": {
+    "col1": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand hot spots",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Orders continue to outpace available technician hours in six fast-growth corridors.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col2": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity bottlenecks",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Travel time and uneven skill mix are preventing teams from clearing the daily queue.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col3": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Intervention levers",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Leaders can restore service levels by rebalancing routing, hiring, and overtime rules.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Regional demand has accelerated faster than workforce capacity, forcing leaders to rebalance coverage before service levels deteriorate further",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "narrow_safe": {
+    "col1": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand hot spots",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Keep the plan simple.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col2": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity bottlenecks",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Keep the plan simple.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col3": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Intervention levers",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Keep the plan simple.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Stabilize priority markets",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "nominal": {
+    "col1": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand hot spots",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Orders continue to outpace available technician hours in six fast-growth corridors.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col2": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity bottlenecks",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Travel time and uneven skill mix are preventing teams from clearing the daily queue.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "col3": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Intervention levers",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Leaders can restore service levels by rebalancing routing, hiring, and overtime rules.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    }
+  }
+}

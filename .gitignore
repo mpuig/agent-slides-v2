@@ -14,4 +14,7 @@ __pycache__/
 !/.claude/skills/learn-template
 /.artifacts/
 /examples/
+!/examples/
+!/examples/images/
+!/examples/images/*.svg
 /.claude/skills/

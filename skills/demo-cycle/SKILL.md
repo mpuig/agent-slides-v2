@@ -69,18 +69,18 @@ This scores all benchmarks and writes `runs/<run_id>/summary.json`.
 1. Read the new `summary.json`.
 2. Compare against the previous best run (if any).
 3. Apply the accept/reject rule from `program-demo.md`:
-   - **Accept**: composite >= previous best AND no individual metric regresses > 10 points
-   - **Reject**: composite < previous best OR any metric regresses > 10 points
-   - **Escalate**: composite improves but a metric regresses > 5 points
+   - **Accept**: `summary.json` has no `reject_reasons`
+   - **Reject**: mean composite regresses versus the previous best run
+   - **Reject**: any benchmark `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even if composite improves
+   - **Check**: if a benchmark has `review_available: false`, treat it as review-unavailable and confirm the scorer excluded `review_quality` from composite instead of scoring it as 0
 4. Write a short summary to `runs/<run_id>/decision.md` with:
    - What was changed
    - Score delta
-   - Decision (accept/reject/escalate)
+   - Decision (accept/reject)
    - What to try next
 
 5. If **rejected**: revert the code changes (`git checkout -- <files>`). The run artifacts stay for analysis.
 6. If **accepted**: keep the changes (do not commit — the human will review and commit).
-7. If **escalate**: keep the changes but flag clearly in decision.md.
 
 ## Constraints
 
