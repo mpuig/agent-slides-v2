@@ -280,7 +280,9 @@ class NodeContent(AgentSlidesModel):
     def from_text(cls, text: str, *, block_type: Literal["paragraph", "bullet", "heading"] = "paragraph") -> NodeContent:
         if text == "":
             return cls()
-        return cls(blocks=[TextBlock(type=block_type, text=text)])
+        if block_type != "paragraph":
+            return cls(blocks=[TextBlock(type=block_type, text=text)])
+        return cls(blocks=parse_text_blocks(text))
 
     def to_plain_text(self) -> str:
         return "\n".join(block.text for block in self.blocks)
@@ -401,6 +403,31 @@ def split_text_runs_by_line(block: TextBlock) -> list[list[TextRun]]:
             if has_line_break:
                 line_runs.append([])
     return line_runs or [[TextRun(text="")]]
+
+
+def parse_text_blocks(text: str) -> list[TextBlock]:
+    if "\n" not in text:
+        return [TextBlock(type="paragraph", text=text)]
+
+    lines = text.splitlines()
+    if not any(_is_bullet_line(line) for line in lines):
+        return [TextBlock(type="paragraph", text=text)]
+
+    blocks: list[TextBlock] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _is_bullet_line(stripped):
+            blocks.append(TextBlock(type="bullet", text=stripped[2:]))
+            continue
+        blocks.append(TextBlock(type="paragraph", text=stripped))
+    return blocks
+
+
+def _is_bullet_line(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.startswith("- ") or stripped.startswith("* ")
 
 
 def _merge_adjacent_runs(runs: list[TextRun]) -> list[TextRun]:
