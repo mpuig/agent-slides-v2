@@ -23,6 +23,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from compare_coverage import compare_coverage_files
+
 ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = ROOT / "benchmarks"
 RUNS_DIR = ROOT / "runs"
@@ -246,11 +251,32 @@ def previous_best_summary(*, current_run_id: str) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: float(item.get("mean_composite", 0.0)))
 
 
+def coverage_path_for_run(run_id: str) -> Path:
+    return RUNS_DIR / run_id / "coverage.json"
+
+
+def load_coverage_diff(*, current_run_id: str, baseline_summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    if baseline_summary is None:
+        return None
+
+    baseline_run_id = baseline_summary.get("run_id")
+    if not isinstance(baseline_run_id, str) or not baseline_run_id:
+        return None
+
+    before_path = coverage_path_for_run(baseline_run_id)
+    after_path = coverage_path_for_run(current_run_id)
+    if not before_path.exists() or not after_path.exists():
+        return None
+
+    return compare_coverage_files(before_path=before_path, after_path=after_path)
+
+
 def evaluate_reject_reasons(
     results: list[dict[str, Any]],
     *,
     current_mean_composite: float,
     baseline_summary: dict[str, Any] | None,
+    coverage_diff: dict[str, Any] | None = None,
 ) -> list[str]:
     if baseline_summary is None:
         return []
@@ -288,6 +314,18 @@ def evaluate_reject_reasons(
                 f"{benchmark_name}: review_quality regressed from {baseline_quality:.3f} to {current_quality:.3f}"
             )
 
+    regressions = coverage_diff.get("regressions", []) if isinstance(coverage_diff, dict) else []
+    if regressions:
+        regressed_slugs = ", ".join(
+            sorted(
+                str(regression["slug"])
+                for regression in regressions
+                if isinstance(regression, dict) and isinstance(regression.get("slug"), str)
+            )
+        )
+        if regressed_slugs:
+            reject_reasons.append(f"layout regressions: {regressed_slugs}")
+
     return reject_reasons
 
 
@@ -295,10 +333,12 @@ def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, An
     composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
     mean_composite = round(sum(composites) / len(composites), 1) if composites else 0.0
     baseline_summary = previous_best_summary(current_run_id=run_id)
+    coverage_diff = load_coverage_diff(current_run_id=run_id, baseline_summary=baseline_summary)
     reject_reasons = evaluate_reject_reasons(
         results,
         current_mean_composite=mean_composite,
         baseline_summary=baseline_summary,
+        coverage_diff=coverage_diff,
     )
     review_unavailable = [
         result["benchmark"]
@@ -317,6 +357,8 @@ def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, An
     if baseline_summary is not None:
         summary["previous_best_run_id"] = baseline_summary.get("run_id")
         summary["previous_best_mean_composite"] = baseline_summary.get("mean_composite")
+    if coverage_diff is not None:
+        summary["coverage_diff"] = coverage_diff
     return summary
 
 
