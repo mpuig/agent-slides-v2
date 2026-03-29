@@ -9,47 +9,46 @@ Choose images whose tags match the slide topic. Use relative paths from the deck
 (e.g., `../../examples/images/img_strategy_road_fork_aerial.jpg`).
 
 ## Brief
-Create a showcase deck that demonstrates every distinct layout category available
-in the template. Each slide should use a different layout and contain content
-appropriate to that layout's visual purpose. Use non-d_ variants (the d_ prefix
-variants are duplicates with a disclaimer footer).
+Create a showcase deck using EVERY non-duplicate usable layout from the learned template
+manifest. Run `uv run agent-slides inspect .artifacts/bcg.manifest.json` to get the full
+list — use all layouts that are usable and do NOT have a `d_` prefix.
 
-The showcase must exercise these layout categories with one slide each:
+For each layout, create one slide with content appropriate to the layout's slot structure:
 
-1. **title_slide** — opening slide with heading, subheading, body, and image placeholder. Fill the image slot with a corporate/strategy image.
-2. **title_and_text** — content slide with action title and structured body (bullets + subheadings)
-3. **title_only** — slide with just a prominent title
-4. **gray_slice_heading** — section divider with gray left panel
-5. **section_header_box** — section divider with boxed heading
-6. **section_header_line** — section divider with horizontal rule
-7. **white_one_third** — statement with white background, one-third layout
-8. **green_highlight** — green accent statement
-9. **green_one_third** — green one-third panel statement
-10. **green_half** — green half-panel with image. Fill image slot with a relevant image.
-11. **green_two_third** — green two-thirds panel with image. Fill image slot with a relevant image.
-12. **left_arrow** — arrow accent layout
-13. **arrow_half** — half-width arrow layout
-14. **arrow_two_third** — two-thirds arrow layout
-15. **green_left_arrow** — green arrow accent layout (use a SHORT heading, max 5 words — this layout has a narrow placeholder)
-16. **green_arrow_half** — green half-width arrow layout
-17. **big_statement_green** — full-bleed green statement slide
-18. **big_statement_icon** — statement slide with icon accent
-19. **special_gray** — gray special layout
-20. **d_title_and_text** — disclaimer variant of content slide (verify d_ prefix renders correctly)
+- **heading + body + image** layouts (title_slide, green_half, green_two_third): fill all
+  three slots — use a real image from `examples/images/`, an action title, and body content.
+- **heading + body** layouts (title_and_text, section headers, arrow variants, etc.): use an
+  action title and 4-6 bullet points or structured body with sub-headings.
+- **heading only** layouts: use a strong statement or action title. For narrow-placeholder
+  layouts (green_left_arrow, green_arrow_half, arrow_half), keep headings to MAX 5 WORDS.
+- **body only** layouts (quote, blank, agenda, disclaimer, end): fill the body slot with
+  appropriate content — a quote attribution for quote layouts, agenda items for agenda layouts,
+  a disclaimer statement for disclaimer, etc.
+- **blank** layouts: skip or add minimal content.
+
+Group slides into a coherent narrative about digital transformation in manufacturing:
+1. Title and context (title_slide, section headers)
+2. Market analysis (content layouts with data)
+3. Strategy options (arrow and comparison layouts)
+4. Key statements (big_statement, green highlight variants)
+5. Implementation (roadmap content, agenda layouts)
+6. Closing (end, quote, disclaimer)
 
 Target audience: Manufacturing CEO and executive team
 Objective: Present a digital transformation roadmap for a mid-size manufacturer
 Key recommendation: Invest EUR 8M over 3 years in IoT, AI-driven quality control, and supply chain digitization to achieve 25% cost reduction
 
 ## Required content signals
-- Use REALISTIC consulting-style content — action titles, data-driven bullets, source lines. Do NOT use meta-titles like "Layout: title_and_text" or "This demonstrates the arrow layout". Write content as if this were a real strategy deck about digital transformation in manufacturing.
+- Use REALISTIC consulting-style content — action titles, data-driven bullets, source lines. Do NOT use meta-titles like "Layout: title_and_text" or "This demonstrates the arrow layout". Write content as if this were a real strategy deck.
 - Body content where available should include 4-6 bullets with specifics (numbers, company names, timeframes)
-- Image layouts (title_slide, green_half, green_two_third) MUST have real images from examples/images/
-- Narrow layouts (green_left_arrow, green_arrow_half) should use SHORT headings (max 5 words)
-- At least 3 slides should include a source line (e.g., "Source: McKinsey Digital, 2025")
+- Image layouts MUST have real images from examples/images/ — pick by matching tags in index.json
+- Narrow layouts (green_left_arrow, green_arrow_half, arrow_half) MUST use SHORT headings (max 5 words)
+- At least 5 slides should include a source line (e.g., "Source: McKinsey Digital, 2025")
+- Quote layouts should have realistic attributed quotes
+- Agenda layouts should have structured agenda items
 
 ## Expected slide count
-20
+30-37
 
 ## Layout variety requirement
-At least 18 distinct layout types.
+At least 30 distinct layout types.
