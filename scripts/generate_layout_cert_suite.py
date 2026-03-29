@@ -172,8 +172,14 @@ def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
         raise ValueError(f"Image fixture asset not found: {raw_path}")
     asset_dir = deck_dir / "_assets"
     asset_dir.mkdir(parents=True, exist_ok=True)
-    # Key by a hash of the full resolved path to guarantee uniqueness
-    path_hash = hashlib.sha256(str(image_source).encode()).hexdigest()[:12]
+    # Key by a hash of the repo-relative path for cross-checkout determinism
+    try:
+        stable_key = str(
+            image_source.resolve(strict=False).relative_to(ROOT.resolve(strict=False))
+        )
+    except ValueError:
+        stable_key = str(image_source)
+    path_hash = hashlib.sha256(stable_key.encode()).hexdigest()[:12]
     safe_name = f"{path_hash}_{image_source.name}"
     local_copy = asset_dir / safe_name
     shutil.copy2(image_source, local_copy)
