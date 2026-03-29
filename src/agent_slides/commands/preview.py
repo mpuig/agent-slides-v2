@@ -114,15 +114,16 @@ class _ForegroundPreviewServer:
         *,
         port: int,
     ) -> None:
-        self._server = PreviewServer(
-            str(path),
-            port=port,
-        )
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_event: asyncio.Event | None = None
         self._ready = threading.Event()
         self._startup_error: Exception | None = None
+        self._server = PreviewServer(
+            str(path),
+            port=port,
+            on_listening=self._ready.set,
+        )
 
     @property
     def url(self) -> str:
@@ -152,7 +153,6 @@ class _ForegroundPreviewServer:
         async def serve() -> None:
             try:
                 await self._server.start()
-                self._ready.set()
                 await self._stop_event.wait()
             except Exception as exc:  # pragma: no cover - surfaced through start()
                 self._startup_error = exc

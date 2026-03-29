@@ -12,7 +12,7 @@ import threading
 from http import HTTPStatus
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote
 
 from websockets.datastructures import Headers
@@ -44,6 +44,7 @@ class PreviewServer:
         debounce_ms: int | None = None,
         debounce_interval: float | None = None,
         logger: logging.Logger | None = None,
+        on_listening: Callable[[], None] | None = None,
     ) -> None:
         self.sidecar_path = Path(sidecar_path).resolve()
         self.host = host
@@ -71,6 +72,7 @@ class PreviewServer:
             self._renderer = SlideRenderer(self.sidecar_path)
         self._logged_png_fallback_warning = False
         self._logged_png_cache_fallback_warning = False
+        self._on_listening = on_listening
 
     @property
     def origin(self) -> str:
@@ -104,6 +106,8 @@ class PreviewServer:
         socket = next(iter(self._server.sockets or []), None)
         if socket is not None:
             self.port = int(socket.getsockname()[1])
+        if self._on_listening is not None:
+            self._on_listening()
 
         await self._watcher.start()
         await self._prime_preview_state()
