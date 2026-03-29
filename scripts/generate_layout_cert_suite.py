@@ -156,7 +156,11 @@ def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
     """Copy image into deck_dir/_assets/ and return a relative path.
 
     Images must live inside the deck directory tree so the build command's
-    path traversal guard accepts them.
+    path traversal guard accepts them. The copy is keyed by the full
+    relative source path (not just basename) to avoid collisions when
+    different fixtures reference images with the same filename from
+    different directories. The copy is always refreshed to keep assets
+    in sync with the current fixture set.
     """
     import shutil
 
@@ -167,9 +171,11 @@ def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
         raise ValueError(f"Image fixture asset not found: {raw_path}")
     asset_dir = deck_dir / "_assets"
     asset_dir.mkdir(parents=True, exist_ok=True)
-    local_copy = asset_dir / image_source.name
-    if not local_copy.exists():
-        shutil.copy2(image_source, local_copy)
+    # Use parent directory name + filename to avoid basename collisions
+    # e.g., "images/img_foo.jpg" → "images_img_foo.jpg"
+    safe_name = f"{image_source.parent.name}_{image_source.name}"
+    local_copy = asset_dir / safe_name
+    shutil.copy2(image_source, local_copy)
     return _relative_path(local_copy, deck_dir)
 
 
