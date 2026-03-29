@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import sys
 from copy import deepcopy
@@ -51,6 +53,11 @@ def load_deck_payload(sidecar_path: Path) -> tuple[int, DeckPayload]:
     return deck.revision, _enrich_icon_payload(payload)
 
 
+def _payload_digest(payload: DeckPayload) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha1(serialized).hexdigest()
+
+
 class _SidecarEventHandler(FileSystemEventHandler):
     def __init__(self, watcher: SidecarWatcher) -> None:
         self._watcher = watcher
@@ -64,32 +71,36 @@ class _SidecarEventHandler(FileSystemEventHandler):
 
 
 class SidecarWatcher:
-    """Watch a deck sidecar file and publish updates on revision changes."""
+    """Watch a sidecar file path and publish updates when the deck payload changes."""
 
     def __init__(
         self,
         sidecar_path: str | Path,
         on_revision_change: UpdateCallback,
         *,
+        watched_path: str | Path | None = None,
         debounce_ms: int = 50,
         logger: logging.Logger | None = None,
     ) -> None:
         self.sidecar_path = Path(sidecar_path).resolve()
+        self.watched_path = (
+            Path(watched_path).resolve() if watched_path is not None else self.sidecar_path
+        )
         self._on_revision_change = on_revision_change
-        self._debounce_seconds = debounce_ms / 1000
+        self._debounce_seconds = max(debounce_ms, 0) / 1000
         self._logger = logger or logging.getLogger(__name__)
         self._observer: Observer | PollingObserver | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_check: asyncio.TimerHandle | None = None
-        self._last_seen_revision: int | None = None
+        self._last_seen_payload_digest: str | None = None
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
-        self._last_seen_revision = self._read_last_seen_revision()
+        self._last_seen_payload_digest = self._read_last_seen_payload_digest()
         self._observer = self._build_observer()
         self._observer.schedule(
             _SidecarEventHandler(self),
-            str(self.sidecar_path.parent),
+            str(self.watched_path.parent),
             recursive=False,
         )
         self._observer.start()
@@ -108,7 +119,7 @@ class SidecarWatcher:
 
     def matches_event(self, event: FileSystemEvent) -> bool:
         paths = [getattr(event, "src_path", None), getattr(event, "dest_path", None)]
-        target = str(self.sidecar_path)
+        target = str(self.watched_path)
 
         return any(path and str(Path(path).resolve()) == target for path in paths)
 
@@ -120,28 +131,29 @@ class SidecarWatcher:
 
     async def check_for_update(self) -> bool:
         try:
-            revision, payload = load_deck_payload(self.sidecar_path)
+            _, payload = load_deck_payload(self.sidecar_path)
         except AgentSlidesError as exc:
             if exc.code != FILE_NOT_FOUND:
                 self._logger.warning("Preview watcher skipped update: %s", exc.message)
             return False
 
-        if revision == self._last_seen_revision:
+        payload_digest = _payload_digest(payload)
+        if payload_digest == self._last_seen_payload_digest:
             return False
 
-        self._last_seen_revision = revision
+        self._last_seen_payload_digest = payload_digest
         await self._on_revision_change(payload)
         return True
 
-    def _read_last_seen_revision(self) -> int | None:
+    def _read_last_seen_payload_digest(self) -> str | None:
         try:
-            revision, _ = load_deck_payload(self.sidecar_path)
+            _, payload = load_deck_payload(self.sidecar_path)
         except AgentSlidesError as exc:
             if exc.code != FILE_NOT_FOUND:
                 self._logger.warning("Preview watcher could not read initial deck: %s", exc.message)
             return None
 
-        return revision
+        return _payload_digest(payload)
 
     def _schedule_debounced_check(self) -> None:
         if self._pending_check is not None:
