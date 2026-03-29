@@ -1,0 +1,73 @@
+{
+  "image_missing": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Text-only fallback keeps the storyline usable when visual assets are unavailable",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "image_present": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    },
+    "image": {
+      "image_fit": "cover",
+      "image_path": "examples/images/network-coverage.svg"
+    }
+  },
+  "long_heading": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Regional demand has accelerated faster than workforce capacity, forcing leaders to rebalance coverage before service levels deteriorate further",
+          "type": "heading"
+        }
+      ]
+    },
+    "image": {
+      "image_fit": "cover",
+      "image_path": "examples/images/capacity-gap-map.svg"
+    }
+  },
+  "narrow_safe": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Stabilize priority markets",
+          "type": "heading"
+        }
+      ]
+    },
+    "image": {
+      "image_fit": "cover",
+      "image_path": "examples/images/capacity-gap-map.svg"
+    }
+  },
+  "nominal": {
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    },
+    "image": {
+      "image_fit": "cover",
+      "image_path": "examples/images/capacity-gap-map.svg"
+    }
+  }
+}

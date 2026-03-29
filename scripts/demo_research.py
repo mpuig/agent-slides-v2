@@ -2,7 +2,7 @@
 """Demo research runner: executes the full benchmark pipeline and outputs scores.
 
 Usage:
-    python scripts/demo_research.py [--benchmarks strategy-deck,quarterly-update] [--run-id RUN_ID]
+    python scripts/demo_research.py [--benchmarks bcg-strategy,bcg-update] [--run-id RUN_ID]
 
 Each benchmark produces:
     runs/<run_id>/<benchmark_name>/
@@ -21,53 +21,316 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = ROOT / "benchmarks"
 RUNS_DIR = ROOT / "runs"
+REVIEW_REGRESSION_THRESHOLD = 0.05
 
-# Score weights — review_quality is the rendered visual quality from LibreOffice
-# screenshots, not a structural proxy. It uses passed/total from the 38-item
-# checklist (typography, hierarchy, layout, content, deck-level, AI slop).
+# Deterministic score weights
 WEIGHTS = {
-    "review_quality": 25,       # rendered slide quality (passed/total from review)
-    "validate_clean": 10,       # no validation warnings
-    "no_overflow": 10,          # no text overflow in computed nodes
-    "no_unbound": 10,           # no unbound slot warnings
-    "placeholder_fill": 10,     # % of expected slots actually filled
-    "layout_coverage": 15,      # required layouts present (not just count)
+    "validate_clean": 20,       # no validation warnings
+    "no_overflow": 15,          # no text overflow in computed nodes
+    "no_unbound": 15,           # no unbound slot warnings
+    "placeholder_fill": 20,     # % of expected slots actually filled
+    "layout_coverage": 10,      # required layouts present / expected set, or generic variety fallback
     "slide_count_match": 10,    # actual vs expected slide count
     "build_success": 10,        # PPTX builds without error
+    "review_quality": 20,       # visual review passed/total ratio when available
 }
 
-# Letter grade to numeric (0-1 scale)
-GRADE_MAP = {
-    "A+": 1.0, "A": 0.95, "A-": 0.90,
-    "B+": 0.85, "B": 0.80, "B-": 0.75,
-    "C+": 0.70, "C": 0.65, "C-": 0.60,
-    "D+": 0.55, "D": 0.50, "D-": 0.45,
-    "F": 0.30,
-}
+BOLD_SLUG_PATTERN = re.compile(r"\*\*([a-z0-9_]+)\*\*")
+SOURCE_LINE_PATTERN = re.compile(r"at least\s+(\d+)\s+slides?\s+should\s+include\s+a\s+source line", re.IGNORECASE)
+WORD_PATTERN = re.compile(r"\b[\w'-]+\b")
 
 
-def run_cli(*args: str, cwd: Path | None = None) -> dict | None:
-    """Run an agent-slides CLI command and return parsed JSON or None on failure."""
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def _node_text(node: dict) -> str:
+    content = node.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, dict):
+        return ""
+    blocks = content.get("blocks", [])
+    if not isinstance(blocks, list):
+        return ""
+    texts = [block.get("text", "").strip() for block in blocks if isinstance(block, dict)]
+    return "\n".join(text for text in texts if text)
+
+
+def _word_count(text: str) -> int:
+    return len(WORD_PATTERN.findall(text))
+
+
+def _has_source_line(slide: dict) -> bool:
+    return any(_node_text(node).casefold().startswith(("source:", "sources:")) for node in slide.get("nodes", []))
+
+
+def _is_valid_image_path(image_path: str | None, deck_cwd: Path) -> bool:
+    if not image_path:
+        return False
+    path = Path(image_path)
+    if not path.is_absolute():
+        path = deck_cwd / path
+    return path.exists()
+
+
+def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path) -> dict:
+    layouts_used = {slide.get("layout", "unknown") for slide in slides}
+
+    required_layouts = brief.get("required_layouts", [])
+    required_layouts_present = [slug for slug in required_layouts if slug in layouts_used]
+    required_layouts_missing = [slug for slug in required_layouts if slug not in layouts_used]
+
+    slides_by_layout: dict[str, list[dict]] = {}
+    for slide in slides:
+        slides_by_layout.setdefault(slide.get("layout", "unknown"), []).append(slide)
+
+    image_required_layouts = brief.get("image_required_layouts", [])
+    image_layouts_expected = len(image_required_layouts)
+    image_layouts_filled = 0
+    image_files_valid = True
+
+    narrow_layouts = set(brief.get("narrow_layouts", []))
+    narrow_headings_ok = True
+    source_lines_found = 0
+
+    for slide in slides:
+        layout = slide.get("layout", "unknown")
+        nodes = slide.get("nodes", [])
+
+        if _has_source_line(slide):
+            source_lines_found += 1
+
+        if layout in narrow_layouts:
+            heading_nodes = [
+                node for node in nodes
+                if node.get("type") == "text" and node.get("slot_binding") == "heading" and _node_text(node)
+            ]
+            if any(_word_count(_node_text(node)) > 5 for node in heading_nodes):
+                narrow_headings_ok = False
+
+    for layout in image_required_layouts:
+        slide_group = slides_by_layout.get(layout, [])
+        valid_image_found = any(
+            node.get("type") == "image" and _is_valid_image_path(node.get("image_path"), deck_cwd)
+            for slide in slide_group
+            for node in slide.get("nodes", [])
+        )
+        if valid_image_found:
+            image_layouts_filled += 1
+        else:
+            image_files_valid = False
+
+    return {
+        "required_layouts_present": required_layouts_present,
+        "required_layouts_missing": required_layouts_missing,
+        "image_layouts_filled": image_layouts_filled,
+        "image_layouts_expected": image_layouts_expected,
+        "image_files_valid": image_files_valid,
+        "narrow_headings_ok": narrow_headings_ok,
+        "source_lines_found": source_lines_found,
+    }
+
+
+def _parse_json(text: str) -> dict[str, Any] | None:
+    if not text.strip():
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def invoke_cli(*args: str, cwd: Path | None = None) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None]:
+    """Run an agent-slides CLI command and return the exit code plus parsed stdout/stderr JSON."""
     cmd = ["uv", "run", "--project", str(ROOT), "agent-slides", *args]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or ROOT)
+    stdout_payload = _parse_json(result.stdout)
+    stderr_payload = _parse_json(result.stderr)
     if result.returncode != 0:
         print(f"  FAIL: {' '.join(args)}", file=sys.stderr)
         print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
+    return result.returncode, stdout_payload, stderr_payload
+
+
+def run_cli(*args: str, cwd: Path | None = None) -> dict[str, Any] | None:
+    """Run an agent-slides CLI command and return parsed stdout JSON or None on failure."""
+    returncode, stdout_payload, _ = invoke_cli(*args, cwd=cwd)
+    if returncode != 0:
         return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
+    return stdout_payload
+
+
+def base_scores(*, error: str | None = None) -> dict[str, Any]:
+    scores: dict[str, Any] = {
+        "build_success": 0.0,
+        "validate_clean": 0.0,
+        "validate_warnings": -1,
+        "slide_count_match": 0.0,
+        "slide_count": 0,
+        "layout_variety": 0.0,
+        "layouts_used": [],
+        "overflow_count": 0,
+        "no_overflow": 0.0,
+        "unbound_count": 0,
+        "no_unbound": 0.0,
+        "placeholder_fill": 0.0,
+        "filled_slots": 0,
+        "total_slots": 0,
+        "review_grade": "N/A",
+        "review_slides": 0,
+        "review_quality": 0.0,
+        "review_passed": 0,
+        "review_total": 0,
+        "review_available": False,
+    }
+    if error is not None:
+        scores["error"] = error
+    return scores
+
+
+def compute_composite(scores: dict[str, Any]) -> float:
+    composite = 0.0
+    total_weight = 0
+    for metric, weight in WEIGHTS.items():
+        if metric == "review_quality" and not scores.get("review_available", False):
+            continue
+        value = scores.get(metric, 0.0)
+        if isinstance(value, (int, float)):
+            composite += value * weight
+            total_weight += weight
+    return round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
+
+
+def load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
         return None
+    return _parse_json(path.read_text(encoding="utf-8"))
+
+
+def load_review_metrics(report_json_path: Path) -> dict[str, Any]:
+    report = load_json(report_json_path) or {}
+    active = report.get("active", {})
+    overall = active.get("overall", {})
+    passed = int(overall.get("passed", 0) or 0)
+    total = int(overall.get("total", 0) or 0)
+    return {
+        "review_available": True,
+        "review_passed": passed,
+        "review_total": total,
+        "review_quality": round(passed / total, 4) if total > 0 else 0.0,
+        "review_grade": overall.get("grade", active.get("grade", "N/A")),
+    }
+
+
+def previous_best_summary(*, current_run_id: str) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    for summary_path in sorted(RUNS_DIR.glob("*/summary.json")):
+        if summary_path.parent.name == current_run_id:
+            continue
+        summary = load_json(summary_path)
+        if summary is None:
+            continue
+        if summary.get("decision") == "reject":
+            continue
+        if isinstance(summary.get("mean_composite"), (int, float)):
+            candidates.append(summary)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: float(item.get("mean_composite", 0.0)))
+
+
+def evaluate_reject_reasons(
+    results: list[dict[str, Any]],
+    *,
+    current_mean_composite: float,
+    baseline_summary: dict[str, Any] | None,
+) -> list[str]:
+    if baseline_summary is None:
+        return []
+
+    reject_reasons: list[str] = []
+    baseline_mean = float(baseline_summary.get("mean_composite", 0.0))
+    if current_mean_composite < baseline_mean:
+        reject_reasons.append(
+            f"composite regressed from {baseline_mean:.1f} to {current_mean_composite:.1f}"
+        )
+
+    baseline_scores = {
+        benchmark.get("benchmark"): benchmark.get("scores", {})
+        for benchmark in baseline_summary.get("benchmarks", [])
+        if isinstance(benchmark, dict)
+    }
+
+    for result in results:
+        benchmark_name = result.get("benchmark")
+        if not isinstance(benchmark_name, str):
+            continue
+        current_scores = result.get("scores", {})
+        if not isinstance(current_scores, dict):
+            continue
+        baseline_benchmark_scores = baseline_scores.get(benchmark_name)
+        if not isinstance(baseline_benchmark_scores, dict):
+            continue
+        if not current_scores.get("review_available") or not baseline_benchmark_scores.get("review_available"):
+            continue
+
+        current_quality = float(current_scores.get("review_quality", 0.0))
+        baseline_quality = float(baseline_benchmark_scores.get("review_quality", 0.0))
+        if baseline_quality - current_quality > REVIEW_REGRESSION_THRESHOLD:
+            reject_reasons.append(
+                f"{benchmark_name}: review_quality regressed from {baseline_quality:.3f} to {current_quality:.3f}"
+            )
+
+    return reject_reasons
+
+
+def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+    composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
+    mean_composite = round(sum(composites) / len(composites), 1) if composites else 0.0
+    baseline_summary = previous_best_summary(current_run_id=run_id)
+    reject_reasons = evaluate_reject_reasons(
+        results,
+        current_mean_composite=mean_composite,
+        baseline_summary=baseline_summary,
+    )
+    review_unavailable = [
+        result["benchmark"]
+        for result in results
+        if not result.get("scores", {}).get("review_available", False)
+    ]
+    summary: dict[str, Any] = {
+        "run_id": run_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "benchmarks": results,
+        "mean_composite": mean_composite,
+        "decision": "reject" if reject_reasons else "accept",
+        "reject_reasons": reject_reasons,
+        "review_unavailable_benchmarks": review_unavailable,
+    }
+    if baseline_summary is not None:
+        summary["previous_best_run_id"] = baseline_summary.get("run_id")
+        summary["previous_best_mean_composite"] = baseline_summary.get("mean_composite")
+    return summary
 
 
 def parse_brief(brief_path: Path) -> dict:
     """Extract structured fields from a benchmark brief markdown file."""
-    text = brief_path.read_text()
-    fields: dict = {"name": brief_path.stem, "path": str(brief_path)}
+    text = brief_path.read_text(encoding="utf-8")
+    fields: dict = {
+        "name": brief_path.stem,
+        "path": str(brief_path),
+        "required_layouts": [],
+        "image_required_layouts": [],
+        "narrow_layouts": [],
+        "min_source_lines": 0,
+    }
 
     for line in text.splitlines():
         line_stripped = line.strip()
@@ -83,10 +346,24 @@ def parse_brief(brief_path: Path) -> dict:
     in_layout_variety = False
     for line in text.splitlines():
         line_stripped = line.strip()
+        slugs = BOLD_SLUG_PATTERN.findall(line_stripped)
+        if slugs:
+            fields["required_layouts"].extend(slugs)
+            line_lower = line_stripped.casefold()
+            if "image" in line_lower and any(keyword in line_lower for keyword in ("fill", "filled", "real image")):
+                fields["image_required_layouts"].extend(slugs)
+            if any(keyword in line_lower for keyword in ("narrow", "short heading", "headings short", "keep headings short", "short because")):
+                fields["narrow_layouts"].extend(slugs)
+
+        source_line_match = SOURCE_LINE_PATTERN.search(line_stripped)
+        if source_line_match:
+            fields["min_source_lines"] = int(source_line_match.group(1))
+
         if "Expected slide count" in line_stripped:
             in_slide_count = True
             continue
         if in_slide_count and line_stripped:
+            # Parse "8-10" or "3"
             parts = line_stripped.split("-")
             try:
                 fields["min_slides"] = int(parts[0])
@@ -98,6 +375,7 @@ def parse_brief(brief_path: Path) -> dict:
             in_layout_variety = True
             continue
         if in_layout_variety and line_stripped:
+            # Extract number from "At least N distinct..."
             for word in line_stripped.split():
                 try:
                     fields["min_layouts"] = int(word)
@@ -106,31 +384,18 @@ def parse_brief(brief_path: Path) -> dict:
                     continue
             in_layout_variety = False
 
-    # Parse required layouts from numbered list items like "1. **title_slide** — ..."
-    required_layouts = []
-    for line in text.splitlines():
-        match = re.match(r'\s*\d+\.\s+\*\*(\w+)\*\*', line)
-        if match:
-            required_layouts.append(match.group(1))
-    if required_layouts:
-        fields["required_layouts"] = required_layouts
-
-    # Parse image-required layouts (lines mentioning "Fill image slot" or "MUST have real images")
-    image_layouts = []
-    for line in text.splitlines():
-        match = re.match(r'\s*\d+\.\s+\*\*(\w+)\*\*', line)
-        if match and ("image" in line.lower() and ("fill" in line.lower() or "must" in line.lower())):
-            image_layouts.append(match.group(1))
-    if image_layouts:
-        fields["image_required_layouts"] = image_layouts
+    fields["required_layouts"] = _dedupe(fields["required_layouts"])
+    fields["image_required_layouts"] = _dedupe(fields["image_required_layouts"])
+    fields["narrow_layouts"] = _dedupe(fields["narrow_layouts"])
 
     return fields
 
 
 def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
-    """Score a built deck against deterministic and visual metrics."""
-    scores: dict = {}
+    """Score a built deck against deterministic metrics."""
+    scores = base_scores()
 
+    # Run commands from the deck's directory so relative manifest/template paths resolve
     deck_cwd = deck_path.parent
 
     # 1. Build success
@@ -167,46 +432,25 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
             distance = min(abs(len(slides) - min_s), abs(len(slides) - max_s))
             scores["slide_count_match"] = max(0, 1.0 - distance * 0.2)
 
-        # Layout coverage — check required layouts are present, not just count
+        # Layout variety
         layouts_used = set()
         for slide in slides:
             layouts_used.add(slide.get("layout", "unknown"))
         scores["layouts_used"] = sorted(layouts_used)
+        brief_compliance = _brief_compliance_for_slides(slides, brief, deck_cwd)
+        scores["brief_compliance"] = brief_compliance
 
         required_layouts = brief.get("required_layouts", [])
         if required_layouts:
-            present = sum(1 for l in required_layouts if l in layouts_used)
-            scores["layout_coverage"] = present / len(required_layouts)
-            scores["required_layouts_missing"] = sorted(
-                l for l in required_layouts if l not in layouts_used
-            )
+            scores["layout_coverage"] = len(brief_compliance["required_layouts_present"]) / len(required_layouts)
         else:
-            # Fallback to generic variety check
             min_layouts = brief.get("min_layouts", 2)
             scores["layout_coverage"] = min(1.0, len(layouts_used) / min_layouts)
-
-        # Image slot validation — check image-required layouts have actual images
-        image_required = brief.get("image_required_layouts", [])
-        if image_required:
-            image_filled = 0
-            image_expected = 0
-            for slide in slides:
-                if slide.get("layout") in image_required:
-                    image_expected += 1
-                    for node in slide.get("nodes", []):
-                        if node.get("type") == "image" and node.get("image_path"):
-                            image_filled += 1
-                            break
-            scores["image_fill"] = (image_filled / image_expected) if image_expected > 0 else 1.0
-            scores["image_expected"] = image_expected
-            scores["image_filled"] = image_filled
-        else:
-            scores["image_fill"] = 1.0
+        scores["layout_variety"] = scores["layout_coverage"]
 
         # Overflow and unbound analysis
         overflow_count = 0
         unbound_count = 0
-        total_text_nodes = 0
         filled_slots = 0
         total_slots = 0
         for slide in slides:
@@ -216,16 +460,19 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
                 node_id = node.get("node_id", "")
                 comp = computed.get(node_id, {})
                 if node.get("type") == "text":
-                    total_text_nodes += 1
                     if comp.get("text_overflow"):
                         overflow_count += 1
                 if node.get("slot_binding"):
+                    # Exclude image slots without image_path from scoring:
+                    # these can't be filled without real image assets and
+                    # should not penalize text-only deck builds.
                     is_unfillable_image = (
                         node.get("type") == "image" and not node.get("image_path")
                     )
                     if is_unfillable_image:
                         continue
                     total_slots += 1
+                    # Check if node has content
                     content = node.get("content", {})
                     blocks = content.get("blocks", [])
                     has_text = any(b.get("text", "").strip() for b in blocks)
@@ -239,59 +486,75 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         scores["no_overflow"] = 1.0 if overflow_count == 0 else max(0, 1.0 - overflow_count * 0.25)
         scores["unbound_count"] = unbound_count
         scores["no_unbound"] = 1.0 if unbound_count == 0 else max(0, 1.0 - unbound_count * 0.25)
-        scores["placeholder_fill"] = (filled_slots / total_slots) if total_slots > 0 else 0.0
+        generic_fill = (filled_slots / total_slots) if total_slots > 0 else 0.0
+        image_layouts_expected = brief_compliance["image_layouts_expected"]
+        image_fill_ratio = (
+            brief_compliance["image_layouts_filled"] / image_layouts_expected
+            if image_layouts_expected > 0
+            else 1.0
+        )
+        scores["placeholder_fill"] = min(generic_fill, image_fill_ratio)
         scores["filled_slots"] = filled_slots
         scores["total_slots"] = total_slots
     else:
+        scores["brief_compliance"] = {
+            "required_layouts_present": [],
+            "required_layouts_missing": list(brief.get("required_layouts", [])),
+            "image_layouts_filled": 0,
+            "image_layouts_expected": 0,
+            "image_files_valid": True,
+            "narrow_headings_ok": True,
+            "source_lines_found": 0,
+        }
         for key in ["slide_count_match", "layout_coverage", "no_overflow", "no_unbound", "placeholder_fill"]:
             scores[key] = 0.0
+        scores["layout_variety"] = 0.0
 
-    # 4. Review — rendered visual quality from LibreOffice screenshots
+    # 4. Review (render PNGs)
     review_dir = run_dir / "review"
-    review_result = run_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
-    if review_result and review_result.get("ok"):
-        grade = review_result["data"].get("overall_grade", "F")
-        scores["review_grade"] = grade
-        scores["review_slides"] = review_result["data"].get("slides", 0)
-        # Convert to numeric: use passed/total ratio from report.json if available,
-        # fall back to letter grade conversion
-        report_json = review_dir / "report.json"
-        if report_json.exists():
-            try:
-                report = json.loads(report_json.read_text())
-                overall = report.get("active", {}).get("overall", {})
-                passed = overall.get("passed", 0)
-                total = overall.get("total", 1)
-                scores["review_quality"] = passed / total if total > 0 else 0.0
-                scores["review_passed"] = passed
-                scores["review_total"] = total
-            except (json.JSONDecodeError, KeyError):
-                scores["review_quality"] = GRADE_MAP.get(grade, 0.3)
-        else:
-            scores["review_quality"] = GRADE_MAP.get(grade, 0.3)
-    else:
-        scores["review_grade"] = "N/A"
-        scores["review_quality"] = 0.0
+    review_exit_code, review_result, review_error = invoke_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
+    if review_exit_code == 0 and review_result and review_result.get("ok"):
+        review_data = review_result.get("data", {})
+        scores["review_slides"] = review_data.get("slides", 0)
+        scores["review_grade"] = review_data.get("overall_grade", "N/A")
+        report_json_path = review_data.get("report_json_path")
+        if isinstance(report_json_path, str):
+            scores.update(load_review_metrics(Path(report_json_path)))
+    elif review_error:
+        scores["review_error"] = review_error.get("error", {}).get("message", "review failed")
 
-    # 5. Composite score
-    composite = 0.0
-    total_weight = 0
-    for metric, weight in WEIGHTS.items():
-        value = scores.get(metric, 0.0)
-        if isinstance(value, (int, float)):
-            composite += value * weight
-            total_weight += weight
-    scores["composite"] = round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
+    composite_score = compute_composite(scores)
+    brief_compliance = scores.get("brief_compliance", {})
+    compliance_cap = 1.0
+    required_layouts = brief.get("required_layouts", [])
+    if required_layouts:
+        compliance_cap = min(compliance_cap, scores.get("layout_coverage", 0.0))
+    image_layouts_expected = brief_compliance.get("image_layouts_expected", 0)
+    if image_layouts_expected:
+        compliance_cap = min(
+            compliance_cap,
+            brief_compliance.get("image_layouts_filled", 0) / image_layouts_expected,
+        )
+
+    scores["composite"] = round(min(composite_score, compliance_cap * 100), 1)
 
     return scores
 
 
 def ensure_symlinks(bench_dir: Path) -> None:
-    """Create symlinks so relative paths in deck.json resolve correctly."""
+    """Create symlinks so relative paths in deck.json resolve correctly.
+
+    Template decks reference the manifest via a relative path (e.g., "bcg.manifest.json")
+    and the manifest references the source PPTX (e.g., "../examples/bcg.pptx").
+    When decks live in runs/<id>/<bench>/, we symlink from there back to the project root
+    so these paths resolve.
+    """
+    # Symlink examples/ so manifest source paths resolve
     examples_link = bench_dir / "examples"
     if not examples_link.exists():
         examples_link.symlink_to(ROOT / "examples")
 
+    # Symlink .artifacts/ so manifest paths resolve when referenced
     artifacts_link = bench_dir / ".artifacts"
     if not artifacts_link.exists():
         artifacts_link.symlink_to(ROOT / ".artifacts")
@@ -306,13 +569,16 @@ def run_benchmark(brief_path: Path, run_dir: Path, manifest_path: Path | None = 
 
     deck_path = bench_dir / "deck.json"
 
+    # If a pre-built deck.json exists (created by the experiment cycle agent), score it directly
     if deck_path.exists():
         print(f"  Scoring existing deck: {deck_path}")
         scores = score_deck(deck_path, brief, bench_dir)
     else:
         print(f"  No deck.json found at {deck_path}, skipping.")
-        scores = {"composite": 0.0, "error": "no deck.json"}
+        scores = base_scores(error="no deck.json")
+        scores["composite"] = compute_composite(scores)
 
+    # Save scores
     scores_path = bench_dir / "scores.json"
     scores_path.write_text(json.dumps(scores, indent=2))
     print(f"  Composite score: {scores['composite']}")
@@ -324,7 +590,7 @@ def main():
     parser = argparse.ArgumentParser(description="Demo research runner")
     parser.add_argument(
         "--benchmarks",
-        default="minimal-title-body,quarterly-update,strategy-deck,layout-showcase",
+        default="bcg-strategy,bcg-update,minimal-title-body",
         help="Comma-separated benchmark names",
     )
     parser.add_argument("--run-id", default=None, help="Run ID (default: timestamp)")
@@ -349,13 +615,8 @@ def main():
         result = run_benchmark(brief_path, run_dir, manifest_path)
         results.append(result)
 
-    composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
-    summary = {
-        "run_id": run_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "benchmarks": results,
-        "mean_composite": round(sum(composites) / len(composites), 1) if composites else 0.0,
-    }
+    # Aggregate summary
+    summary = build_summary(run_id=run_id, results=results)
 
     summary_path = run_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))

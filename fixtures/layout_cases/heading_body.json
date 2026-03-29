@@ -1,0 +1,137 @@
+{
+  "dense_body": {
+    "body": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Implications",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Backlog exceeds the ten-day threshold in six priority metros.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Travel time inflation is eroding technician utilization by roughly one shift per week.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Attrition remains elevated where supervisors manage both dispatch and field coaching.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Actions underway",
+          "type": "heading"
+        },
+        {
+          "level": 0,
+          "text": "Leadership is staging targeted hiring against the highest-margin territories first.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Routing rules are being reset to reduce cross-district spillover.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Weekly performance reviews now compare service-level recovery against hiring conversion.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "long_heading": {
+    "body": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand grew 14% year on year while field capacity expanded only 6%, leaving recurring coverage gaps in select metros.",
+          "type": "paragraph"
+        },
+        {
+          "level": 0,
+          "text": "Eight priority markets account for most of the open service backlog.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Utilization improves quickly when routing is reset at the district level.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Regional demand has accelerated faster than workforce capacity, forcing leaders to rebalance coverage before service levels deteriorate further",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "narrow_safe": {
+    "body": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Close the backlog before expanding coverage.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Stabilize priority markets",
+          "type": "heading"
+        }
+      ]
+    }
+  },
+  "nominal": {
+    "body": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Demand grew 14% year on year while field capacity expanded only 6%, leaving recurring coverage gaps in select metros.",
+          "type": "paragraph"
+        },
+        {
+          "level": 0,
+          "text": "Eight priority markets account for most of the open service backlog.",
+          "type": "bullet"
+        },
+        {
+          "level": 0,
+          "text": "Utilization improves quickly when routing is reset at the district level.",
+          "type": "bullet"
+        }
+      ]
+    },
+    "heading": {
+      "blocks": [
+        {
+          "level": 0,
+          "text": "Capacity gaps are concentrated in a small set of service corridors",
+          "type": "heading"
+        }
+      ]
+    }
+  }
+}

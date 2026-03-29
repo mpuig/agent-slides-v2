@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Service dashboard</title>
+  <desc id="desc">A dashboard-style image for operating metrics.</desc>
+  <rect width="1280" height="720" fill="#F7F3EB"/>
+  <rect x="68" y="68" width="1144" height="584" rx="32" fill="#FFFDF9" stroke="#D8CBB8" stroke-width="4"/>
+  <text x="112" y="136" fill="#2F2922" font-family="Georgia, serif" font-size="40" font-weight="700">
+    Weekly dashboard tracks service recovery against hiring and routing decisions
+  </text>
+  <g>
+    <rect x="116" y="200" width="280" height="180" rx="24" fill="#184E77"/>
+    <rect x="428" y="200" width="280" height="180" rx="24" fill="#D96B2B"/>
+    <rect x="740" y="200" width="280" height="180" rx="24" fill="#6D597A"/>
+  </g>
+  <g fill="#FFFFFF" font-family="Arial, sans-serif" text-anchor="middle">
+    <text x="256" y="254" font-size="28" font-weight="700">Backlog days</text>
+    <text x="256" y="332" font-size="64" font-weight="700">8.4</text>
+    <text x="568" y="254" font-size="28" font-weight="700">Hiring fill rate</text>
+    <text x="568" y="332" font-size="64" font-weight="700">72%</text>
+    <text x="880" y="254" font-size="28" font-weight="700">First-time fix</text>
+    <text x="880" y="332" font-size="64" font-weight="700">91%</text>
+  </g>
+  <g fill="#C9B89F">
+    <rect x="116" y="432" width="904" height="132" rx="24"/>
+  </g>
+  <g stroke="#2F2922" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M164 516 L300 494 L430 520 L558 460 L690 470 L822 438 L970 454"/>
+  </g>
+  <text x="112" y="612" fill="#5D5447" font-family="Arial, sans-serif" font-size="28">
+    The dashboard mockup gives image slot structures a checked-in visual asset.
+  </text>
+</svg>

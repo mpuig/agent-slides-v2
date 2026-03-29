@@ -5,7 +5,7 @@ It controls what the experiment cycle agent does on each run.
 
 ## Current lane
 
-**engine** — ensure all usable template layouts render correctly when filled with content.
+**engine** — fix template placeholder text formatting in the PPTX writer.
 
 ## Lane boundaries
 
@@ -14,13 +14,10 @@ Files the agent MAY edit:
 - `src/agent_slides/io/pptx_writer.py`
 - `src/agent_slides/io/template_reader.py`
 - `src/agent_slides/engine/reflow.py`
-- `src/agent_slides/engine/validator.py`
-- `src/agent_slides/engine/text_fit.py`
 - `tests/test_pptx_writer.py`
 - `tests/test_learn.py`
 - `tests/test_template_reflow.py`
 - `tests/test_e2e_template.py`
-- `tests/test_validator.py`
 
 Files the agent MUST NOT edit:
 - `skills/**`
@@ -31,7 +28,7 @@ Files the agent MUST NOT edit:
 
 ### Manifest lane (future)
 Files the agent MAY edit:
-- `.artifacts/*.manifest.json`
+- `.artifacts/bcg.manifest.json`
 - `src/agent_slides/io/template_reader.py` (slot mapping heuristics only)
 - `src/agent_slides/model/template_layouts.py`
 
@@ -43,79 +40,60 @@ Files the agent MAY edit:
 
 ## Benchmarks to run
 
-Run all four in order:
+Run all three in order:
 1. `minimal-title-body` (fast sanity check)
-2. `quarterly-update` (medium complexity)
-3. `strategy-deck` (full complexity)
-4. `layout-showcase` (layout coverage, primary target for this round)
+2. `bcg-update` (medium complexity)
+3. `bcg-strategy` (full complexity, primary quality target)
 
-Template for all: the learned manifest in `.artifacts/`
+Template for all: `examples/bcg.pptx`
+Manifest: `.artifacts/bcg.manifest.json`
 
 ## Score function
 
-Metrics (from `scripts/demo_research.py`):
-- `review_quality`: rendered visual quality from LibreOffice screenshots, passed/total on 38-item checklist (weight 25)
+Deterministic metrics (from `scripts/demo_research.py`):
 - `build_success`: PPTX builds without error (weight 10)
-- `validate_clean`: no validation warnings (weight 10)
-- `no_overflow`: no text overflow flags in computed nodes (weight 10)
-- `no_unbound`: no unbound nodes (weight 10)
-- `placeholder_fill`: % of text slots with content (weight 10)
-- `layout_coverage`: required layouts present in deck (weight 15)
+- `validate_clean`: no validation warnings (weight 20)
+- `no_overflow`: no text overflow flags in computed nodes (weight 15)
+- `no_unbound`: no unbound nodes (weight 15)
+- `placeholder_fill`: % of slots with content (weight 20)
+- `layout_variety`: distinct layouts / minimum required (weight 10)
 - `slide_count_match`: actual slides within expected range (weight 10)
+- `review_quality`: visual review checklist pass ratio, computed as `passed / total` from `review/report.json` (weight 20 when review is available)
 
-Composite: weighted average, 0-100 scale.
-
-The review_quality metric is the primary quality signal — it measures actual rendered
-slide quality, not structural proxies. Changes that improve structural metrics but
-degrade review_quality should be rejected.
+Composite: weighted average, 0-100 scale. If LibreOffice-backed review is unavailable, set `review_available: false` for that benchmark and exclude `review_quality` from the composite instead of scoring it as 0.
 
 ## Accept/reject rule
 
-- **Accept** if composite >= previous best AND review_quality does not regress > 5 points
-- **Reject** if composite < previous best OR review_quality regresses > 5 points
-- **Escalate to human** if composite improves but review_quality regresses > 2 points
+- **Accept** if mean composite is at least the previous best and every benchmark's `review_quality` stays within 0.05 of the previous best benchmark.
+- **Reject** if mean composite regresses versus the previous best run.
+- **Reject** if any benchmark's `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even when composite improves.
+- **Flag** benchmarks with `review_available: false` as review-unavailable runs. They may stay in the run summary, but they do not contribute a 0-valued review score to the composite and should not be treated as visual-proof wins.
 
 ## Current hypothesis
 
-Many heading-only layouts (arrow variants, green panels, one-third/half/two-third splits)
-have not been tested with actual content. They may have:
-1. Placeholder bounds too small for typical heading text, causing overflow
-2. Font size ranges that don't match the placeholder dimensions
-3. Missing paragraph formatting preservation for non-standard placeholder types
-4. Image placeholder slots that fail silently when no image is provided
+The root cause of poor text formatting in template-backed decks is that `_fill_placeholder()`
+in `pptx_writer.py` calls `text_frame.clear()` and then explicitly sets font family, size,
+and color on every run. This destroys the placeholder's native formatting from the template.
 
-The layout-showcase benchmark exercises all 20 distinct layout categories in one deck.
-Failures will reveal which layouts need engine-level fixes.
+The fix should:
+1. Stop setting font properties on template runs unless explicitly overridden in the deck spec
+2. Let the template placeholder's native paragraph/run formatting show through
+3. Only override when `style_overrides` or `TextRun` specs explicitly request it
 
 ## Observations from previous runs
 
-### Round 1: Engine formatting (cycles 1-10)
-- Baseline: 53.9 → Final: 96.7
-- Fixed: font override in template runs, paragraph formatting preservation,
-  validator false positives, multi-line text fitting for narrow placeholders
-- Remaining: all fixes validated only against title_slide, title_and_text,
-  big_statement_green, section_header_*, and d_gray_slice_heading
-
-### Round 2: Layout coverage (cycles 11-16)
-- Baseline: 89.0 → Best: 97.0
-- Fixed: constrained placeholder font suppression, area-scaled word limits,
-  width-aware text fitting, image placeholder filling
-- Finding: composite was optimizing structural proxies, not rendered quality.
-  Scoring updated to weight review_quality at 25%.
+### Run: initial (bcg-demo, manual)
+- Slide 1 (title_slide): acceptable
+- Slides 2, 6 (section_header_box): text tiny, empty placeholder outlines visible
+- Slides 3, 5, 7, 8 (title_and_text): heading blocks in body render at oversized fonts
+- Slide 9 (two_col variant): only left column filled
+- All slides: font family/size forced from computed state, overriding template defaults
 
 ## Experiment history
 
 | Run ID | Lane | Hypothesis | Composite | Decision |
 |--------|------|-----------|-----------|----------|
-| baseline | - | baseline | 53.9 | baseline |
-| cycle-03 | engine | stop overwriting template fonts | 80.5 | accept |
-| cycle-04 | engine | validator template slug recognition | 95.1 | accept |
-| cycle-06 | engine | preserve paragraph XML (pPr) | 95.1 | accept |
-| cycle-07 | scoring | exclude unfillable image slots | 96.7 | accept |
-| cycle-08 | engine | multi-line font shrinking | 96.6 | accept |
-| cycle-12 | engine | constrained placeholder font suppression | 96.0 | accept |
-| cycle-15 | engine | width-aware text fitting | 97.0 | accept |
-| cycle-16 | engine | area-scaled word limits | 96.0 | accept |
+| initial | - | baseline | TBD | baseline |
 
 ## When to stop and escalate
 
