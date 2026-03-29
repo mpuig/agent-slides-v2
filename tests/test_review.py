@@ -120,16 +120,21 @@ def test_review_command_generates_visual_report(monkeypatch, tmp_path: Path) -> 
 
     report_path = Path(payload["data"]["report_path"])
     report_json_path = Path(payload["data"]["report_json_path"])
+    signals_json_path = output_dir / "signals.json"
     assert report_path.exists()
     assert report_json_path.exists()
+    assert signals_json_path.exists()
 
     report = json.loads(report_json_path.read_text(encoding="utf-8"))
+    signals = json.loads(signals_json_path.read_text(encoding="utf-8"))
     active = report["active"]
     assert active["categories"]["Content Quality"]["total"] == 8
     issue_items = [issue["item"] for issue in active["all_issues"]]
     assert "Title is not a topic label" in issue_items
     assert "Charts have titles and clear labels" in issue_items
     assert "Slide stays within 6 bullets" in issue_items
+    assert len(signals) == 3
+    assert signals[0]["layout_slug"] == "title"
     assert "slide-02.png" in report_path.read_text(encoding="utf-8")
 
 
@@ -261,4 +266,7 @@ def test_review_command_supports_template_decks(monkeypatch, tmp_path: Path) -> 
     assert result.exit_code == 0
     payload = parse_last_json_line(result.output)
     report = json.loads(Path(payload["data"]["report_json_path"]).read_text(encoding="utf-8"))
+    signals = json.loads((output_dir / "signals.json").read_text(encoding="utf-8"))
     assert report["active"]["deck"]["template"] == "template"
+    assert len(signals) == 1
+    assert signals[0]["layout_slug"] == "title_slide"
