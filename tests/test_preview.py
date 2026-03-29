@@ -9,9 +9,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+from click.testing import CliRunner
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
+from agent_slides.cli import cli
 from agent_slides.io import read_deck
 from agent_slides.model import (
     ChartSpec,
@@ -723,6 +725,48 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
 
             assert payload["slides"][0]["nodes"][0]["type"] == "image"
             assert payload["slides"][0]["computed"]["n-1"]["image_fit"] == "contain"
+            assert image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_serves_cli_normalized_absolute_image_assets(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        runner = CliRunner()
+        deck_path = tmp_path / "deck.json"
+        image_dir = tmp_path / "assets"
+        image_dir.mkdir()
+        image_path = write_png(image_dir / "photo.png", width=24, height=12)
+
+        result = runner.invoke(cli, ["init", str(deck_path), "--theme", "default"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["slide", "add", str(deck_path), "--layout", "image_right"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(
+            cli,
+            ["slot", "set", str(deck_path), "--slide", "0", "--slot", "image", "--image", str(image_path)],
+        )
+        assert result.exit_code == 0
+
+        payload = json.loads(result.stdout)
+        image_ref = payload["data"]["image_path"]
+        assert image_ref == "assets/photo.png"
+
+        server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
+        await server.start()
+        try:
+            hydrated = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            image_bytes = await asyncio.to_thread(
+                _fetch_bytes,
+                f"{server.origin}/api/images/{quote(image_ref, safe='')}",
+            )
+            image_node = next(node for node in hydrated["slides"][0]["nodes"] if node["type"] == "image")
+
+            assert image_node["image_path"] == image_ref
             assert image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
         finally:
             await server.stop()
