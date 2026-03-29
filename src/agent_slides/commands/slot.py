@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import click
@@ -32,10 +33,14 @@ def _resolve_cli_image_path(deck_path: Path, image_path: str | None) -> str | No
     if not normalized:
         raise AgentSlidesError(SCHEMA_ERROR, "Option '--image' must be a non-empty path")
 
-    candidate = Path(normalized)
-    resolved = candidate if candidate.is_absolute() else (deck_path.parent / candidate)
+    deck_dir = deck_path.parent.resolve()
+    candidate = Path(normalized).expanduser()
+    resolved = candidate if candidate.is_absolute() else (deck_dir / candidate)
     if not resolved.is_file():
         raise AgentSlidesError(FILE_NOT_FOUND, f"Image file not found: {resolved}")
+
+    if candidate.is_absolute():
+        return Path(os.path.relpath(resolved.resolve(), deck_dir)).as_posix()
 
     return normalized
 

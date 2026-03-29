@@ -1128,6 +1128,31 @@ def test_slot_set_supports_image_nodes(tmp_path: Path) -> None:
     assert body_node.image_path == "photo.png"
 
 
+def test_slot_set_normalizes_absolute_image_paths_to_relative(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    image_dir = tmp_path / "assets"
+    image_dir.mkdir()
+    image_path = write_png(image_dir / "photo.png", width=30, height=20)
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "image_right", ["heading", "body", "image"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        ["slot", "set", str(deck_path), "--slide", "s-1", "--slot", "image", "--image", str(image_path)]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["image_path"] == "assets/photo.png"
+    image_node = next(node for node in updated.slides[0].nodes if node.slot_binding == "image")
+    assert image_node.type == "image"
+    assert image_node.image_path == "assets/photo.png"
+
+
 def test_slot_set_rejects_missing_image_path(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
