@@ -7,7 +7,8 @@ from agent_slides.engine.layout_suggest import (
     _group_blocks_by_heading,
     suggest_layouts,
 )
-from agent_slides.model import LayoutHints, NodeContent, TextBlock, load_design_rules
+from agent_slides.model import LayoutHints, NodeContent, SlotDef, TextBlock, load_design_rules
+from agent_slides.model.layouts import get_layout
 
 
 def make_content(*blocks: tuple[str, str]) -> NodeContent:
@@ -174,6 +175,39 @@ def test_suggest_layouts_never_auto_suggests_quote_or_closing() -> None:
     )
 
     assert [suggestion.layout for suggestion in suggestions] == ["title"]
+
+
+def test_suggest_layouts_skips_image_requiring_candidates_when_no_images() -> None:
+    image_heavy_two_col = get_layout("two_col").model_copy(
+        update={
+            "slots": {
+                **get_layout("two_col").slots,
+                "image": SlotDef(
+                    grid_row=1,
+                    grid_col=1,
+                    role="image",
+                    allowed_content=["image"],
+                ),
+            }
+        }
+    )
+    layout_defs = {
+        "two_col": image_heavy_two_col,
+        "title_content": get_layout("title_content"),
+    }
+
+    suggestions = suggest_layouts(
+        make_content(
+            ("heading", "Two bets"),
+            ("paragraph", "Adoption climbed steadily across the existing customer base this quarter."),
+            ("paragraph", "Pipeline grew materially after the new pricing and onboarding changes."),
+        ),
+        image_count=0,
+        available_layouts=["two_col", "title_content"],
+        layout_getter=layout_defs.__getitem__,
+    )
+
+    assert [suggestion.layout for suggestion in suggestions] == ["title_content"]
 
 
 def test_suggest_layouts_uses_configurable_thresholds() -> None:

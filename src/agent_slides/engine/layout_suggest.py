@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from agent_slides.model.design_rules import DesignRules, load_design_rules
-from agent_slides.model.layouts import list_layouts
-from agent_slides.model.types import NodeContent, TextBlock
+from agent_slides.model.layouts import get_layout, list_layouts
+from agent_slides.model.types import LayoutDef, NodeContent, TextBlock
 
 AUTO_SUGGEST_EXCLUDED_LAYOUTS = frozenset({"closing", "quote"})
 
@@ -81,6 +81,7 @@ def suggest_layouts(
     image_count: int = 0,
     available_layouts: list[str] | None = None,
     rules: DesignRules | None = None,
+    layout_getter: Callable[[str], LayoutDef] | None = None,
 ) -> list[LayoutSuggestion]:
     """Return ranked layout suggestions for the given structured content."""
 
@@ -98,6 +99,8 @@ def suggest_layouts(
             continue
         if not rule.matches(profile, image_count, design_rules):
             continue
+        if image_count == 0 and _layout_requires_image(rule.layout, layout_getter):
+            continue
         suggestions[rule.layout] = LayoutSuggestion(
             layout=rule.layout,
             score=rule.score,
@@ -114,6 +117,20 @@ def suggest_layouts(
 def _allowed_layouts(available_layouts: list[str] | None) -> set[str]:
     layouts = available_layouts or list_layouts()
     return {layout for layout in layouts if layout not in AUTO_SUGGEST_EXCLUDED_LAYOUTS}
+
+
+def _layout_requires_image(layout_name: str, layout_getter: Callable[[str], LayoutDef] | None) -> bool:
+    getter = layout_getter or get_layout
+    try:
+        layout = getter(layout_name)
+    except Exception:
+        return False
+    return any(_slot_requires_image(slot) for slot in layout.slots.values())
+
+
+def _slot_requires_image(slot) -> bool:
+    allowed_content = {content_type.casefold() for content_type in slot.allowed_content}
+    return slot.role == "image" or ("image" in allowed_content and "text" not in allowed_content)
 
 
 def _suggestion_rules() -> tuple[_SuggestionRule, ...]:

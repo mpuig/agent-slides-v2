@@ -181,6 +181,81 @@ def _build_variant_manifest(base_dir: Path, *, body_bounds: list[dict[str, float
     return manifest_path
 
 
+def _build_mixed_variant_manifest(
+    base_dir: Path,
+    *,
+    body_bounds: dict[str, float],
+    image_bounds: dict[str, float],
+) -> Path:
+    template_path = base_dir / "templates" / "mixed-variant" / "variant-template.pptx"
+    manifest_path = base_dir / "templates" / "mixed-variant" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "mixed-variant-template",
+                "source": "variant-template.pptx",
+                "source_hash": "mixed-variant123",
+                "theme": {
+                    "name": "variant-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 12,
+                        "margin": 48,
+                        "gutter": 18,
+                    },
+                },
+                "layouts": [
+                    {
+                        "slug": "closing_with_image",
+                        "usable": True,
+                        "placeholders": [
+                            {
+                                "idx": 0,
+                                "type": "TITLE",
+                                "name": "Title",
+                                "bounds": {"x": 72, "y": 48, "w": 576, "h": 72},
+                            },
+                            {
+                                "idx": 1,
+                                "type": "PICTURE",
+                                "name": "Image",
+                                "bounds": image_bounds,
+                            },
+                            {
+                                "idx": 2,
+                                "type": "BODY",
+                                "name": "Body",
+                                "bounds": body_bounds,
+                            },
+                        ],
+                        "slot_mapping": {
+                            "heading": 0,
+                            "image": 1,
+                            "body": 2,
+                        },
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
 def test_template_layout_registry_loads_manifest_and_exposes_theme(tmp_path: Path) -> None:
     manifest_path = _build_manifest(tmp_path)
 
@@ -270,6 +345,24 @@ def test_template_layout_registry_generates_semantic_variants_for_peer_bodies(tm
     assert list(variants[0].slots) == ["heading", "col1", "col2"]
     assert variants[0].slots["col1"].peer_group == "columns"
     assert list(variants[1].slots) == ["heading", "col1", "col2", "col3"]
+
+
+def test_template_layout_registry_generates_image_free_variant_for_mixed_text_and_image_peers(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_mixed_variant_manifest(
+        tmp_path,
+        image_bounds={"x": 72, "y": 156, "w": 240, "h": 240},
+        body_bounds={"x": 330, "y": 156, "w": 318, "h": 240},
+    )
+    registry = TemplateLayoutRegistry(str(manifest_path))
+
+    variants = registry.get_variants("closing_with_image")
+
+    assert [variant.name for variant in variants] == ["title_content"]
+    assert list(variants[0].slots) == ["heading", "body"]
+    assert variants[0].slots["body"].x == 72
+    assert variants[0].slots["body"].width == 576
 
 
 def test_template_layout_registry_skips_variants_when_peer_invariants_fail(tmp_path: Path) -> None:

@@ -471,6 +471,56 @@ def _copy_slot(slot: SlotDef, **updates: Any) -> SlotDef:
     return slot.model_copy(update=updates)
 
 
+def _same_horizontal_band(left: SlotDef, right: SlotDef) -> bool:
+    if left.y is None or right.y is None:
+        return False
+    return abs(float(left.y) - float(right.y)) <= _PEER_Y_EPSILON_PT and _height_close(left, right)
+
+
+def _expand_slot_horizontally(anchor: SlotDef, peers: list[SlotDef]) -> SlotDef | None:
+    all_slots = [anchor, *peers]
+    if any(slot.x is None or slot.width is None for slot in all_slots):
+        return None
+    left = min(float(slot.x) for slot in all_slots)
+    right = max(float(slot.x) + float(slot.width) for slot in all_slots)
+    return _copy_slot(anchor, x=left, width=right - left)
+
+
+def _generate_image_free_title_content_variant(
+    heading: SlotDef,
+    body_slots: list[SlotDef],
+    image_slots: list[SlotDef],
+    theme: Theme,
+) -> LayoutDef | None:
+    if len(body_slots) != 1 or not image_slots:
+        return None
+
+    peer_images = [slot for slot in image_slots if _same_horizontal_band(body_slots[0], slot)]
+    if not peer_images:
+        return None
+
+    expanded_body = _expand_slot_horizontally(body_slots[0], peer_images)
+    if expanded_body is None or not _is_valid_variant(heading=heading, bodies=[expanded_body], theme=theme):
+        return None
+
+    title_content_slots = {
+        "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
+        "body": _copy_slot(
+            expanded_body,
+            peer_group=None,
+            alignment_group="content",
+            reading_order=1,
+            size_policy="fill_remaining",
+        ),
+    }
+    return LayoutDef(
+        name="title_content",
+        slots=title_content_slots,
+        grid=_TEMPLATE_GRID,
+        text_fitting=_variant_text_fitting(title_content_slots),
+    )
+
+
 def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) -> bool:
     from agent_slides.engine.constraints import constraints_from_layout, solve
     from agent_slides.engine.layout_validator import validate_layout
@@ -505,11 +555,16 @@ def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) 
 def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
     heading_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "heading"]
     body_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "body"]
+    image_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "image"]
     if len(heading_slots) != 1 or len(body_slots) < 1:
         return []
 
     heading = heading_slots[0]
     variants: list[LayoutDef] = []
+
+    image_free_title_content = _generate_image_free_title_content_variant(heading, body_slots, image_slots, theme)
+    if image_free_title_content is not None:
+        variants.append(image_free_title_content)
 
     if len(body_slots) == 2 and _is_valid_variant(heading=heading, bodies=[body_slots[0]], theme=theme):
         title_content_slots = {
