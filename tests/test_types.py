@@ -143,6 +143,28 @@ def test_legacy_string_content_is_coerced_to_structured_paragraphs() -> None:
     assert node.content == NodeContent(blocks=[TextBlock(type="paragraph", text="Hello world")])
 
 
+def test_node_content_from_text_converts_mixed_bullet_lines_to_blocks() -> None:
+    content = NodeContent.from_text("Key points:\n- First item\n* Second item")
+
+    assert content == NodeContent(
+        blocks=[
+            TextBlock(type="paragraph", text="Key points:"),
+            TextBlock(type="bullet", text="First item"),
+            TextBlock(type="bullet", text="Second item"),
+        ]
+    )
+
+
+def test_node_content_from_text_keeps_empty_single_line_and_plain_multiline_text_unchanged() -> None:
+    assert NodeContent.from_text("") == NodeContent(blocks=[])
+    assert NodeContent.from_text("Hello world") == NodeContent(
+        blocks=[TextBlock(type="paragraph", text="Hello world")]
+    )
+    assert NodeContent.from_text("Line one\nLine two") == NodeContent(
+        blocks=[TextBlock(type="paragraph", text="Line one\nLine two")]
+    )
+
+
 def test_next_ids_increment_counters() -> None:
     deck = Deck(deck_id="deck-1")
 

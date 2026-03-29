@@ -849,6 +849,42 @@ def test_slot_set_parses_inline_markdown_runs_from_text(tmp_path: Path) -> None:
     ]
 
 
+def test_slot_set_auto_detects_bullet_lines_from_text(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    deck = Deck(
+        deck_id="deck-1",
+        slides=[build_slide("s-1", "title_content", ["heading", "body"], start_node=1)],
+        counters=Counters(slides=1, nodes=3),
+    )
+    write_deck(deck_path, deck)
+
+    result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "s-1",
+            "--slot",
+            "body",
+            "--text",
+            "Key points:\n- First item\n* Second item",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+
+    assert result.exit_code == 0
+    assert payload["data"]["content"] == {
+        "blocks": [
+            {"type": "paragraph", "text": "Key points:", "level": 0},
+            {"type": "bullet", "text": "First item", "level": 0},
+            {"type": "bullet", "text": "Second item", "level": 0},
+        ]
+    }
+    assert updated.slides[0].nodes[1].content.to_plain_text() == "Key points:\nFirst item\nSecond item"
+
+
 def test_slot_set_parses_inline_markdown_color_suffixes(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(

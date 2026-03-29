@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
 
 from click.testing import CliRunner
 from pptx import Presentation
 
 from agent_slides.cli import cli
 from agent_slides.errors import UNBOUND_NODES
+
+DRAWING_NS = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+}
 
 
 def collect_slide_text(path: Path) -> list[str]:
@@ -18,6 +25,11 @@ def collect_slide_text(path: Path) -> list[str]:
             if shape.has_text_frame:
                 text_values.append(shape.text_frame.text)
     return text_values
+
+
+def read_slide_xml(path: Path, *, index: int = 1) -> ET.Element:
+    with ZipFile(path) as archive:
+        return ET.fromstring(archive.read(f"ppt/slides/slide{index}.xml"))
 
 
 def invoke(runner: CliRunner, args: list[str], *, input_text: str | None = None) -> tuple[int, dict[str, object], str]:
@@ -83,6 +95,63 @@ def test_full_demo_flow(tmp_path: Path) -> None:
     assert "Second point" in all_text
     assert "The best way to predict the future is to invent it." in all_text
     assert "Alan Kay" in all_text
+
+
+def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_path: Path) -> None:
+    runner = CliRunner()
+    deck_path = tmp_path / "deck.json"
+    pptx_path = tmp_path / "output.pptx"
+
+    exit_code, payload, _ = invoke(runner, ["init", str(deck_path), "--theme", "default"])
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "title_content"])
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    exit_code, payload, _ = invoke(
+        runner,
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--text",
+            "Key points:\n- First item\n* Second item",
+        ],
+    )
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    presentation = Presentation(str(pptx_path))
+    text_frame = next(
+        shape.text_frame
+        for shape in presentation.slides[0].shapes
+        if shape.has_text_frame and shape.text_frame.text == "Key points:\nFirst item\nSecond item"
+    )
+    body_shape = next(
+        shape
+        for shape in read_slide_xml(pptx_path).findall(".//p:sp", DRAWING_NS)
+        if [text.text for text in shape.findall(".//a:t", DRAWING_NS)] == ["Key points:", "First item", "Second item"]
+    )
+    paragraphs = body_shape.findall(".//a:p", DRAWING_NS)
+
+    assert [paragraph.text for paragraph in text_frame.paragraphs] == [
+        "Key points:",
+        "First item",
+        "Second item",
+    ]
+    assert paragraphs[0].find("./a:pPr/a:buChar", DRAWING_NS) is None
+    assert paragraphs[1].find("./a:pPr/a:buChar", DRAWING_NS) is not None
+    assert paragraphs[2].find("./a:pPr/a:buChar", DRAWING_NS) is not None
 
 
 def test_layout_switch_content_migration(tmp_path: Path) -> None:
