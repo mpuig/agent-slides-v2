@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
@@ -9,6 +10,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from uuid import UUID
 
@@ -2803,6 +2805,64 @@ def test_preview_command_starts_server_opens_browser_and_stops_cleanly(
         },
     }
     assert json.loads(lines[1]) == {"ok": True, "data": {"stopped": True}}
+
+
+def test_foreground_preview_server_marks_ready_when_socket_is_bound(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from agent_slides.commands.preview import _ForegroundPreviewServer
+
+    class _ReadyHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok": true}')
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    class SlowStartupPreviewServer:
+        def __init__(self, path: str, *, port: int, on_listening=None) -> None:
+            del path
+            self.host = "127.0.0.1"
+            self.port = port
+            self.origin = f"http://{self.host}:{self.port}"
+            self._on_listening = on_listening
+            self._httpd: HTTPServer | None = None
+            self._thread: threading.Thread | None = None
+
+        async def start(self) -> SlowStartupPreviewServer:
+            self._httpd = HTTPServer((self.host, self.port), _ReadyHandler)
+            self.port = int(self._httpd.server_address[1])
+            self.origin = f"http://{self.host}:{self.port}"
+            self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+            self._thread.start()
+            if self._on_listening is not None:
+                self._on_listening()
+            await asyncio.sleep(5.2)
+            return self
+
+        async def stop(self) -> None:
+            if self._httpd is not None:
+                self._httpd.shutdown()
+                self._httpd.server_close()
+            if self._thread is not None:
+                self._thread.join(timeout=1)
+
+    deck_path = tmp_path / "deck.json"
+    write_deck(deck_path, make_clean_deck())
+    monkeypatch.setattr("agent_slides.commands.preview.PreviewServer", SlowStartupPreviewServer)
+
+    server = _ForegroundPreviewServer(deck_path, port=0)
+    try:
+        server.start()
+        status, body = wait_for_http(server.url)
+        assert status == 200
+        assert json.loads(body) == {"ok": True}
+    finally:
+        server.stop()
 
 
 def test_preview_command_supports_custom_port_and_no_open(

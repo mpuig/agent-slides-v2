@@ -8,6 +8,7 @@ from typing import Any
 from websockets.asyncio.client import connect
 
 from agent_slides.commands.mutations import apply_mutation
+from agent_slides.io import read_deck, write_computed_deck
 from agent_slides.io.sidecar import init_deck, mutate_deck
 from agent_slides.model import Deck
 from agent_slides.model.layout_provider import LayoutProvider
@@ -35,6 +36,33 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
         assert payload["slides"] == [
             {"index": 0, "url": "/slides/0.png?rev=3", "revision": 3}
         ]
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_updates_for_computed_only_write(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = prepare_deck(tmp_path)
+        renderer = FakeSlideRenderer(deck_path, deck_path.parent / "rendered")
+
+        async with make_server(deck_path, slide_renderer=renderer) as server:
+            async with connect(server.url) as websocket:
+                initial = await receive_update(websocket)
+                deck = read_deck(str(deck_path))
+                computed = next(iter(deck.slides[0].computed.values()))
+                computed.x += 24.0
+                write_computed_deck(str(deck_path), deck)
+                rendering = await receive_update(websocket)
+                payload = await receive_update(websocket)
+
+        assert initial["type"] == "slides_updated"
+        assert initial["revision"] == 2
+        assert rendering == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+        assert payload["type"] == "slides_updated"
+        assert payload["revision"] == initial["revision"]
+        assert renderer.render_indices_calls == [[0]]
+        assert server._preview_payload is not None
+        assert server._preview_payload["slides"][0]["computed"]["n-1"]["x"] == computed.x
 
     asyncio.run(scenario())
 

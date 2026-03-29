@@ -12,7 +12,7 @@ import threading
 from http import HTTPStatus
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote
 
 from websockets.datastructures import Headers
@@ -20,6 +20,7 @@ from websockets.http11 import Response
 from websockets.asyncio.server import Server, ServerConnection, broadcast, serve
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
+from agent_slides.io import computed_sidecar_path
 from agent_slides.io.assets import resolve_image_path
 from agent_slides.preview.renderer import SlideRenderError, SlideRenderer
 from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
@@ -44,6 +45,7 @@ class PreviewServer:
         debounce_ms: int | None = None,
         debounce_interval: float | None = None,
         logger: logging.Logger | None = None,
+        on_listening: Callable[[], None] | None = None,
     ) -> None:
         self.sidecar_path = Path(sidecar_path).resolve()
         self.host = host
@@ -57,6 +59,7 @@ class PreviewServer:
         self._watcher = SidecarWatcher(
             self.sidecar_path,
             self._broadcast_update,
+            watched_path=computed_sidecar_path(self.sidecar_path),
             debounce_ms=effective_debounce_ms,
             logger=self._logger,
         )
@@ -71,6 +74,7 @@ class PreviewServer:
             self._renderer = SlideRenderer(self.sidecar_path)
         self._logged_png_fallback_warning = False
         self._logged_png_cache_fallback_warning = False
+        self._on_listening = on_listening
 
     @property
     def origin(self) -> str:
@@ -104,6 +108,8 @@ class PreviewServer:
         socket = next(iter(self._server.sockets or []), None)
         if socket is not None:
             self.port = int(socket.getsockname()[1])
+        if self._on_listening is not None:
+            self._on_listening()
 
         await self._watcher.start()
         await self._prime_preview_state()
@@ -313,10 +319,14 @@ class PreviewServer:
     def _slide_revision(self, slide_payload: dict[str, Any], deck_revision: int) -> int:
         return int(slide_payload.get("revision", deck_revision))
 
-    def _slide_signature(self, payload: dict[str, Any]) -> list[tuple[str, int]]:
+    def _slide_signature(self, payload: dict[str, Any]) -> list[tuple[str, int, str]]:
         deck_revision = int(payload["revision"])
         return [
-            (str(slide["slide_id"]), self._slide_revision(slide, deck_revision))
+            (
+                str(slide["slide_id"]),
+                self._slide_revision(slide, deck_revision),
+                json.dumps(slide, sort_keys=True, separators=(",", ":")),
+            )
             for slide in payload.get("slides", [])
         ]
 
@@ -333,14 +343,17 @@ class PreviewServer:
         current_signature = self._slide_signature(payload)
         if len(previous_signature) != len(current_signature):
             return list(range(len(slides)))
-        if any(previous_id != current_id for (previous_id, _), (current_id, _) in zip(previous_signature, current_signature)):
+        if any(
+            previous_id != current_id
+            for (previous_id, _, _), (current_id, _, _) in zip(previous_signature, current_signature)
+        ):
             return list(range(len(slides)))
         return [
             index
-            for index, ((_, previous_revision), (_, current_revision)) in enumerate(
+            for index, ((_, previous_revision, previous_slide), (_, current_revision, current_slide)) in enumerate(
                 zip(previous_signature, current_signature)
             )
-            if previous_revision != current_revision
+            if previous_revision != current_revision or previous_slide != current_slide
         ]
 
     def _build_slide_previews(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
