@@ -58,14 +58,16 @@ Deterministic metrics (from `scripts/demo_research.py`):
 - `placeholder_fill`: % of slots with content (weight 20)
 - `layout_variety`: distinct layouts / minimum required (weight 10)
 - `slide_count_match`: actual slides within expected range (weight 10)
+- `review_quality`: visual review checklist pass ratio, computed as `passed / total` from `review/report.json` (weight 20 when review is available)
 
-Composite: weighted average, 0-100 scale.
+Composite: weighted average, 0-100 scale. If LibreOffice-backed review is unavailable, set `review_available: false` for that benchmark and exclude `review_quality` from the composite instead of scoring it as 0.
 
 ## Accept/reject rule
 
-- **Accept** if composite >= previous best AND no regression on any individual metric > 10 points
-- **Reject** if composite < previous best OR any metric regresses > 10 points
-- **Escalate to human** if composite improves but a metric regresses > 5 points (trade-off decision)
+- **Accept** if mean composite is at least the previous best and every benchmark's `review_quality` stays within 0.05 of the previous best benchmark.
+- **Reject** if mean composite regresses versus the previous best run.
+- **Reject** if any benchmark's `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even when composite improves.
+- **Flag** benchmarks with `review_available: false` as review-unavailable runs. They may stay in the run summary, but they do not contribute a 0-valued review score to the composite and should not be treated as visual-proof wins.
 
 ## Current hypothesis
 
