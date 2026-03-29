@@ -137,17 +137,27 @@ def _relative_path(target: Path, start: Path) -> str:
     return os.path.relpath(target.resolve(strict=False), start.resolve(strict=False))
 
 
-def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path, asset_root: Path) -> str:
+def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
+    """Copy image into deck_dir/_assets/ and return a relative path.
+
+    Images must live inside the deck directory tree so the build command's
+    path traversal guard accepts them. The copy is keyed by the full
+    relative source path (not just basename) to avoid collisions when
+    different fixtures reference images with the same filename from
+    different directories. The copy is always refreshed to keep assets
+    in sync with the current fixture set.
+    """
     image_source = Path(raw_path)
     if not image_source.is_absolute():
         image_source = (ROOT / image_source).resolve(strict=False)
     if not image_source.is_file():
         raise ValueError(f"Image fixture asset not found: {raw_path}")
-    asset_root.mkdir(parents=True, exist_ok=True)
-    local_asset_path = asset_root / image_source.name
-    if not local_asset_path.exists():
-        shutil.copy2(image_source, local_asset_path)
-    return _relative_path(local_asset_path, deck_dir)
+    asset_dir = deck_dir / "_assets"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{image_source.parent.name}_{image_source.name}"
+    local_copy = asset_dir / safe_name
+    shutil.copy2(image_source, local_copy)
+    return _relative_path(local_copy, deck_dir)
 
 
 def _build_nodes(
@@ -155,7 +165,6 @@ def _build_nodes(
     *,
     fillable_slots: list[str],
     deck_dir: Path,
-    asset_root: Path,
 ) -> list[Node]:
     nodes: list[Node] = []
     for slot_name in fillable_slots:
@@ -177,7 +186,6 @@ def _build_nodes(
                     "image_path": _resolve_fixture_image_path(
                         str(raw_payload["image_path"]),
                         deck_dir=deck_dir,
-                        asset_root=asset_root,
                     ),
                 }
             )
@@ -232,12 +240,10 @@ def build_cert_suite(
 
         for variant_name, raw_slot_payloads in sorted(variants.items()):
             deck_dir = output_dir / template_slug / layout_slug / variant_name
-            template_asset_root = deck_dir / "_assets"
             nodes = _build_nodes(
                 raw_slot_payloads,
                 fillable_slots=fillable_slots,
                 deck_dir=deck_dir,
-                asset_root=template_asset_root,
             )
             deck = Deck(
                 deck_id=f"cert-{template_slug}-{layout_slug}-{variant_name}",

@@ -271,10 +271,12 @@ def evaluate_reject_reasons(
 
 
 def build_layer_summary(*, run_id: str, templates: list[dict[str, Any]]) -> dict[str, Any]:
+    total_passed = sum(int(template.get("passed", 0)) for template in templates)
+    total_testable = sum(int(template.get("testable", 0)) for template in templates)
     overall_coverage_pct = round(
-        sum(float(template.get("coverage_pct", 0.0)) for template in templates) / len(templates),
+        (total_passed / total_testable * 100) if total_testable > 0 else 0.0,
         1,
-    ) if templates else 0.0
+    )
     baseline_summary = previous_best_certification_summary(current_run_id=run_id)
     current_run_dir = RUNS_DIR / run_id
     coverage_diffs = load_coverage_diff(

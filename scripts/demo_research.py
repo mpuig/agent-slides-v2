@@ -309,7 +309,16 @@ def evaluate_reject_reasons(
         baseline_benchmark_scores = baseline_scores.get(benchmark_name)
         if not isinstance(baseline_benchmark_scores, dict):
             continue
-        if not current_scores.get("review_available") or not baseline_benchmark_scores.get("review_available"):
+        baseline_had_review = baseline_benchmark_scores.get("review_available", False)
+        current_has_review = current_scores.get("review_available", False)
+
+        if baseline_had_review and not current_has_review:
+            reject_reasons.append(
+                f"{benchmark_name}: review data lost — baseline had review but current does not"
+            )
+            continue
+
+        if not baseline_had_review or not current_has_review:
             continue
 
         current_quality = float(current_scores.get("review_quality", 0.0))

@@ -156,8 +156,8 @@ def test_build_layer_summary_applies_per_template_regression_gate(tmp_path: Path
     layer = module.build_layer_summary(
         run_id="candidate",
         templates=[
-            {"template": "alpha", "coverage_pct": 80.0, "coverage_path": "certification/alpha/coverage.json"},
-            {"template": "beta", "coverage_pct": 100.0, "coverage_path": "certification/beta/coverage.json"},
+            {"template": "alpha", "coverage_pct": 80.0, "passed": 4, "testable": 5, "coverage_path": "certification/alpha/coverage.json"},
+            {"template": "beta", "coverage_pct": 100.0, "passed": 5, "testable": 5, "coverage_path": "certification/beta/coverage.json"},
         ],
     )
 
@@ -203,6 +203,8 @@ def test_main_updates_top_level_summary_without_overwriting_demo_layer(tmp_path:
         return {
             "template": template_path.stem,
             "coverage_pct": 100.0,
+            "passed": 5,
+            "testable": 5,
             "coverage_path": f"certification/{template_path.stem}/coverage.json",
         }
 
