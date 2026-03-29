@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "d_body_text",
+    "reason": "Duplicate disclaimer layout"
+  },
+  {
+    "slug": "three_up",
+    "reason": "Agenda layout uses unsupported table structure"
+  },
+  {
+    "slug": "blankish",
+    "reason": "Intentionally blank layout"
+  }
+]
