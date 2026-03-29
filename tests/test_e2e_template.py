@@ -6,8 +6,10 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
+import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
+from pptx.util import Pt
 
 from agent_slides.cli import cli
 from agent_slides.errors import TEMPLATE_CHANGED
@@ -38,6 +40,14 @@ def collect_text_values(path: Path) -> list[str]:
             if shape.has_text_frame:
                 values.append(shape.text_frame.text)
     return values
+
+
+def layout_by_slug(manifest: dict[str, object], slug: str) -> dict[str, object]:
+    for master in manifest["slide_masters"]:
+        for layout in master["layouts"]:
+            if layout["slug"] == slug:
+                return layout
+    raise AssertionError(f"Layout {slug} not found")
 
 
 def create_test_template(path: Path, layouts: dict[int, str] | None = None) -> None:
@@ -311,7 +321,6 @@ def test_multi_layout_template(tmp_path: Path) -> None:
         "Blank",
     ]
 
-
 def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_path: Path) -> None:
     template_path = tmp_path / "quote-template.pptx"
     create_test_template(template_path)
@@ -413,3 +422,76 @@ def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_pa
     slide = presentation.slides[0]
     assert slide.placeholders[0].text_frame.text == "Stay hungry, stay foolish."
     assert slide.placeholders[1].text_frame.text == "Steve Jobs"
+
+
+def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path: Path) -> None:
+    template_path = tmp_path / "brand-template.pptx"
+    create_test_template(template_path)
+
+    learn_result = invoke(["learn", str(template_path)])
+    assert learn_result.exit_code == 0
+    manifest_path = tmp_path / "brand-template.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    title_layout = layout_by_slug(manifest, "title_slide")
+    two_content_layout = layout_by_slug(manifest, "two_content")
+
+    deck_path = tmp_path / "deck.json"
+    init_result = invoke(["init", str(deck_path), "--template", str(manifest_path)])
+    assert init_result.exit_code == 0
+
+    for layout in ["title_slide", "two_content"]:
+        slide_add_result = invoke(["slide", "add", str(deck_path), "--layout", layout])
+        assert slide_add_result.exit_code == 0
+
+    slot_updates = [
+        (
+            "0",
+            "heading",
+            "A very long template title that should shrink to stay inside the learned title placeholder bounds",
+        ),
+        (
+            "1",
+            "col1",
+            "Point A\nPoint B\nPoint C\nPoint D\nPoint E\nPoint F\nPoint G\nPoint H",
+        ),
+    ]
+    for slide_ref, slot_name, text in slot_updates:
+        slot_result = invoke(
+            [
+                "slot",
+                "set",
+                str(deck_path),
+                "--slide",
+                slide_ref,
+                "--slot",
+                slot_name,
+                "--text",
+                text,
+            ]
+        )
+        assert slot_result.exit_code == 0
+
+    output_path = tmp_path / "deck-font-sizes.pptx"
+    build_result = invoke(["build", str(deck_path), "-o", str(output_path)])
+    assert build_result.exit_code == 0
+    assert json.loads(build_result.output)["ok"] is True
+
+    deck_payload = json.loads(deck_path.read_text(encoding="utf-8"))
+    computed_payload = json.loads((tmp_path / "deck.computed.json").read_text(encoding="utf-8"))
+    title_node_id = next(
+        node["node_id"] for node in deck_payload["slides"][0]["nodes"] if node.get("slot_binding") == "heading"
+    )
+    body_node_id = next(
+        node["node_id"] for node in deck_payload["slides"][1]["nodes"] if node.get("slot_binding") == "col1"
+    )
+    title_font_size = computed_payload["slides"][0]["computed"][title_node_id]["font_size_pt"]
+    body_font_size = computed_payload["slides"][1]["computed"][body_node_id]["font_size_pt"]
+
+    presentation = Presentation(str(output_path))
+    title_run = presentation.slides[0].placeholders[title_layout["slot_mapping"]["heading"]].text_frame.paragraphs[0].runs[0]
+    body_run = presentation.slides[1].placeholders[two_content_layout["slot_mapping"]["col1"]].text_frame.paragraphs[0].runs[0]
+
+    assert title_run.font.size == Pt(title_font_size)
+    assert body_run.font.size == Pt(body_font_size)
+    assert title_run.font.size.pt == pytest.approx(title_font_size)
+    assert body_run.font.size.pt == pytest.approx(body_font_size)

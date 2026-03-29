@@ -173,15 +173,34 @@ def _set_run_strikethrough(run, enabled: bool) -> None:
         del rPr.attrib["strike"]
 
 
-def _apply_template_run_styles(run, run_spec: TextRun) -> None:
+def _apply_template_run_styles(
+    run,
+    run_spec: TextRun,
+    *,
+    computed: ComputedNode | None = None,
+    block: TextBlock | None = None,
+    default_font_size: float | None = None,
+) -> None:
+    if computed is not None:
+        if computed.font_family:
+            run.font.name = computed.font_family
+        if block is not None:
+            run.font.size = Pt(
+                _run_font_size(
+                    computed,
+                    block,
+                    run_spec,
+                    default_font_size=default_font_size,
+                )
+            )
+    elif run_spec.font_size is not None:
+        run.font.size = Pt(run_spec.font_size)
     if run_spec.bold is not None:
         run.font.bold = run_spec.bold
     if run_spec.italic is not None:
         run.font.italic = run_spec.italic
     if run_spec.color:
         run.font.color.rgb = hex_to_rgb(run_spec.color)
-    if run_spec.font_size is not None:
-        run.font.size = Pt(run_spec.font_size)
     if run_spec.underline:
         run.font.underline = True
     if run_spec.strikethrough:
@@ -352,15 +371,15 @@ def _node_paragraphs(
     node: Node,
     *,
     conditional_formatting: ConditionalFormatting | None = None,
-) -> list[tuple[TextBlock, list[TextRun]]]:
+) -> list[tuple[int, TextBlock, list[TextRun]]]:
     if isinstance(node.content, str):
         block = TextBlock(type="paragraph", text=node.content)
-        return [(block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting)]
+        return [(0, block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting)]
 
-    paragraphs: list[tuple[TextBlock, list[TextRun]]] = []
-    for block in node.content.blocks:
-        paragraphs.extend((block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting))
-    return paragraphs or [(TextBlock(type="paragraph", text=""), [TextRun(text="")])]
+    paragraphs: list[tuple[int, TextBlock, list[TextRun]]] = []
+    for block_index, block in enumerate(node.content.blocks):
+        paragraphs.extend((block_index, block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting))
+    return paragraphs or [(0, TextBlock(type="paragraph", text=""), [TextRun(text="")])]
 
 
 def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: ComputedNode | None = None) -> None:
@@ -670,6 +689,7 @@ def _fill_placeholder(
     slot_mapping: dict[str, int],
     slide,
     *,
+    computed: ComputedNode | None = None,
     conditional_formatting: ConditionalFormatting | None = None,
 ) -> None:
     if node.slot_binding is None or node.type != "text":
@@ -684,13 +704,26 @@ def _fill_placeholder(
     text_frame.clear()
 
     paragraphs = _node_paragraphs(node, conditional_formatting=conditional_formatting)
-    for paragraph_index, (block, line_runs) in enumerate(paragraphs):
+    positions_by_index = (
+        {position.block_index: position for position in computed.block_positions}
+        if computed is not None and computed.block_positions
+        else {}
+    )
+
+    for paragraph_index, (block_index, block, line_runs) in enumerate(paragraphs):
         paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
-        _configure_paragraph_bullets(paragraph, block)
+        _configure_paragraph_bullets(paragraph, block, computed=computed)
+        position = positions_by_index.get(block_index)
         for run_spec in line_runs:
             run = paragraph.add_run()
             run.text = run_spec.text
-            _apply_template_run_styles(run, run_spec)
+            _apply_template_run_styles(
+                run,
+                run_spec,
+                computed=computed,
+                block=block,
+                default_font_size=position.font_size_pt if position is not None else None,
+            )
 
 
 def _write_template_pptx(deck: Deck, output_path: str) -> None:
@@ -726,6 +759,7 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
                 node,
                 binding.slot_mapping,
                 pptx_slide,
+                computed=slide.computed.get(node.node_id),
                 conditional_formatting=conditional_formatting,
             )
 
