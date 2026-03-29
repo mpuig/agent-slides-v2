@@ -79,9 +79,9 @@ def compare_coverage_payloads(
             "before_passed": before_passed,
             "after_passed": after_passed,
         }
-        if before_passed > 0 and after_passed == 0:
+        if after_passed < before_passed:
             regressions.append(entry)
-        elif before_passed == 0 and after_passed > 0:
+        elif after_passed > before_passed:
             improvements.append(entry)
         else:
             unchanged.append(entry)

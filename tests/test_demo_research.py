@@ -718,6 +718,45 @@ def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
     ]
 
 
+def test_build_summary_rejects_when_baseline_had_review_but_current_does_not(
+    monkeypatch,
+) -> None:
+    module = _load_script_module()
+    previous = {
+        "run_id": "baseline",
+        "mean_composite": 80.0,
+        "benchmarks": [
+            {
+                "benchmark": "alpha",
+                "scores": {
+                    "composite": 80.0,
+                    "review_available": True,
+                    "review_quality": 0.85,
+                },
+            }
+        ],
+    }
+    results = [
+        {
+            "benchmark": "alpha",
+            "scores": {
+                "composite": 85.0,
+                "review_available": False,
+                "review_quality": 0.0,
+            },
+        }
+    ]
+
+    monkeypatch.setattr(
+        module, "previous_best_summary", lambda current_run_id: previous
+    )
+
+    summary = module.build_summary(run_id="candidate", results=results)
+
+    assert summary["decision"] == "reject"
+    assert any("review data lost" in r for r in summary["reject_reasons"])
+
+
 def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
     tmp_path: Path,
     monkeypatch,

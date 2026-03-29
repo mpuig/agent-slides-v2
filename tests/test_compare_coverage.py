@@ -71,14 +71,14 @@ def test_compare_coverage_detects_regressions_improvements_and_new_layouts(
         {"slug": "title_only", "before_passed": 2, "after_passed": 0}
     ]
     assert diff["improvements"] == [
-        {"slug": "image_left", "before_passed": 0, "after_passed": 1}
+        {"slug": "image_left", "before_passed": 0, "after_passed": 1},
+        {"slug": "quote", "before_passed": 1, "after_passed": 3},
     ]
     assert diff["new_layouts"] == [
         {"slug": "hero_image", "before_passed": 0, "after_passed": 1}
     ]
     assert diff["unchanged"] == [
         {"slug": "gallery", "before_passed": 0, "after_passed": 0},
-        {"slug": "quote", "before_passed": 1, "after_passed": 3},
     ]
 
 

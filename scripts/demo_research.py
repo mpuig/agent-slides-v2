@@ -325,9 +325,16 @@ def evaluate_reject_reasons(
         baseline_benchmark_scores = baseline_scores.get(benchmark_name)
         if not isinstance(baseline_benchmark_scores, dict):
             continue
-        if not current_scores.get(
-            "review_available"
-        ) or not baseline_benchmark_scores.get("review_available"):
+        baseline_had_review = baseline_benchmark_scores.get("review_available", False)
+        current_has_review = current_scores.get("review_available", False)
+
+        if baseline_had_review and not current_has_review:
+            reject_reasons.append(
+                f"{benchmark_name}: review data lost — baseline had review but current does not"
+            )
+            continue
+
+        if not baseline_had_review or not current_has_review:
             continue
 
         current_quality = float(current_scores.get("review_quality", 0.0))
@@ -638,6 +645,14 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
             compliance_cap,
             brief_compliance.get("image_layouts_filled", 0) / image_layouts_expected,
         )
+    if brief.get("narrow_layouts") and not brief_compliance.get(
+        "narrow_headings_ok", True
+    ):
+        compliance_cap = min(compliance_cap, 0.8)
+    min_source_lines = brief.get("min_source_lines", 0)
+    if min_source_lines > 0:
+        found = brief_compliance.get("source_lines_found", 0)
+        compliance_cap = min(compliance_cap, min(1.0, found / min_source_lines))
 
     scores["composite"] = round(min(composite_score, compliance_cap * 100), 1)
 
