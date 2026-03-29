@@ -33,7 +33,20 @@ You are running one experiment cycle of the autoresearch-inspired demo quality l
    - Manifest lane: `uv run pytest -q tests/test_learn.py tests/test_template_layouts.py tests/test_e2e_template.py`
    - Skill lane: no unit tests, but validate with `uv run agent-slides validate`
 
-## Phase 3: Build all benchmarks
+## Phase 3: Run certification first
+
+Run the deterministic certification layer before any demo scoring:
+
+```
+python scripts/run_cert_layer.py --run-id <run_id>
+```
+
+This writes per-template certification artifacts under `runs/<run_id>/certification/`
+and merges `layers.certification` into `runs/<run_id>/summary.json`.
+
+Certification failures do **not** block the demo layer. Record them, then continue.
+
+## Phase 4: Build all demo benchmarks
 
 For each benchmark in `benchmarks/`:
 
@@ -55,21 +68,24 @@ For each benchmark in `benchmarks/`:
 
 Use a timestamp-based run ID: YYYYMMDD-HHMMSS format.
 
-## Phase 4: Score
+## Phase 5: Score the demo layer
 
 Run the scoring pipeline:
 ```
 python scripts/demo_research.py --run-id <run_id>
 ```
 
-This scores all benchmarks and writes `runs/<run_id>/summary.json`.
+This scores only the demo benchmarks, writes `runs/<run_id>/demo-summary.json`,
+and merges `layers.demo` into `runs/<run_id>/summary.json`.
 
-## Phase 5: Record and decide
+## Phase 6: Record and decide
 
 1. Read the new `summary.json`.
 2. Compare against the previous best run (if any).
 3. Apply the accept/reject rule from `program-demo.md`:
-   - **Accept**: `summary.json` has no `reject_reasons`
+   - **Certification gate**: layout regressions only apply to `layers.certification`
+   - **Demo gate**: mean composite and `review_quality` regression only apply to `layers.demo`
+   - **Accept**: neither layer reports `reject_reasons`
    - **Reject**: mean composite regresses versus the previous best run
    - **Reject**: any benchmark `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even if composite improves
    - **Check**: if a benchmark has `review_available: false`, treat it as review-unavailable and confirm the scorer excluded `review_quality` from composite instead of scoring it as 0
@@ -88,5 +104,6 @@ This scores all benchmarks and writes `runs/<run_id>/summary.json`.
 - Do NOT edit `program-demo.md`. The human updates the policy.
 - Do NOT commit changes. Leave them as unstaged modifications.
 - Do NOT edit files outside the current lane boundaries.
+- Engine fixes must generalize across multiple templates. If a change only helps one template, move it into manifest or metadata work instead of core engine code.
 - If tests fail after your change, revert and record the failure in decision.md.
 - Maximum 3 benchmark builds per cycle (the 3 defined briefs).

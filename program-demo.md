@@ -3,6 +3,28 @@
 This file is the evolving research policy for the demo quality loop.
 It controls what the experiment cycle agent does on each run.
 
+## Two-layer architecture
+
+The benchmark system now has two independent layers:
+
+1. **Certification layer**
+   - Runs deterministic certification across every `examples/*.pptx` template.
+   - Produces per-template `coverage.json` artifacts plus `layers.certification` in `runs/<run_id>/summary.json`.
+   - Owns the per-layout regression gate.
+
+2. **Demo layer**
+   - Scores the realistic benchmark briefs (`minimal-title-body`, `bcg-update`, `bcg-strategy`).
+   - Produces `runs/<run_id>/demo-summary.json` plus `layers.demo` in `runs/<run_id>/summary.json`.
+   - Owns the mean-composite and `review_quality` gate.
+
+These layers run independently. Certification failures do not block demo execution.
+
+## Generalization rule
+
+Engine fixes must improve certification across multiple templates. If a change only improves one
+template, it belongs in template manifests, learned metadata, or benchmark setup rather than in
+shared engine code.
+
 ## Current lane
 
 **engine** — fix template placeholder text formatting in the PPTX writer.
@@ -64,10 +86,12 @@ Composite: weighted average, 0-100 scale. If LibreOffice-backed review is unavai
 
 ## Accept/reject rule
 
-- **Accept** if mean composite is at least the previous best and every benchmark's `review_quality` stays within 0.05 of the previous best benchmark.
-- **Reject** if mean composite regresses versus the previous best run.
-- **Reject** if any benchmark's `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even when composite improves.
-- **Reject** if the previous best run has `coverage.json` and any layout slug that previously had `variants_passed > 0` now has `variants_passed == 0` in the current run's `coverage.json`. Include the regressed slugs in the reject reason.
+- **Certification accept** if `layers.certification` has no reject reasons.
+- **Certification reject** if mean certification coverage regresses versus the previous best cert run.
+- **Certification reject** if any template shows a per-layout regression from previously passing to now failing.
+- **Demo accept** if mean composite is at least the previous best demo run and every benchmark's `review_quality` stays within 0.05 of the previous best benchmark.
+- **Demo reject** if mean composite regresses versus the previous best demo run.
+- **Demo reject** if any benchmark's `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even when composite improves.
 - **Flag** benchmarks with `review_available: false` as review-unavailable runs. They may stay in the run summary, but they do not contribute a 0-valued review score to the composite and should not be treated as visual-proof wins.
 
 ## Current hypothesis
