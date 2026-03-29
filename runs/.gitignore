@@ -1,0 +1,4 @@
+# Keep run artifacts out of git — they're ephemeral experiment data
+*
+!.gitkeep
+!.gitignore
