@@ -14,6 +14,7 @@ from agent_slides.errors import AgentSlidesError, INVALID_LAYOUT, SCHEMA_ERROR
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme
 from agent_slides.model.types import GridDef, LayoutDef, SlotDef, TextFitting, Theme, ThemeColors, ThemeFonts, ThemeSpacing
+from agent_slides.template_slots import infer_template_slot_role, normalize_template_slot_mapping
 
 _TEMPLATE_GRID = GridDef(
     columns=1,
@@ -106,28 +107,7 @@ def _optional_string_list(mapping: dict[str, Any], *keys: str) -> list[str] | No
 
 
 def _infer_role(slot_name: str, slot_mapping: dict[str, Any]) -> str:
-    explicit = slot_mapping.get("role")
-    if isinstance(explicit, str) and explicit:
-        return explicit.lower()
-
-    placeholder_type = slot_mapping.get("type")
-    if isinstance(placeholder_type, str):
-        normalized = placeholder_type.upper()
-        if normalized == "PICTURE":
-            return "image"
-
-    lowered = slot_name.lower()
-    if lowered in {"heading", "title", "header"}:
-        return "heading"
-    if lowered in {"subheading", "subtitle"}:
-        return "body"
-    if lowered in {"quote"}:
-        return "quote"
-    if lowered in {"attribution", "credit", "citation"}:
-        return "attribution"
-    if "image" in lowered or lowered.startswith("img"):
-        return "image"
-    return "body"
+    return infer_template_slot_role(slot_name, slot_mapping)
 
 
 def _coerce_slot_mapping(
@@ -606,6 +586,7 @@ class TemplateLayoutRegistry:
             slug = _require_string(raw_layout.get("slug"), context="layout.slug")
             slot_mapping = _as_dict(raw_layout.get("slot_mapping", {}), context=f"layout[{slug!r}].slot_mapping")
             placeholders_by_idx = _coerce_placeholder_index(raw_layout.get("placeholders"), slug=slug)
+            slot_mapping = normalize_template_slot_mapping(slot_mapping, placeholders_by_idx=placeholders_by_idx)
             master_index = raw_layout.get("master_index", 0)
             layout_index = raw_layout.get("index", 0)
             if isinstance(master_index, bool) or not isinstance(master_index, int):
