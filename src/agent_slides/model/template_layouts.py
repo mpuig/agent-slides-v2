@@ -471,6 +471,16 @@ def _copy_slot(slot: SlotDef, **updates: Any) -> SlotDef:
     return slot.model_copy(update=updates)
 
 
+_COLUMN_VARIANT_NAMES = {
+    2: "two_col",
+    3: "three_col",
+    4: "four_col",
+    5: "five_col",
+    6: "six_col",
+}
+_MAX_COLUMN_VARIANTS = max(_COLUMN_VARIANT_NAMES)
+
+
 def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) -> bool:
     from agent_slides.engine.constraints import constraints_from_layout, solve
     from agent_slides.engine.layout_validator import validate_layout
@@ -531,64 +541,30 @@ def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
             )
         )
 
-    if len(body_slots) >= 2 and _is_valid_variant(heading=heading, bodies=body_slots[:2], theme=theme):
-        two_col_slots = {
-            "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
-            "col1": _copy_slot(
-                body_slots[0],
-                peer_group="columns",
-                alignment_group="content",
-                reading_order=1,
-                size_policy="fill_remaining",
-            ),
-            "col2": _copy_slot(
-                body_slots[1],
-                peer_group="columns",
-                alignment_group="content",
-                reading_order=2,
-                size_policy="fill_remaining",
-            ),
-        }
-        variants.append(
-            LayoutDef(
-                name="two_col",
-                slots=two_col_slots,
-                grid=_TEMPLATE_GRID,
-                text_fitting=_variant_text_fitting(two_col_slots),
-            )
-        )
+    for count in range(2, min(len(body_slots), _MAX_COLUMN_VARIANTS) + 1):
+        column_bodies = body_slots[:count]
+        if not _is_valid_variant(heading=heading, bodies=column_bodies, theme=theme):
+            continue
 
-    if len(body_slots) >= 3 and _is_valid_variant(heading=heading, bodies=body_slots[:3], theme=theme):
-        three_col_slots = {
+        column_slots = {
             "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
-            "col1": _copy_slot(
-                body_slots[0],
-                peer_group="columns",
-                alignment_group="content",
-                reading_order=1,
-                size_policy="fill_remaining",
-            ),
-            "col2": _copy_slot(
-                body_slots[1],
-                peer_group="columns",
-                alignment_group="content",
-                reading_order=2,
-                size_policy="fill_remaining",
-            ),
-            "col3": _copy_slot(
-                body_slots[2],
-                peer_group="columns",
-                alignment_group="content",
-                reading_order=3,
-                size_policy="fill_remaining",
-            ),
+            **{
+                f"col{index}": _copy_slot(
+                    body_slot,
+                    peer_group="columns",
+                    alignment_group="content",
+                    reading_order=index,
+                    size_policy="fill_remaining",
+                )
+                for index, body_slot in enumerate(column_bodies, start=1)
+            },
         }
         variants.append(
             LayoutDef(
-                name="three_col",
-                slots=three_col_slots,
+                name=_COLUMN_VARIANT_NAMES[count],
+                slots=column_slots,
                 grid=_TEMPLATE_GRID,
-                text_fitting=_variant_text_fitting(three_col_slots),
+                text_fitting=_variant_text_fitting(column_slots),
             )
         )
 
