@@ -22,7 +22,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/img_corporate_glass_facade_sun.jpg"
+      "image_path": "fixtures/layout_cases/test_image.png"
     }
   },
   "long_heading": {
@@ -37,7 +37,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
+      "image_path": "fixtures/layout_cases/test_image.png"
     }
   },
   "narrow_safe": {
@@ -52,7 +52,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
+      "image_path": "fixtures/layout_cases/test_image.png"
     }
   },
   "nominal": {
@@ -67,7 +67,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
+      "image_path": "fixtures/layout_cases/test_image.png"
     }
   }
 }
