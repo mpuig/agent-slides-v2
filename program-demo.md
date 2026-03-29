@@ -67,6 +67,7 @@ Composite: weighted average, 0-100 scale. If LibreOffice-backed review is unavai
 - **Accept** if mean composite is at least the previous best and every benchmark's `review_quality` stays within 0.05 of the previous best benchmark.
 - **Reject** if mean composite regresses versus the previous best run.
 - **Reject** if any benchmark's `review_quality` regresses by more than 0.05 versus the same benchmark in the previous best run, even when composite improves.
+- **Reject** if the previous best run has `coverage.json` and any layout slug that previously had `variants_passed > 0` now has `variants_passed == 0` in the current run's `coverage.json`. Include the regressed slugs in the reject reason.
 - **Flag** benchmarks with `review_available: false` as review-unavailable runs. They may stay in the run summary, but they do not contribute a 0-valued review score to the composite and should not be treated as visual-proof wins.
 
 ## Current hypothesis

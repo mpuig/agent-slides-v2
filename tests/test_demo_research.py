@@ -577,3 +577,98 @@ def test_build_summary_rejects_composite_regression_even_when_review_improves(mo
 
     assert summary["decision"] == "reject"
     assert summary["reject_reasons"] == ["composite regressed from 81.0 to 79.0"]
+
+
+def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_script_module()
+    runs_dir = tmp_path / "runs"
+    previous = {
+        "run_id": "baseline",
+        "mean_composite": 75.0,
+        "benchmarks": [
+            {"benchmark": "alpha", "scores": {"composite": 75.0, "review_available": True, "review_quality": 0.9}}
+        ],
+    }
+    results = [
+        {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}}
+    ]
+    (runs_dir / "baseline").mkdir(parents=True)
+    (runs_dir / "candidate").mkdir(parents=True)
+    (runs_dir / "baseline" / "coverage.json").write_text(
+        json.dumps(
+            {
+                "template": "bcg",
+                "layouts": [
+                    {"slug": "hero_image", "variants_passed": 1},
+                    {"slug": "title_only", "variants_passed": 0},
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (runs_dir / "candidate" / "coverage.json").write_text(
+        json.dumps(
+            {
+                "template": "bcg",
+                "layouts": [
+                    {"slug": "hero_image", "variants_passed": 0},
+                    {"slug": "title_only", "variants_passed": 1},
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+
+    summary = module.build_summary(run_id="candidate", results=results)
+
+    assert summary["decision"] == "reject"
+    assert "layout regressions: hero_image" in summary["reject_reasons"]
+    assert summary["coverage_diff"]["regressions"] == [
+        {"slug": "hero_image", "before_passed": 1, "after_passed": 0}
+    ]
+
+
+def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_script_module()
+    runs_dir = tmp_path / "runs"
+    previous = {
+        "run_id": "baseline",
+        "mean_composite": 75.0,
+        "benchmarks": [
+            {"benchmark": "alpha", "scores": {"composite": 75.0, "review_available": True, "review_quality": 0.9}}
+        ],
+    }
+    results = [
+        {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}}
+    ]
+    (runs_dir / "candidate").mkdir(parents=True)
+    (runs_dir / "candidate" / "coverage.json").write_text(
+        json.dumps(
+            {"template": "bcg", "layouts": [{"slug": "hero_image", "variants_passed": 0}]},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+
+    summary = module.build_summary(run_id="candidate", results=results)
+
+    assert summary["decision"] == "accept"
+    assert summary["reject_reasons"] == []
+    assert "coverage_diff" not in summary
