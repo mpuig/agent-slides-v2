@@ -12,9 +12,10 @@ import pytest
 from click.testing import CliRunner
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
+from watchdog.events import FileModifiedEvent
 
 from agent_slides.cli import cli
-from agent_slides.io import read_deck
+from agent_slides.io import computed_sidecar_path, read_deck, write_computed_deck
 from agent_slides.model import (
     ChartSpec,
     ComputedNode,
@@ -490,6 +491,61 @@ def test_sidecar_watcher_detects_revision_change_and_debounces(tmp_path: Path) -
     asyncio.run(scenario())
 
 
+def test_sidecar_watcher_supports_watching_computed_sidecar(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    computed_path = computed_sidecar_path(deck_path)
+    write_deck(deck_path, make_deck(revision=1, content="First"))
+    write_computed_deck(str(deck_path), make_deck(revision=1, content="First"))
+
+    watcher = SidecarWatcher(
+        deck_path,
+        lambda payload: asyncio.sleep(0),
+        watched_path=computed_path,
+    )
+
+    assert watcher.matches_event(FileModifiedEvent(str(computed_path)))
+    assert not watcher.matches_event(FileModifiedEvent(str(deck_path)))
+
+
+def test_sidecar_watcher_detects_computed_only_changes_without_revision_bump(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        deck_path = tmp_path / "deck.json"
+        deck = make_deck(revision=1, content="First")
+        write_deck(deck_path, deck)
+        write_computed_deck(str(deck_path), deck)
+        seen_x: list[float] = []
+
+        async def on_revision_change(payload: dict[str, object]) -> None:
+            slide = payload["slides"][0]
+            computed = slide["computed"]["n-1"]
+            seen_x.append(float(computed["x"]))
+
+        watcher = SidecarWatcher(
+            deck_path,
+            on_revision_change,
+            watched_path=computed_sidecar_path(deck_path),
+            debounce_ms=50,
+        )
+        await watcher.start()
+        try:
+            deck.slides[0].computed["n-1"].x = 144.0
+            write_computed_deck(str(deck_path), deck)
+
+            await asyncio.wait_for(_wait_for(lambda: seen_x == [144.0]), timeout=1.0)
+        finally:
+            await watcher.stop()
+
+    asyncio.run(scenario())
+
+
+def test_preview_server_watches_computed_sidecar(tmp_path: Path) -> None:
+    deck_path = tmp_path / "deck.json"
+    server = PreviewServer(deck_path, port=0)
+
+    assert server._watcher.sidecar_path == deck_path.resolve()
+    assert server._watcher.watched_path == computed_sidecar_path(deck_path).resolve()
+
+
 def test_load_deck_payload_hydrates_icon_paths_for_preview(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(deck_path, make_icon_preview_deck(revision=1))
@@ -562,7 +618,9 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                     {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
                 ]
 
-                write_deck(deck_path, make_deck(revision=2, content="Updated"))
+                updated_deck = make_deck(revision=2, content="Updated")
+                write_deck(deck_path, updated_deck)
+                write_computed_deck(str(deck_path), updated_deck)
 
                 rendering_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
                 rendering_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
@@ -682,7 +740,9 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
                 assert initial["deck"]["status"] == "waiting"
                 assert initial["deck"]["message"] == "Waiting for deck..."
 
-                write_deck(deck_path, make_deck(revision=1, content="Deck arrived"))
+                arrived_deck = make_deck(revision=1, content="Deck arrived")
+                write_deck(deck_path, arrived_deck)
+                write_computed_deck(str(deck_path), arrived_deck)
 
                 rendering = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
                 updated = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
