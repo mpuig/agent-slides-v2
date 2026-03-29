@@ -9,6 +9,7 @@ from zipfile import ZipFile
 import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from agent_slides.cli import cli
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
@@ -205,21 +206,21 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(tmp_path:
     assert layouts["photo_story"]["slot_mapping"] == {"heading": 0, "body": 2, "image": 1}
     assert layouts["blank"]["usable"] is True
     assert layouts["blank"]["placeholders"] == []
-    assert layouts["agenda"]["placeholders"][1] == {
-        "idx": 1,
-        "type": "BODY",
-        "name": "Content Placeholder 2",
-        "bounds": {
-            "x": 36.0,
-            "y": 126.0,
-            "w": 648.0,
-            "h": 356.375,
-        },
+    assert layouts["agenda"]["placeholders"][1]["idx"] == 1
+    assert layouts["agenda"]["placeholders"][1]["type"] == "BODY"
+    assert layouts["agenda"]["placeholders"][1]["name"] == "Content Placeholder 2"
+    assert layouts["agenda"]["placeholders"][1]["bounds"] == {
+        "x": 36.0,
+        "y": 126.0,
+        "w": 648.0,
+        "h": 356.375,
     }
+    assert layouts["agenda"]["placeholders"][1]["shape_kind"] == "placeholder"
+    assert layouts["agenda"]["placeholders"][1]["suggested_slot"] == "body"
 
-    assert "Warning: layout 'Comparison Lab': skipped unsupported chart placeholder 'Content Placeholder 3'" in result.output
     assert "Warning: layout 'Comparison Lab': skipped unsupported media_clip placeholder 'Content Placeholder 5'" in result.output
-    assert "Warning: layout 'Captioned Content': skipped unsupported table placeholder 'Content Placeholder 2'" in result.output
+    assert "Warning: layout 'Comparison Lab': skipped unsupported chart placeholder 'Content Placeholder 3'" not in result.output
+    assert "Warning: layout 'Captioned Content': skipped unsupported table placeholder 'Content Placeholder 2'" not in result.output
 
 
 def test_learn_uses_relative_source_when_output_path_changes(tmp_path: Path) -> None:
@@ -333,3 +334,148 @@ def test_read_template_manifest_warns_when_no_layouts_are_usable(tmp_path: Path,
     assert result.usable_layouts == 0
     assert result.warnings == ["template has 0 usable layouts"]
     assert manifest["slide_masters"][0]["layouts"][0]["slot_mapping"] == {}
+
+
+def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    template_path = tmp_path / "template.pptx"
+    template_path.write_bytes(b"placeholder")
+
+    class FakeTextFrame:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class FakeTextShape:
+        def __init__(self, *, shape_id: int, name: str, text: str, top: int) -> None:
+            self.shape_id = shape_id
+            self.name = name
+            self.left = 0
+            self.top = top
+            self.width = 100
+            self.height = 40
+            self.is_placeholder = False
+            self.has_text_frame = True
+            self.has_table = False
+            self.has_chart = False
+            self.shape_type = MSO_SHAPE_TYPE.TEXT_BOX
+            self.text_frame = FakeTextFrame(text)
+
+    class FakeTable:
+        rows = [object(), object(), object()]
+        columns = [object(), object()]
+
+    class FakeTableShape:
+        def __init__(self) -> None:
+            self.shape_id = 3
+            self.name = "Agenda Table"
+            self.left = 0
+            self.top = 120
+            self.width = 200
+            self.height = 100
+            self.is_placeholder = False
+            self.has_text_frame = False
+            self.has_table = True
+            self.has_chart = False
+            self.shape_type = MSO_SHAPE_TYPE.TABLE
+            self.table = FakeTable()
+
+    class FakeChart:
+        chart_type = 7
+
+    class FakeChartShape:
+        def __init__(self) -> None:
+            self.shape_id = 4
+            self.name = "Score Chart"
+            self.left = 0
+            self.top = 240
+            self.width = 200
+            self.height = 100
+            self.is_placeholder = False
+            self.has_text_frame = False
+            self.has_table = False
+            self.has_chart = True
+            self.shape_type = MSO_SHAPE_TYPE.CHART
+            self.chart = FakeChart()
+
+    class FakeGroupShape:
+        def __init__(self) -> None:
+            self.shape_id = 5
+            self.name = "Agenda Group"
+            self.left = 0
+            self.top = 360
+            self.width = 200
+            self.height = 100
+            self.is_placeholder = False
+            self.has_text_frame = False
+            self.has_table = False
+            self.has_chart = False
+            self.shape_type = MSO_SHAPE_TYPE.GROUP
+            self.shapes = [object(), object()]
+
+    class FakeLayout:
+        name = "Quote Agenda"
+        placeholders: list[object] = []
+        shapes = [
+            FakeTextShape(shape_id=1, name="Quote", text="Stay hungry", top=0),
+            FakeTextShape(shape_id=2, name="Attribution", text="Steve Jobs", top=60),
+            FakeTableShape(),
+            FakeChartShape(),
+            FakeGroupShape(),
+        ]
+
+    class FakeSlideMaster:
+        slide_layouts = [FakeLayout()]
+
+    class FakePresentation:
+        slide_masters = [FakeSlideMaster()]
+
+    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
+    monkeypatch.setattr(template_reader, "_extract_theme", lambda _: {"colors": {}, "fonts": {}, "spacing": {}})
+
+    result = read_template_manifest(template_path)
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))["slide_masters"][0]["layouts"][0]
+
+    assert result.usable_layouts == 1
+    assert layout["usable"] is True
+    assert [placeholder["type"] for placeholder in layout["placeholders"]] == [
+        "TEXT_BOX",
+        "TEXT_BOX",
+        "TABLE",
+        "CHART",
+        "GROUP",
+    ]
+    assert layout["placeholders"][0]["suggested_slot"] == "quote"
+    assert layout["placeholders"][1]["suggested_slot"] == "attribution"
+    assert layout["placeholders"][2]["table"] == {"rows": 3, "cols": 2}
+    assert layout["placeholders"][3]["chart"] == {"chart_type": 7}
+    assert layout["placeholders"][4]["group"] == {"children": 2}
+    assert layout["slot_mapping"]["quote"] == 1_000_001
+    assert layout["slot_mapping"]["attribution"] == 1_000_002
+    assert layout["slot_mapping"]["col1"] == 1_000_003
+    assert layout["slot_mapping"]["col2"] == 1_000_004
+    assert layout["slot_mapping"]["col3"] == 1_000_005
+
+
+def test_read_template_manifest_marks_blank_variants_usable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    template_path = tmp_path / "template.pptx"
+    template_path.write_bytes(b"placeholder")
+
+    class FakeLayout:
+        name = "d_blank"
+        placeholders: list[object] = []
+        shapes: list[object] = []
+
+    class FakeSlideMaster:
+        slide_layouts = [FakeLayout()]
+
+    class FakePresentation:
+        slide_masters = [FakeSlideMaster()]
+
+    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
+    monkeypatch.setattr(template_reader, "_extract_theme", lambda _: {"colors": {}, "fonts": {}, "spacing": {}})
+
+    result = read_template_manifest(template_path)
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))["slide_masters"][0]["layouts"][0]
+
+    assert result.usable_layouts == 1
+    assert layout["usable"] is True
+    assert layout["placeholders"] == []

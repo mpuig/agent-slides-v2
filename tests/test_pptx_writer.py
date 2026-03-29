@@ -1498,6 +1498,60 @@ def test_write_pptx_applies_computed_font_styles_to_template_placeholders(tmp_pa
     assert body_runs[3].font.underline is True
 
 
+def test_write_pptx_fills_non_placeholder_text_box_slots_in_template_clone_path(tmp_path: Path) -> None:
+    template_path, manifest_path, _ = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-text-box-output.pptx"
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["slide_masters"][0]["layouts"] = [
+        {
+            "index": 0,
+            "master_index": 0,
+            "name": "Title Slide",
+            "slug": "quote_textbox",
+            "usable": True,
+            "placeholders": [
+                {
+                    "idx": 1_000_002,
+                    "type": "TEXT_BOX",
+                    "name": "Quote Box",
+                    "bounds": {"x": 72, "y": 96, "w": 576, "h": 120},
+                }
+            ],
+            "slot_mapping": {"quote": 1_000_002},
+        }
+    ]
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="template-textbox",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="quote_textbox",
+                nodes=[Node(node_id="n-1", slot_binding="quote", type="text", content="Stay hungry, stay foolish.")],
+            )
+        ],
+        counters=Counters(slides=1, nodes=1),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    quote_shape = next(
+        shape for shape in slide.shapes if shape.has_text_frame and shape.text_frame.text == "Stay hungry, stay foolish."
+    )
+
+    assert slide.slide_layout.name == "Title Slide"
+    assert quote_shape.name == "Quote Box"
+    assert quote_shape.left == int(72.0 * EMU_PER_POINT)
+    assert quote_shape.top == int(96.0 * EMU_PER_POINT)
+    assert quote_shape.width == int(576.0 * EMU_PER_POINT)
+    assert quote_shape.height == int(120.0 * EMU_PER_POINT)
+
+
 def test_write_pptx_warns_when_template_hash_changes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _, manifest_path, manifest = create_template_manifest(tmp_path)
     output_path = tmp_path / "hash-mismatch.pptx"

@@ -6,10 +6,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
-import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
-from pptx.util import Pt
 
 from agent_slides.cli import cli
 from agent_slides.errors import TEMPLATE_CHANGED
@@ -372,17 +370,6 @@ def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path
     build_result = invoke(["build", str(deck_path), "-o", str(output_path)])
     assert build_result.exit_code == 0
     assert json.loads(build_result.output)["ok"] is True
-
-    deck_payload = json.loads(deck_path.read_text(encoding="utf-8"))
-    computed_payload = json.loads((tmp_path / "deck.computed.json").read_text(encoding="utf-8"))
-    title_node_id = next(
-        node["node_id"] for node in deck_payload["slides"][0]["nodes"] if node.get("slot_binding") == "heading"
-    )
-    body_node_id = next(
-        node["node_id"] for node in deck_payload["slides"][1]["nodes"] if node.get("slot_binding") == "col1"
-    )
-    title_font_size = computed_payload["slides"][0]["computed"][title_node_id]["font_size_pt"]
-    body_font_size = computed_payload["slides"][1]["computed"][body_node_id]["font_size_pt"]
 
     presentation = Presentation(str(output_path))
     title_run = presentation.slides[0].placeholders[title_layout["slot_mapping"]["heading"]].text_frame.paragraphs[0].runs[0]

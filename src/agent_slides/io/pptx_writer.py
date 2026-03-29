@@ -77,6 +77,7 @@ class TemplateLayoutBinding:
     master_index: int
     layout_index: int
     slot_mapping: dict[str, int]
+    placeholders_by_idx: dict[int, dict[str, Any]]
 
 
 class TemplateLayoutRegistry:
@@ -335,6 +336,7 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
                 master_index=layout.get("master_index", master_position),
                 layout_index=layout.get("index", layout_position),
                 slot_mapping={slot: _require_int(slot_mapping, slot) for slot in slot_mapping},
+                placeholders_by_idx=_index_layout_placeholders(layout.get("placeholders")),
             )
             if slug in bindings:
                 raise AgentSlidesError(SCHEMA_ERROR, f"Manifest layout slug '{slug}' must be unique.")
@@ -676,7 +678,7 @@ def _resolve_layout(prs: Presentation, slide_layout: str, binding: TemplateLayou
 
 def _fill_placeholder(
     node: Node,
-    slot_mapping: dict[str, int],
+    binding: TemplateLayoutBinding,
     slide,
     *,
     computed: ComputedNode | None = None,
@@ -685,27 +687,34 @@ def _fill_placeholder(
     if node.slot_binding is None or node.type != "text":
         return
 
-    placeholder_idx = slot_mapping.get(node.slot_binding)
+    placeholder_idx = binding.slot_mapping.get(node.slot_binding)
     if placeholder_idx is None:
         return
 
-    placeholder = slide.placeholders[placeholder_idx]
-    text_frame = placeholder.text_frame
+    target = binding.placeholders_by_idx.get(placeholder_idx, {"idx": placeholder_idx, "type": "BODY"})
+    target_type = str(target.get("type", "BODY")).upper()
+    if target_type == "TEXT_BOX":
+        text_frame = _text_box_frame_for_slot(slide, target)
+        _saved_pPr = None
+    else:
+        placeholder = slide.placeholders[placeholder_idx]
+        text_frame = placeholder.text_frame
 
-    # Capture paragraph-level formatting from the template before clearing.
-    # text_frame.clear() removes all paragraphs and their native formatting
-    # (alignment, spacing, margins, indent) which degrades visual quality.
-    _saved_pPr = None
-    if text_frame.paragraphs:
-        first_p = text_frame.paragraphs[0]._p
-        existing_pPr = first_p.find(
-            "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr"
-        )
-        if existing_pPr is not None:
-            from copy import deepcopy
-            _saved_pPr = deepcopy(existing_pPr)
+        # Capture paragraph-level formatting from the template before clearing.
+        # text_frame.clear() removes all paragraphs and their native formatting
+        # (alignment, spacing, margins, indent) which degrades visual quality.
+        _saved_pPr = None
+        if text_frame.paragraphs:
+            first_p = text_frame.paragraphs[0]._p
+            existing_pPr = first_p.find(
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr"
+            )
+            if existing_pPr is not None:
+                from copy import deepcopy
 
-    text_frame.clear()
+                _saved_pPr = deepcopy(existing_pPr)
+
+        text_frame.clear()
 
     paragraphs = _node_paragraphs(node, conditional_formatting=conditional_formatting)
     positions_by_index = (
@@ -744,6 +753,33 @@ def _fill_placeholder(
             )
 
 
+def _text_box_frame_for_slot(slide, target: dict[str, Any]):
+    shape_name = target.get("name")
+    if isinstance(shape_name, str):
+        for shape in slide.shapes:
+            if shape.name == shape_name and shape.has_text_frame:
+                shape.text_frame.clear()
+                return shape.text_frame
+
+    bounds = target.get("bounds", {})
+    if not isinstance(bounds, dict):
+        raise AgentSlidesError(SCHEMA_ERROR, "Template text-box slot is missing bounds metadata")
+
+    text_box = slide.shapes.add_textbox(
+        points_to_emu(float(bounds.get("x", 0.0))),
+        points_to_emu(float(bounds.get("y", 0.0))),
+        points_to_emu(float(bounds.get("w", bounds.get("width", 0.0)))),
+        points_to_emu(float(bounds.get("h", bounds.get("height", 0.0)))),
+    )
+    if isinstance(shape_name, str) and shape_name:
+        text_box.name = shape_name
+    text_box.line.fill.background()
+    text_box.fill.background()
+    text_frame = text_box.text_frame
+    _configure_text_frame(text_frame)
+    return text_frame
+
+
 def _write_template_pptx(deck: Deck, output_path: str) -> None:
     registry = TemplateLayoutRegistry(deck.template_manifest)
     template_path = registry.source_path
@@ -775,7 +811,7 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
                 continue
             _fill_placeholder(
                 node,
-                binding.slot_mapping,
+                binding,
                 pptx_slide,
                 computed=slide.computed.get(node.node_id),
                 conditional_formatting=conditional_formatting,
