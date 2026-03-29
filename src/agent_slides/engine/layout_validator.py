@@ -63,7 +63,10 @@ def _validate_peer_tops(
     for group_name, slot_names in _slot_groups(layout, "alignment_group").items():
         if len(slot_names) < 2:
             continue
-        ordered = sorted(slot_names, key=lambda slot_name: (rects[slot_name].y, rects[slot_name].x, slot_name))
+        ordered = sorted(
+            slot_names,
+            key=lambda slot_name: (rects[slot_name].y, rects[slot_name].x, slot_name),
+        )
         anchor_slot = ordered[0]
         anchor_top = rects[anchor_slot].y
         for slot_name in ordered[1:]:
@@ -90,7 +93,14 @@ def _validate_peer_widths(
     for group_name, slot_names in _slot_groups(layout, "peer_group").items():
         if len(slot_names) < 2:
             continue
-        ordered = sorted(slot_names, key=lambda slot_name: (rects[slot_name].width, rects[slot_name].x, slot_name))
+        ordered = sorted(
+            slot_names,
+            key=lambda slot_name: (
+                rects[slot_name].width,
+                rects[slot_name].x,
+                slot_name,
+            ),
+        )
         anchor_slot = ordered[0]
         anchor_width = rects[anchor_slot].width
         for slot_name in ordered[1:]:
@@ -117,12 +127,17 @@ def _validate_gutters(
     for group_name, slot_names in _slot_groups(layout, "peer_group").items():
         if len(slot_names) < 3:
             continue
-        ordered = sorted(slot_names, key=lambda slot_name: (rects[slot_name].x, rects[slot_name].y, slot_name))
+        ordered = sorted(
+            slot_names,
+            key=lambda slot_name: (rects[slot_name].x, rects[slot_name].y, slot_name),
+        )
         gutters: list[tuple[str, str, float]] = []
         for left_slot, right_slot in zip(ordered, ordered[1:], strict=False):
             left_rect = rects[left_slot]
             right_rect = rects[right_slot]
-            gutters.append((left_slot, right_slot, right_rect.x - (left_rect.x + left_rect.width)))
+            gutters.append(
+                (left_slot, right_slot, right_rect.x - (left_rect.x + left_rect.width))
+            )
         anchor_left, anchor_right, anchor_gutter = gutters[0]
         for left_slot, right_slot, gutter in gutters[1:]:
             if abs(gutter - anchor_gutter) <= epsilon:
@@ -150,7 +165,12 @@ def _validate_bounds(
     for slot_name, rect in rects.items():
         right = rect.x + rect.width
         bottom = rect.y + rect.height
-        if rect.x >= -epsilon and rect.y >= -epsilon and right <= slide_width + epsilon and bottom <= slide_height + epsilon:
+        if (
+            rect.x >= -epsilon
+            and rect.y >= -epsilon
+            and right <= slide_width + epsilon
+            and bottom <= slide_height + epsilon
+        ):
             continue
         _add_violation(
             violations,
@@ -172,8 +192,12 @@ def _validate_overlap(
     for left_slot, right_slot in combinations(sorted(rects), 2):
         left_rect = rects[left_slot]
         right_rect = rects[right_slot]
-        overlap_width = min(left_rect.x + left_rect.width, right_rect.x + right_rect.width) - max(left_rect.x, right_rect.x)
-        overlap_height = min(left_rect.y + left_rect.height, right_rect.y + right_rect.height) - max(left_rect.y, right_rect.y)
+        overlap_width = min(
+            left_rect.x + left_rect.width, right_rect.x + right_rect.width
+        ) - max(left_rect.x, right_rect.x)
+        overlap_height = min(
+            left_rect.y + left_rect.height, right_rect.y + right_rect.height
+        ) - max(left_rect.y, right_rect.y)
         if overlap_width <= epsilon or overlap_height <= epsilon:
             continue
         _add_violation(
@@ -217,7 +241,13 @@ def validate_layout(
     _validate_peer_tops(layout, rects, epsilon, violations)
     _validate_peer_widths(layout, rects, epsilon, violations)
     _validate_gutters(layout, rects, epsilon, violations)
-    _validate_bounds(rects, slide_width=slide_width, slide_height=slide_height, epsilon=epsilon, violations=violations)
+    _validate_bounds(
+        rects,
+        slide_width=slide_width,
+        slide_height=slide_height,
+        epsilon=epsilon,
+        violations=violations,
+    )
     _validate_overlap(rects, epsilon, violations)
     if computed_by_slot is not None:
         _validate_overflow(computed_by_slot, violations)

@@ -31,7 +31,9 @@ def _resolve_cli_image_path(deck_path: Path, image_path: str | None) -> str | No
 
     normalized = image_path.strip()
     if not normalized:
-        raise AgentSlidesError(SCHEMA_ERROR, "Option '--image' must be a non-empty path")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Option '--image' must be a non-empty path"
+        )
 
     deck_dir = deck_path.parent.resolve()
     candidate = Path(normalized).expanduser()
@@ -57,7 +59,9 @@ def _parse_content_json(raw: str) -> dict[str, object]:
     try:
         return NodeContent.model_validate(payload).model_dump(mode="json")
     except Exception as exc:
-        raise AgentSlidesError(SCHEMA_ERROR, "Argument '--content' must be valid structured text") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Argument '--content' must be valid structured text"
+        ) from exc
 
 
 @slot.command("set")

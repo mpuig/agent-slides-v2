@@ -126,21 +126,24 @@ def _suggestion_rules() -> tuple[_SuggestionRule, ...]:
             layout="gallery",
             score=0.95,
             reason="Multiple images plus supporting text fit a gallery slide.",
-            matches=lambda profile, image_count, design_rules: image_count >= 2 and profile.has_text,
+            matches=lambda profile, image_count, design_rules: image_count >= 2
+            and profile.has_text,
         ),
         _SuggestionRule(
             index=2,
             layout="image_left",
             score=0.9,
             reason="A single image with text fits a split image-and-text slide.",
-            matches=lambda profile, image_count, design_rules: image_count == 1 and profile.has_text,
+            matches=lambda profile, image_count, design_rules: image_count == 1
+            and profile.has_text,
         ),
         _SuggestionRule(
             index=3,
             layout="hero_image",
             score=0.9,
             reason="A single image without text fits a full-bleed hero slide.",
-            matches=lambda profile, image_count, design_rules: image_count == 1 and not profile.has_text,
+            matches=lambda profile, image_count, design_rules: image_count == 1
+            and not profile.has_text,
         ),
         _SuggestionRule(
             index=4,
@@ -154,49 +157,63 @@ def _suggestion_rules() -> tuple[_SuggestionRule, ...]:
             layout="title",
             score=0.9,
             reason="A heading with a short subtitle fits the title layout.",
-            matches=lambda profile, image_count, design_rules: _matches_title(profile, design_rules),
+            matches=lambda profile, image_count, design_rules: _matches_title(
+                profile, design_rules
+            ),
         ),
         _SuggestionRule(
             index=6,
             layout="title_content",
             score=0.85,
             reason="A heading with one paragraph fits a title-and-content slide.",
-            matches=lambda profile, image_count, design_rules: _matches_single_paragraph(profile, design_rules),
+            matches=lambda profile,
+            image_count,
+            design_rules: _matches_single_paragraph(profile, design_rules),
         ),
         _SuggestionRule(
             index=7,
             layout="two_col",
             score=0.9,
             reason="Two balanced content blocks fit a two-column layout.",
-            matches=lambda profile, image_count, design_rules: _matches_equal_columns(profile, 2, design_rules),
+            matches=lambda profile, image_count, design_rules: _matches_equal_columns(
+                profile, 2, design_rules
+            ),
         ),
         _SuggestionRule(
             index=8,
             layout="three_col",
             score=0.9,
             reason="Three balanced content blocks fit a three-column layout.",
-            matches=lambda profile, image_count, design_rules: _matches_equal_columns(profile, 3, design_rules),
+            matches=lambda profile, image_count, design_rules: _matches_equal_columns(
+                profile, 3, design_rules
+            ),
         ),
         _SuggestionRule(
             index=9,
             layout="comparison",
             score=0.9,
             reason="Two headed groups suggest a comparison slide.",
-            matches=lambda profile, image_count, design_rules: _matches_comparison(profile),
+            matches=lambda profile, image_count, design_rules: _matches_comparison(
+                profile
+            ),
         ),
         _SuggestionRule(
             index=10,
             layout="title_content",
             score=0.8,
             reason="A short bullet list still fits a single-column content slide.",
-            matches=lambda profile, image_count, design_rules: _matches_bullets_single_column(profile, design_rules),
+            matches=lambda profile,
+            image_count,
+            design_rules: _matches_bullets_single_column(profile, design_rules),
         ),
         _SuggestionRule(
             index=11,
             layout="two_col",
             score=0.7,
             reason="A long bullet list is easier to scan in two columns.",
-            matches=lambda profile, image_count, design_rules: _matches_bullets_two_column(profile, design_rules),
+            matches=lambda profile,
+            image_count,
+            design_rules: _matches_bullets_two_column(profile, design_rules),
         ),
         _SuggestionRule(
             index=12,
@@ -217,7 +234,9 @@ def _matches_title(profile: ContentProfile, design_rules: DesignRules) -> bool:
     return _block_word_count(block) < design_rules.layout_hints.short_text_threshold
 
 
-def _matches_single_paragraph(profile: ContentProfile, design_rules: DesignRules) -> bool:
+def _matches_single_paragraph(
+    profile: ContentProfile, design_rules: DesignRules
+) -> bool:
     if profile.heading_count != 1 or len(profile.remaining_blocks) != 1:
         return False
     block = profile.remaining_blocks[0]
@@ -226,7 +245,9 @@ def _matches_single_paragraph(profile: ContentProfile, design_rules: DesignRules
     return _block_word_count(block) >= design_rules.layout_hints.short_text_threshold
 
 
-def _matches_equal_columns(profile: ContentProfile, column_count: int, design_rules: DesignRules) -> bool:
+def _matches_equal_columns(
+    profile: ContentProfile, column_count: int, design_rules: DesignRules
+) -> bool:
     if profile.heading_count != 1 or len(profile.remaining_blocks) != column_count:
         return False
     if any(block.type != "paragraph" for block in profile.remaining_blocks):
@@ -245,17 +266,23 @@ def _matches_comparison(profile: ContentProfile) -> bool:
     return all(group[0].type == "heading" for group in profile.remaining_groups)
 
 
-def _matches_bullets_single_column(profile: ContentProfile, design_rules: DesignRules) -> bool:
+def _matches_bullets_single_column(
+    profile: ContentProfile, design_rules: DesignRules
+) -> bool:
     if not _has_heading_and_only_bullets(profile):
         return False
     bullet_count = profile.bullet_count
     return 4 <= bullet_count <= design_rules.layout_hints.max_bullets_for_single_column
 
 
-def _matches_bullets_two_column(profile: ContentProfile, design_rules: DesignRules) -> bool:
+def _matches_bullets_two_column(
+    profile: ContentProfile, design_rules: DesignRules
+) -> bool:
     if not _has_heading_and_only_bullets(profile):
         return False
-    return profile.bullet_count > design_rules.layout_hints.max_bullets_for_single_column
+    return (
+        profile.bullet_count > design_rules.layout_hints.max_bullets_for_single_column
+    )
 
 
 def _has_heading_and_only_bullets(profile: ContentProfile) -> bool:
@@ -274,13 +301,19 @@ def _block_word_count(block: TextBlock) -> int:
     return len(block.text.split())
 
 
-def _layout_requires_image(layout_name: str, layout_getter: Callable[[str], LayoutDef] | None) -> bool:
+def _layout_requires_image(
+    layout_name: str, layout_getter: Callable[[str], LayoutDef] | None
+) -> bool:
     getter = layout_getter or get_layout
     try:
         layout = getter(layout_name)
     except Exception:
         return False
     return any(
-        slot.role == "image" or ("image" in {c.casefold() for c in slot.allowed_content} and "text" not in {c.casefold() for c in slot.allowed_content})
+        slot.role == "image"
+        or (
+            "image" in {c.casefold() for c in slot.allowed_content}
+            and "text" not in {c.casefold() for c in slot.allowed_content}
+        )
         for slot in layout.slots.values()
     )

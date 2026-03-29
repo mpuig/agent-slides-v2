@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from agent_slides.engine.layout_suggest import LayoutSuggestion, suggest_layouts as suggest_layouts_for_content
+from agent_slides.engine.layout_suggest import (
+    LayoutSuggestion,
+    suggest_layouts as suggest_layouts_for_content,
+)
 from agent_slides.model.design_rules import DesignRules
 from agent_slides.model.types import NodeContent
 
@@ -27,7 +30,9 @@ def suggest_layouts(
     )[:limit]
 
 
-def serialize_suggestions(suggestions: list[LayoutSuggestion]) -> list[dict[str, object]]:
+def serialize_suggestions(
+    suggestions: list[LayoutSuggestion],
+) -> list[dict[str, object]]:
     """Convert suggestions to JSON-safe dictionaries."""
 
     return [asdict(suggestion) for suggestion in suggestions]

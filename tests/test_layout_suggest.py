@@ -51,7 +51,10 @@ def make_content(*blocks: tuple[str, str]) -> NodeContent:
         (
             make_content(
                 ("heading", "Quarterly update"),
-                ("paragraph", "Revenue expanded across enterprise, self-serve, and partner channels this quarter."),
+                (
+                    "paragraph",
+                    "Revenue expanded across enterprise, self-serve, and partner channels this quarter.",
+                ),
             ),
             0,
             "title_content",
@@ -60,8 +63,14 @@ def make_content(*blocks: tuple[str, str]) -> NodeContent:
         (
             make_content(
                 ("heading", "Two bets"),
-                ("paragraph", "Adoption climbed steadily across the existing customer base this quarter."),
-                ("paragraph", "Pipeline grew materially after the new pricing and onboarding changes."),
+                (
+                    "paragraph",
+                    "Adoption climbed steadily across the existing customer base this quarter.",
+                ),
+                (
+                    "paragraph",
+                    "Pipeline grew materially after the new pricing and onboarding changes.",
+                ),
             ),
             0,
             "two_col",
@@ -70,9 +79,18 @@ def make_content(*blocks: tuple[str, str]) -> NodeContent:
         (
             make_content(
                 ("heading", "Three pillars"),
-                ("paragraph", "Speed improved for onboarding, drafting, and presentation export flows."),
-                ("paragraph", "Quality improved through stronger validation, retries, and layout scoring."),
-                ("paragraph", "Reach improved through templates, previews, and collaboration tooling."),
+                (
+                    "paragraph",
+                    "Speed improved for onboarding, drafting, and presentation export flows.",
+                ),
+                (
+                    "paragraph",
+                    "Quality improved through stronger validation, retries, and layout scoring.",
+                ),
+                (
+                    "paragraph",
+                    "Reach improved through templates, previews, and collaboration tooling.",
+                ),
             ),
             0,
             "three_col",
@@ -82,9 +100,15 @@ def make_content(*blocks: tuple[str, str]) -> NodeContent:
             make_content(
                 ("heading", "Platform choices"),
                 ("heading", "Build"),
-                ("paragraph", "Faster setup and lower fixed costs for the first release."),
+                (
+                    "paragraph",
+                    "Faster setup and lower fixed costs for the first release.",
+                ),
                 ("heading", "Buy"),
-                ("paragraph", "Less control but shorter time to adoption for commodity needs."),
+                (
+                    "paragraph",
+                    "Less control but shorter time to adoption for commodity needs.",
+                ),
             ),
             0,
             "comparison",
@@ -118,7 +142,10 @@ def make_content(*blocks: tuple[str, str]) -> NodeContent:
         ),
         (
             make_content(
-                ("paragraph", "A standalone paragraph should fall back to a generic content layout."),
+                (
+                    "paragraph",
+                    "A standalone paragraph should fall back to a generic content layout.",
+                ),
             ),
             0,
             "title_content",
@@ -143,12 +170,18 @@ def test_suggest_layouts_returns_ranked_unique_suggestions() -> None:
     suggestions = suggest_layouts(
         make_content(
             ("heading", "Quarterly update"),
-            ("paragraph", "Revenue expanded across enterprise, self-serve, and partner channels this quarter."),
+            (
+                "paragraph",
+                "Revenue expanded across enterprise, self-serve, and partner channels this quarter.",
+            ),
         )
     )
 
     assert [suggestion.layout for suggestion in suggestions] == ["title_content"]
-    assert suggestions[0].reason == "A heading with one paragraph fits a title-and-content slide."
+    assert (
+        suggestions[0].reason
+        == "A heading with one paragraph fits a title-and-content slide."
+    )
 
 
 def test_suggest_layouts_filters_to_available_layouts_only() -> None:
@@ -207,7 +240,10 @@ def test_suggest_layouts_uses_configurable_thresholds() -> None:
     unequal_columns = suggest_layouts(
         make_content(
             ("heading", "Two bets"),
-            ("paragraph", "Steady adoption across the existing enterprise install base."),
+            (
+                "paragraph",
+                "Steady adoption across the existing enterprise install base.",
+            ),
             (
                 "paragraph",
                 "Pipeline grew sharply after pricing changes, onboarding fixes, and channel expansion work.",
@@ -269,5 +305,9 @@ def test_suggest_layouts_excludes_image_layouts_when_no_images() -> None:
     with_image_names = {s.layout for s in suggestions_with_images}
     no_image_names = {s.layout for s in suggestions_no_images}
 
-    assert with_image_names & image_layouts, "image layouts should appear when images are available"
-    assert not (no_image_names & image_layouts), "image layouts should not appear when image_count=0"
+    assert with_image_names & image_layouts, (
+        "image layouts should appear when images are available"
+    )
+    assert not (no_image_names & image_layouts), (
+        "image layouts should not appear when image_count=0"
+    )

@@ -16,7 +16,9 @@ from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
 from agent_slides.model import load_design_rules
-from agent_slides.engine.conditional_formatting import preview_conditional_formatting_payload
+from agent_slides.engine.conditional_formatting import (
+    preview_conditional_formatting_payload,
+)
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND
 from agent_slides.icons import require_icon
 from agent_slides.io import read_deck
@@ -49,12 +51,16 @@ def load_deck_payload(sidecar_path: Path) -> tuple[int, DeckPayload]:
 
     deck = read_deck(str(sidecar_path))
     payload = deck.model_dump(mode="json", by_alias=True, exclude_none=True)
-    payload["conditional_formatting"] = preview_conditional_formatting_payload(load_design_rules(deck.design_rules))
+    payload["conditional_formatting"] = preview_conditional_formatting_payload(
+        load_design_rules(deck.design_rules)
+    )
     return deck.revision, _enrich_icon_payload(payload)
 
 
 def _payload_digest(payload: DeckPayload) -> str:
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha1(serialized).hexdigest()
 
 
@@ -84,7 +90,9 @@ class SidecarWatcher:
     ) -> None:
         self.sidecar_path = Path(sidecar_path).resolve()
         self.watched_path = (
-            Path(watched_path).resolve() if watched_path is not None else self.sidecar_path
+            Path(watched_path).resolve()
+            if watched_path is not None
+            else self.sidecar_path
         )
         self._on_revision_change = on_revision_change
         self._debounce_seconds = max(debounce_ms, 0) / 1000
@@ -150,7 +158,9 @@ class SidecarWatcher:
             _, payload = load_deck_payload(self.sidecar_path)
         except AgentSlidesError as exc:
             if exc.code != FILE_NOT_FOUND:
-                self._logger.warning("Preview watcher could not read initial deck: %s", exc.message)
+                self._logger.warning(
+                    "Preview watcher could not read initial deck: %s", exc.message
+                )
             return None
 
         return _payload_digest(payload)

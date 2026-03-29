@@ -33,15 +33,30 @@ def make_manifest() -> dict[str, object]:
                 "slot_mapping": {
                     "heading": {
                         "role": "heading",
-                        "bounds": {"x": 12.0, "y": 18.0, "width": 280.0, "height": 48.0},
+                        "bounds": {
+                            "x": 12.0,
+                            "y": 18.0,
+                            "width": 280.0,
+                            "height": 48.0,
+                        },
                     },
                     "image": {
                         "role": "image",
-                        "bounds": {"x": 312.0, "y": 24.0, "width": 180.0, "height": 200.0},
+                        "bounds": {
+                            "x": 312.0,
+                            "y": 24.0,
+                            "width": 180.0,
+                            "height": 200.0,
+                        },
                     },
                     "body": {
                         "role": "body",
-                        "bounds": {"x": 18.0, "y": 96.0, "width": 260.0, "height": 160.0},
+                        "bounds": {
+                            "x": 18.0,
+                            "y": 96.0,
+                            "width": 260.0,
+                            "height": 160.0,
+                        },
                     },
                 },
             }
@@ -78,7 +93,9 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     image_path = tmp_path / "hero.png"
     image_path.write_bytes(b"png")
 
-    fit_calls: list[tuple[float, float, float, float, str, str, list[float] | None]] = []
+    fit_calls: list[
+        tuple[float, float, float, float, str, str, list[float] | None]
+    ] = []
 
     def fake_fit_text(
         *,
@@ -93,7 +110,9 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
         use_precise: bool = False,
     ):
         assert use_precise is False
-        fit_calls.append((width, height, default_size, min_size, role, font_family or "", ladder))
+        fit_calls.append(
+            (width, height, default_size, min_size, role, font_family or "", ladder)
+        )
         return (26.0, False) if default_size == 32.0 else (14.0, True)
 
     monkeypatch.setattr("agent_slides.engine.reflow.fit_text", fake_fit_text)
@@ -109,10 +128,30 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
                 slide_id="s-1",
                 layout="photo_story",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Long heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Long body copy"),
-                    Node(node_id="n-3", slot_binding="image", type="image", image_path=str(image_path)),
-                    Node(node_id="n-4", slot_binding=None, type="text", content="Leave unbound"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Long heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Long body copy",
+                    ),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="image",
+                        type="image",
+                        image_path=str(image_path),
+                    ),
+                    Node(
+                        node_id="n-4",
+                        slot_binding=None,
+                        type="text",
+                        content="Leave unbound",
+                    ),
                 ],
             )
         ],
@@ -127,7 +166,12 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     assert set(computed) == {"n-1", "n-2", "n-3"}
 
     heading = computed["n-1"]
-    assert (heading.x, heading.y, heading.width, heading.height) == (12.0, 18.0, 280.0, 48.0)
+    assert (heading.x, heading.y, heading.width, heading.height) == (
+        12.0,
+        18.0,
+        280.0,
+        48.0,
+    )
     assert heading.font_size_pt == 26.0
     assert heading.font_family == "Aptos Display"
     assert heading.color == "#202020"
@@ -187,7 +231,14 @@ def test_mutate_deck_reflows_template_manifests_with_unified_reflow(
                 Slide(
                     slide_id="s-1",
                     layout="photo_story",
-                    nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Title")],
+                    nodes=[
+                        Node(
+                            node_id="n-1",
+                            slot_binding="heading",
+                            type="text",
+                            content="Title",
+                        )
+                    ],
                 )
             ],
             counters=Counters(slides=1, nodes=1),

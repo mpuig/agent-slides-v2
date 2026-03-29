@@ -23,14 +23,23 @@ def test_file_watcher_detects_sidecar_mutation(tmp_path: Path) -> None:
         async with make_server(deck_path) as server:
             async with connect(server.url) as websocket:
                 initial = await receive_update(websocket)
-                updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("watcher"))
+                updated_deck, _ = mutate_deck(
+                    str(deck_path), apply_slot_mutation("watcher")
+                )
                 rendering = await receive_update(websocket)
                 payload = await receive_update(websocket)
 
         assert initial["type"] == "slides_updated"
         assert initial["revision"] == 2
-        assert initial["slides"] == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
-        assert rendering == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+        assert initial["slides"] == [
+            {"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}
+        ]
+        assert rendering == {
+            "type": "rendering",
+            "path": str(deck_path),
+            "slide_index": 1,
+            "total": 1,
+        }
         assert payload["type"] == "slides_updated"
         assert payload["revision"] == updated_deck.revision
         assert payload["slides"] == [
@@ -57,12 +66,19 @@ def test_preview_server_updates_for_computed_only_write(tmp_path: Path) -> None:
 
         assert initial["type"] == "slides_updated"
         assert initial["revision"] == 2
-        assert rendering == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+        assert rendering == {
+            "type": "rendering",
+            "path": str(deck_path),
+            "slide_index": 1,
+            "total": 1,
+        }
         assert payload["type"] == "slides_updated"
         assert payload["revision"] == initial["revision"]
         assert renderer.render_indices_calls == [[0]]
         assert server._preview_payload is not None
-        assert server._preview_payload["slides"][0]["computed"]["n-1"]["x"] == computed.x
+        assert (
+            server._preview_payload["slides"][0]["computed"]["n-1"]["x"] == computed.x
+        )
 
     asyncio.run(scenario())
 
@@ -81,10 +97,14 @@ def test_multiple_rapid_mutations_debounce(tmp_path: Path) -> None:
 
         assert initial["type"] == "slides_updated"
         assert initial["revision"] == 2
-        assert initial["slides"] == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
+        assert initial["slides"] == [
+            {"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}
+        ]
         assert 1 <= len(updates) <= 2
         assert updates[-1]["type"] == "slides_updated"
-        assert updates[-1]["slides"] == [{"index": 0, "url": "/slides/0.png?rev=7", "revision": 7}]
+        assert updates[-1]["slides"] == [
+            {"index": 0, "url": "/slides/0.png?rev=7", "revision": 7}
+        ]
         assert updates[-1]["revision"] >= 7
 
     asyncio.run(scenario())
@@ -120,7 +140,9 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
                     receive_update(client_two),
                     receive_update(client_three),
                 )
-                updated_deck, _ = mutate_deck(str(deck_path), apply_slot_mutation("fanout"))
+                updated_deck, _ = mutate_deck(
+                    str(deck_path), apply_slot_mutation("fanout")
+                )
                 rendering_updates = await asyncio.gather(
                     receive_update(client_one),
                     receive_update(client_two),
@@ -134,16 +156,24 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
 
         assert all(update["revision"] == 2 for update in initial_updates)
         assert all(
-            update["slides"] == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
+            update["slides"]
+            == [{"index": 0, "url": "/slides/0.png?rev=2", "revision": 2}]
             for update in initial_updates
         )
         assert all(
-            update == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+            update
+            == {
+                "type": "rendering",
+                "path": str(deck_path),
+                "slide_index": 1,
+                "total": 1,
+            }
             for update in rendering_updates
         )
         assert all(update["revision"] == updated_deck.revision for update in updates)
         assert all(
-            update["slides"] == [{"index": 0, "url": "/slides/0.png?rev=3", "revision": 3}]
+            update["slides"]
+            == [{"index": 0, "url": "/slides/0.png?rev=3", "revision": 3}]
             for update in updates
         )
 
@@ -151,8 +181,12 @@ def test_multiple_simultaneous_clients_receive_update(tmp_path: Path) -> None:
 
 
 def make_server(deck_path: Path, **kwargs: Any) -> PreviewServer:
-    renderer = kwargs.pop("slide_renderer", FakeSlideRenderer(deck_path, deck_path.parent / "rendered"))
-    return PreviewServer(str(deck_path), host="127.0.0.1", port=0, slide_renderer=renderer, **kwargs)
+    renderer = kwargs.pop(
+        "slide_renderer", FakeSlideRenderer(deck_path, deck_path.parent / "rendered")
+    )
+    return PreviewServer(
+        str(deck_path), host="127.0.0.1", port=0, slide_renderer=renderer, **kwargs
+    )
 
 
 def prepare_deck(tmp_path: Path) -> Path:
@@ -160,7 +194,9 @@ def prepare_deck(tmp_path: Path) -> Path:
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
     mutate_deck(
         str(deck_path),
-        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
+        lambda deck, provider: apply_mutation(
+            deck, "slide_add", {"layout": "title"}, provider
+        ),
     )
     mutate_deck(str(deck_path), apply_slot_mutation("initial"))
     return deck_path

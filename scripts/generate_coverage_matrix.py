@@ -16,7 +16,11 @@ from agent_slides.render_oracle import generate_render_signals
 
 ROOT = Path(__file__).resolve().parents[1]
 _INVENTORY_FILENAMES = ("inventory.json", "layout-inventory.json")
-_EXCLUDE_POLICY_FILENAMES = ("exclude-policy.json", "exclude-policy.yaml", "exclude-policy.yml")
+_EXCLUDE_POLICY_FILENAMES = (
+    "exclude-policy.json",
+    "exclude-policy.yaml",
+    "exclude-policy.yml",
+)
 _MIN_SIGNAL_FONT_SIZE_PT = 8.0
 
 
@@ -64,7 +68,9 @@ def _load_inventory(suite_dir: Path) -> dict[str, Any]:
 
     deck_paths = sorted(suite_dir.glob("*/*/deck.json"))
     if not deck_paths:
-        raise ValueError(f"Suite directory does not contain any layout variant decks: {suite_dir}")
+        raise ValueError(
+            f"Suite directory does not contain any layout variant decks: {suite_dir}"
+        )
 
     deck_path = deck_paths[0]
     deck = read_deck(str(deck_path))
@@ -74,7 +80,9 @@ def _load_inventory(suite_dir: Path) -> dict[str, Any]:
             f"Suite inventory not found in {suite_dir} and deck {deck_path} does not reference a template manifest"
         )
 
-    inventory_module = _load_script_module(ROOT / "scripts" / "export_layout_inventory.py", "export_layout_inventory")
+    inventory_module = _load_script_module(
+        ROOT / "scripts" / "export_layout_inventory.py", "export_layout_inventory"
+    )
     exclude_policy: dict[str, str] | None = None
     for filename in _EXCLUDE_POLICY_FILENAMES:
         candidate = suite_dir / filename
@@ -86,7 +94,9 @@ def _load_inventory(suite_dir: Path) -> dict[str, Any]:
     return inventory_module.build_inventory(manifest, exclude_policy=exclude_policy)
 
 
-def _inventory_by_slug(inventory: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+def _inventory_by_slug(
+    inventory: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     raw_layouts = inventory.get("layouts")
     if not isinstance(raw_layouts, list):
         raise ValueError("Inventory field 'layouts' must be a list")
@@ -133,18 +143,34 @@ def _bool_variant_field(
     raise ValueError(f"Variant field '{name}' must be a boolean-like value: {path}")
 
 
-def _normalize_variant_result(raw_variant: dict[str, Any], *, path: Path, requires_image: bool) -> dict[str, Any]:
+def _normalize_variant_result(
+    raw_variant: dict[str, Any], *, path: Path, requires_image: bool
+) -> dict[str, Any]:
     signals = raw_variant.get("signals", {})
     if not isinstance(signals, dict):
         raise ValueError(f"Variant signals must be an object: {path}")
 
     normalized = {
         "variant_name": _variant_name_from_payload(raw_variant, path=path),
-        "build_success": _bool_variant_field(raw_variant, path=path, name="build_success", signals=signals),
-        "overflow": _bool_variant_field(raw_variant, path=path, name="overflow", signals=signals, fallback="text_clipped"),
-        "placeholder_empty": _bool_variant_field(raw_variant, path=path, name="placeholder_empty", signals=signals),
-        "image_missing": _bool_variant_field(raw_variant, path=path, name="image_missing", signals=signals),
-        "font_too_small": _bool_variant_field(raw_variant, path=path, name="font_too_small", signals=signals),
+        "build_success": _bool_variant_field(
+            raw_variant, path=path, name="build_success", signals=signals
+        ),
+        "overflow": _bool_variant_field(
+            raw_variant,
+            path=path,
+            name="overflow",
+            signals=signals,
+            fallback="text_clipped",
+        ),
+        "placeholder_empty": _bool_variant_field(
+            raw_variant, path=path, name="placeholder_empty", signals=signals
+        ),
+        "image_missing": _bool_variant_field(
+            raw_variant, path=path, name="image_missing", signals=signals
+        ),
+        "font_too_small": _bool_variant_field(
+            raw_variant, path=path, name="font_too_small", signals=signals
+        ),
     }
     normalized["pass"] = bool(
         normalized["build_success"]
@@ -155,7 +181,9 @@ def _normalize_variant_result(raw_variant: dict[str, Any], *, path: Path, requir
     return normalized
 
 
-def _load_result_variants(suite_dir: Path, *, inventory_by_slug: dict[str, dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+def _load_result_variants(
+    suite_dir: Path, *, inventory_by_slug: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, dict[str, Any]]]:
     results_root = suite_dir / "results"
     if not results_root.is_dir():
         return {}
@@ -169,9 +197,17 @@ def _load_result_variants(suite_dir: Path, *, inventory_by_slug: dict[str, dict[
         layout_slug = raw_layout_slug.strip()
         layout = inventory_by_slug.get(layout_slug)
         if layout is None:
-            raise ValueError(f"Variant result references unknown layout '{layout_slug}': {path}")
-        variant = _normalize_variant_result(raw_variant, path=path, requires_image=bool(layout.get("requires_image", False)))
-        variants_by_layout.setdefault(layout_slug, {})[variant["variant_name"]] = variant
+            raise ValueError(
+                f"Variant result references unknown layout '{layout_slug}': {path}"
+            )
+        variant = _normalize_variant_result(
+            raw_variant,
+            path=path,
+            requires_image=bool(layout.get("requires_image", False)),
+        )
+        variants_by_layout.setdefault(layout_slug, {})[variant["variant_name"]] = (
+            variant
+        )
     return variants_by_layout
 
 
@@ -184,7 +220,14 @@ def _suite_deck_paths(suite_dir: Path) -> dict[str, dict[str, Path]]:
     return suite_variants
 
 
-def _artifact_dirs(*, suite_dir: Path, output_path: Path, layout_slug: str, variant_name: str, deck_dir: Path) -> list[Path]:
+def _artifact_dirs(
+    *,
+    suite_dir: Path,
+    output_path: Path,
+    layout_slug: str,
+    variant_name: str,
+    deck_dir: Path,
+) -> list[Path]:
     run_dir = output_path.parent
     candidates = [
         run_dir / suite_dir.name / layout_slug / variant_name,
@@ -251,11 +294,15 @@ def _signal_payload_from_file(path: Path, *, layout_slug: str) -> dict[str, bool
     if selected is None and payload and isinstance(payload[0], dict):
         selected = payload[0]
     if selected is None:
-        raise ValueError(f"Signals file does not contain any usable slide entries: {path}")
+        raise ValueError(
+            f"Signals file does not contain any usable slide entries: {path}"
+        )
 
     raw_signals = selected.get("signals")
     if not isinstance(raw_signals, dict):
-        raise ValueError(f"Signals entry must contain an object field 'signals': {path}")
+        raise ValueError(
+            f"Signals entry must contain an object field 'signals': {path}"
+        )
 
     return {
         "overflow": bool(raw_signals.get("text_clipped", False)),
@@ -291,7 +338,8 @@ def _fallback_signals(deck_path: Path, *, layout_slug: str) -> dict[str, bool]:
     font_too_small = bool(raw_signals.get("font_too_small", False))
     if not font_too_small:
         font_too_small = any(
-            computed is not None and 0.0 < computed.font_size_pt < _MIN_SIGNAL_FONT_SIZE_PT
+            computed is not None
+            and 0.0 < computed.font_size_pt < _MIN_SIGNAL_FONT_SIZE_PT
             for slide in deck.slides
             if slide.layout == layout_slug
             for computed in slide.computed.values()
@@ -385,7 +433,9 @@ def build_coverage_matrix(
 
     inventory = _load_inventory(suite_dir)
     layouts, inventory_by_slug = _inventory_by_slug(inventory)
-    result_variants = _load_result_variants(suite_dir, inventory_by_slug=inventory_by_slug)
+    result_variants = _load_result_variants(
+        suite_dir, inventory_by_slug=inventory_by_slug
+    )
     deck_variants = _suite_deck_paths(suite_dir)
 
     layouts_payload: list[dict[str, Any]] = []
@@ -399,7 +449,9 @@ def build_coverage_matrix(
         slug = str(layout["slug"])
         slot_structure = layout.get("slot_structure")
         if not isinstance(slot_structure, str) or not slot_structure.strip():
-            raise ValueError(f"Inventory layout '{slug}' must include a non-empty slot_structure")
+            raise ValueError(
+                f"Inventory layout '{slug}' must include a non-empty slot_structure"
+            )
 
         if bool(layout.get("usable", False)):
             usable += 1
@@ -445,7 +497,9 @@ def build_coverage_matrix(
         layout_failure_reasons: set[str] = set()
         for variant in variants:
             if not variant["pass"]:
-                layout_failure_reasons.update(_failure_reasons(variant, image_required=image_required))
+                layout_failure_reasons.update(
+                    _failure_reasons(variant, image_required=image_required)
+                )
         if not variants:
             layout_failure_reasons.add("no_variants_found")
 
@@ -479,7 +533,9 @@ def build_coverage_matrix(
         "failed": failed,
         "coverage_pct": coverage_pct,
         "run_id": output_path.parent.name,
-        "timestamp": evaluated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "timestamp": evaluated_at.astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
         "layouts": layouts_payload,
     }
 
@@ -487,13 +543,17 @@ def build_coverage_matrix(
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        coverage = build_coverage_matrix(suite_dir=args.suite_dir, output_path=args.output)
+        coverage = build_coverage_matrix(
+            suite_dir=args.suite_dir, output_path=args.output
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     json.dump(coverage, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0 if coverage["coverage_pct"] == 100.0 else 1

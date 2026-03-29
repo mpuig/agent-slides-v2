@@ -183,8 +183,12 @@ def test_theme_text_colors_meet_wcag_aa(theme_name: str) -> None:
     theme = load_theme(theme_name)
 
     assert contrast_ratio(theme.colors.text, theme.colors.background) >= 4.5
-    assert contrast_ratio(theme.colors.heading_text or "", theme.colors.background) >= 4.5
-    assert contrast_ratio(theme.colors.subtle_text or "", theme.colors.background) >= 4.5
+    assert (
+        contrast_ratio(theme.colors.heading_text or "", theme.colors.background) >= 4.5
+    )
+    assert (
+        contrast_ratio(theme.colors.subtle_text or "", theme.colors.background) >= 4.5
+    )
 
 
 def test_reflow_uses_theme_spacing() -> None:

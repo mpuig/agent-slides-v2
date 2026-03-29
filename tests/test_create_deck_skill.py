@@ -13,7 +13,7 @@ def test_create_deck_skill_defines_four_phase_workflow() -> None:
     assert "Phase 1: Storyline Review" in skill_text
     assert "Phase 2: Build" in skill_text
     assert "Phase 3: QA Review" in skill_text
-    assert "If the user says \"just do it\", skip questions" in skill_text
+    assert 'If the user says "just do it", skip questions' in skill_text
     assert "For a quick deck of about 5 slides, ask only" in skill_text
     assert "For a strategy deck of 8 or more slides, ask all five" in skill_text
 

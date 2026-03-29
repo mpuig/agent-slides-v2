@@ -11,7 +11,9 @@ from agent_slides.cli import cli
 from agent_slides.errors import CHART_DATA_ERROR
 
 
-def invoke(runner: CliRunner, args: list[str], *, input_text: str | None = None) -> tuple[int, dict[str, object], str]:
+def invoke(
+    runner: CliRunner, args: list[str], *, input_text: str | None = None
+) -> tuple[int, dict[str, object], str]:
     result = runner.invoke(cli, args, input=input_text)
     payload = json.loads(result.stdout) if result.stdout else {}
     return result.exit_code, payload, result.stderr
@@ -23,7 +25,9 @@ def chart_data_payload(payload: dict[str, object]) -> str:
 
 def chart_shapes(path: Path, slide_index: int = 0) -> list[object]:
     presentation = Presentation(str(path))
-    return [shape for shape in presentation.slides[slide_index].shapes if shape.has_chart]
+    return [
+        shape for shape in presentation.slides[slide_index].shapes if shape.has_chart
+    ]
 
 
 def chart_shape(path: Path, slide_index: int = 0):
@@ -39,8 +43,12 @@ def category_data(chart) -> tuple[tuple[str, ...], list[tuple[str, tuple[float, 
 
 
 def scatter_points(series) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    x_values = tuple(float(value) for value in series._element.xpath(".//c:xVal//c:pt/c:v/text()"))
-    y_values = tuple(float(value) for value in series._element.xpath(".//c:yVal//c:pt/c:v/text()"))
+    x_values = tuple(
+        float(value) for value in series._element.xpath(".//c:xVal//c:pt/c:v/text()")
+    )
+    y_values = tuple(
+        float(value) for value in series._element.xpath(".//c:yVal//c:pt/c:v/text()")
+    )
     return x_values, y_values
 
 
@@ -57,7 +65,9 @@ def test_bar_chart_full_flow_builds_editable_native_chart(tmp_path: Path) -> Non
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "two_col"])
+    exit_code, payload, _ = invoke(
+        runner, ["slide", "add", str(deck_path), "--layout", "two_col"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -82,7 +92,9 @@ def test_bar_chart_full_flow_builds_editable_native_chart(tmp_path: Path) -> Non
     assert exit_code == 0
     assert payload["data"]["chart_type"] == "bar"
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -130,7 +142,9 @@ def test_multi_series_line_chart_round_trips_both_series(tmp_path: Path) -> None
     assert exit_code == 0
     assert payload["data"]["chart_type"] == "line"
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -184,7 +198,9 @@ def test_scatter_chart_round_trips_xy_data(tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["data"]["chart_type"] == "scatter"
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -247,7 +263,9 @@ def test_chart_update_builds_with_latest_data(tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["data"]["node_id"] == node_id
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -266,20 +284,26 @@ def test_batch_builds_mixed_text_and_chart_slide(tmp_path: Path) -> None:
     batch_input = json.dumps(
         [
             {"command": "slide_add", "args": {"layout": "two_col"}},
-            {"command": "slot_set", "args": {"slide": 0, "slot": "title", "text": "Quarterly results"}},
+            {
+                "command": "slot_set",
+                "args": {"slide": 0, "slot": "title", "text": "Quarterly results"},
+            },
             {
                 "command": "chart_add",
                 "args": {
-                        "slide": 0,
-                        "slot": "left",
-                        "type": "bar",
-                        "data": {
-                            "categories": ["Q1", "Q2"],
-                            "series": [{"name": "Revenue", "values": [9.0, 11.0]}],
-                        },
+                    "slide": 0,
+                    "slot": "left",
+                    "type": "bar",
+                    "data": {
+                        "categories": ["Q1", "Q2"],
+                        "series": [{"name": "Revenue", "values": [9.0, 11.0]}],
                     },
                 },
-            {"command": "slot_set", "args": {"slide": 0, "slot": "right", "text": "Margin improved."}},
+            },
+            {
+                "command": "slot_set",
+                "args": {"slide": 0, "slot": "right", "text": "Margin improved."},
+            },
         ]
     )
 
@@ -287,18 +311,24 @@ def test_batch_builds_mixed_text_and_chart_slide(tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["batch", str(deck_path)], input_text=batch_input)
+    exit_code, payload, _ = invoke(
+        runner, ["batch", str(deck_path)], input_text=batch_input
+    )
     assert exit_code == 0
     assert payload["data"]["operations"] == 4
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
     presentation = Presentation(str(pptx_path))
     slide = presentation.slides[0]
     chart_nodes = [shape for shape in slide.shapes if shape.has_chart]
-    text_values = [shape.text_frame.text for shape in slide.shapes if shape.has_text_frame]
+    text_values = [
+        shape.text_frame.text for shape in slide.shapes if shape.has_text_frame
+    ]
 
     assert len(chart_nodes) == 1
     assert "Quarterly results" in text_values
@@ -344,4 +374,7 @@ def test_pie_chart_rejects_multiple_series(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert payload["ok"] is False
     assert payload["error"]["code"] == CHART_DATA_ERROR
-    assert payload["error"]["message"] == "Invalid chart data: pie charts support exactly one series"
+    assert (
+        payload["error"]["message"]
+        == "Invalid chart data: pie charts support exactly one series"
+    )

@@ -18,7 +18,12 @@ from agent_slides.review import review_deck
     type=click.Path(file_okay=False, path_type=Path),
 )
 @click.option("--dpi", type=int, default=200, show_default=True)
-@click.option("--fix", is_flag=True, default=False, help="Apply common auto-fixes before rerendering.")
+@click.option(
+    "--fix",
+    is_flag=True,
+    default=False,
+    help="Apply common auto-fixes before rerendering.",
+)
 def review_command(path: Path, output_dir: Path | None, dpi: int, fix: bool) -> None:
     """Render a deck to slide PNGs and score it against the visual QA checklist."""
 

@@ -27,7 +27,9 @@ def _text_node(node_id: str, slot_binding: str, text: str) -> dict:
     }
 
 
-def _image_node(node_id: str, slot_binding: str = "image", image_path: str | None = None) -> dict:
+def _image_node(
+    node_id: str, slot_binding: str = "image", image_path: str | None = None
+) -> dict:
     node = {
         "node_id": node_id,
         "slot_binding": slot_binding,
@@ -292,7 +294,9 @@ def test_score_deck_penalizes_missing_required_layouts_and_invalid_images(
     assert scores["composite"] == 0.0
 
 
-def test_score_deck_lists_five_missing_required_layouts(tmp_path: Path, monkeypatch) -> None:
+def test_score_deck_lists_five_missing_required_layouts(
+    tmp_path: Path, monkeypatch
+) -> None:
     module = _load_script_module()
     deck_path = tmp_path / "deck.json"
     deck_path.write_text("{}", encoding="utf-8")
@@ -316,7 +320,9 @@ def test_score_deck_lists_five_missing_required_layouts(tmp_path: Path, monkeypa
     }
 
     slides = [
-        _slide("title", [_text_node("n-1", "heading", "Only one required layout present")]),
+        _slide(
+            "title", [_text_node("n-1", "heading", "Only one required layout present")]
+        ),
     ]
 
     def fake_run_cli(*args: str, cwd: Path | None = None):
@@ -427,7 +433,9 @@ def test_score_deck_falls_back_to_generic_layout_scoring_without_required_layout
     assert scores["brief_compliance"]["required_layouts_missing"] == []
 
 
-def test_score_deck_records_review_quality_from_report_ratio(tmp_path: Path, monkeypatch) -> None:
+def test_score_deck_records_review_quality_from_report_ratio(
+    tmp_path: Path, monkeypatch
+) -> None:
     module = _load_script_module()
     deck_path = tmp_path / "deck.json"
     deck_path.write_text("{}", encoding="utf-8")
@@ -477,7 +485,9 @@ def test_score_deck_records_review_quality_from_report_ratio(tmp_path: Path, mon
     assert scores["composite"] == 96.7
 
 
-def test_score_deck_excludes_unavailable_review_from_composite(tmp_path: Path, monkeypatch) -> None:
+def test_score_deck_excludes_unavailable_review_from_composite(
+    tmp_path: Path, monkeypatch
+) -> None:
     module = _load_script_module()
     deck_path = tmp_path / "deck.json"
     deck_path.write_text("{}", encoding="utf-8")
@@ -500,7 +510,11 @@ def test_score_deck_excludes_unavailable_review_from_composite(tmp_path: Path, m
         return (
             1,
             None,
-            {"error": {"message": "Visual review requires 'soffice' to be installed and available on PATH."}},
+            {
+                "error": {
+                    "message": "Visual review requires 'soffice' to be installed and available on PATH."
+                }
+            },
         )
 
     monkeypatch.setattr(module, "run_cli", fake_run_cli)
@@ -533,22 +547,54 @@ def test_run_benchmark_without_deck_still_writes_review_fields(tmp_path: Path) -
     assert scores["review_total"] == 0
 
 
-def test_build_summary_rejects_review_regressions_even_when_composite_improves(monkeypatch) -> None:
+def test_build_summary_rejects_review_regressions_even_when_composite_improves(
+    monkeypatch,
+) -> None:
     module = _load_script_module()
     previous = {
         "run_id": "baseline",
         "mean_composite": 80.0,
         "benchmarks": [
-            {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}},
-            {"benchmark": "beta", "scores": {"composite": 78.0, "review_available": True, "review_quality": 0.88}},
+            {
+                "benchmark": "alpha",
+                "scores": {
+                    "composite": 80.0,
+                    "review_available": True,
+                    "review_quality": 0.92,
+                },
+            },
+            {
+                "benchmark": "beta",
+                "scores": {
+                    "composite": 78.0,
+                    "review_available": True,
+                    "review_quality": 0.88,
+                },
+            },
         ],
     }
     results = [
-        {"benchmark": "alpha", "scores": {"composite": 83.0, "review_available": True, "review_quality": 0.84}},
-        {"benchmark": "beta", "scores": {"composite": 82.0, "review_available": True, "review_quality": 0.8}},
+        {
+            "benchmark": "alpha",
+            "scores": {
+                "composite": 83.0,
+                "review_available": True,
+                "review_quality": 0.84,
+            },
+        },
+        {
+            "benchmark": "beta",
+            "scores": {
+                "composite": 82.0,
+                "review_available": True,
+                "review_quality": 0.8,
+            },
+        },
     ]
 
-    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+    monkeypatch.setattr(
+        module, "previous_best_summary", lambda current_run_id: previous
+    )
 
     summary = module.build_summary(run_id="candidate", results=results)
 
@@ -558,20 +604,38 @@ def test_build_summary_rejects_review_regressions_even_when_composite_improves(m
     assert "beta: review_quality regressed" in summary["reject_reasons"][1]
 
 
-def test_build_summary_rejects_composite_regression_even_when_review_improves(monkeypatch) -> None:
+def test_build_summary_rejects_composite_regression_even_when_review_improves(
+    monkeypatch,
+) -> None:
     module = _load_script_module()
     previous = {
         "run_id": "baseline",
         "mean_composite": 81.0,
         "benchmarks": [
-            {"benchmark": "alpha", "scores": {"composite": 81.0, "review_available": True, "review_quality": 0.7}}
+            {
+                "benchmark": "alpha",
+                "scores": {
+                    "composite": 81.0,
+                    "review_available": True,
+                    "review_quality": 0.7,
+                },
+            }
         ],
     }
     results = [
-        {"benchmark": "alpha", "scores": {"composite": 79.0, "review_available": True, "review_quality": 0.95}}
+        {
+            "benchmark": "alpha",
+            "scores": {
+                "composite": 79.0,
+                "review_available": True,
+                "review_quality": 0.95,
+            },
+        }
     ]
 
-    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+    monkeypatch.setattr(
+        module, "previous_best_summary", lambda current_run_id: previous
+    )
 
     summary = module.build_summary(run_id="candidate", results=results)
 
@@ -589,11 +653,25 @@ def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
         "run_id": "baseline",
         "mean_composite": 75.0,
         "benchmarks": [
-            {"benchmark": "alpha", "scores": {"composite": 75.0, "review_available": True, "review_quality": 0.9}}
+            {
+                "benchmark": "alpha",
+                "scores": {
+                    "composite": 75.0,
+                    "review_available": True,
+                    "review_quality": 0.9,
+                },
+            }
         ],
     }
     results = [
-        {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}}
+        {
+            "benchmark": "alpha",
+            "scores": {
+                "composite": 80.0,
+                "review_available": True,
+                "review_quality": 0.92,
+            },
+        }
     ]
     (runs_dir / "baseline").mkdir(parents=True)
     (runs_dir / "candidate").mkdir(parents=True)
@@ -627,7 +705,9 @@ def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
     )
 
     monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
-    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+    monkeypatch.setattr(
+        module, "previous_best_summary", lambda current_run_id: previous
+    )
 
     summary = module.build_summary(run_id="candidate", results=results)
 
@@ -648,16 +728,33 @@ def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
         "run_id": "baseline",
         "mean_composite": 75.0,
         "benchmarks": [
-            {"benchmark": "alpha", "scores": {"composite": 75.0, "review_available": True, "review_quality": 0.9}}
+            {
+                "benchmark": "alpha",
+                "scores": {
+                    "composite": 75.0,
+                    "review_available": True,
+                    "review_quality": 0.9,
+                },
+            }
         ],
     }
     results = [
-        {"benchmark": "alpha", "scores": {"composite": 80.0, "review_available": True, "review_quality": 0.92}}
+        {
+            "benchmark": "alpha",
+            "scores": {
+                "composite": 80.0,
+                "review_available": True,
+                "review_quality": 0.92,
+            },
+        }
     ]
     (runs_dir / "candidate").mkdir(parents=True)
     (runs_dir / "candidate" / "coverage.json").write_text(
         json.dumps(
-            {"template": "bcg", "layouts": [{"slug": "hero_image", "variants_passed": 0}]},
+            {
+                "template": "bcg",
+                "layouts": [{"slug": "hero_image", "variants_passed": 0}],
+            },
             indent=2,
         )
         + "\n",
@@ -665,7 +762,9 @@ def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
     )
 
     monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
-    monkeypatch.setattr(module, "previous_best_summary", lambda current_run_id: previous)
+    monkeypatch.setattr(
+        module, "previous_best_summary", lambda current_run_id: previous
+    )
 
     summary = module.build_summary(run_id="candidate", results=results)
 

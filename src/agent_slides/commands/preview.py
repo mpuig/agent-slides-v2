@@ -41,8 +41,12 @@ def _safe_unlink(path: Path) -> None:
 
 
 def _spawn_background_preview(path: Path, *, port: int) -> dict[str, object]:
-    ready_fd, ready_name = tempfile.mkstemp(prefix="agent-slides-preview-ready-", suffix=".json")
-    error_fd, error_name = tempfile.mkstemp(prefix="agent-slides-preview-error-", suffix=".log")
+    ready_fd, ready_name = tempfile.mkstemp(
+        prefix="agent-slides-preview-ready-", suffix=".json"
+    )
+    error_fd, error_name = tempfile.mkstemp(
+        prefix="agent-slides-preview-error-", suffix=".log"
+    )
     os.close(ready_fd)
     os.close(error_fd)
 
@@ -62,11 +66,15 @@ def _spawn_background_preview(path: Path, *, port: int) -> dict[str, object]:
         str(ready_path),
     ]
 
-    with open(os.devnull, "r", encoding="utf-8") as stdin_stream, open(
-        os.devnull,
-        "w",
-        encoding="utf-8",
-    ) as stdout_stream, open(error_path, "w", encoding="utf-8") as stderr_stream:
+    with (
+        open(os.devnull, "r", encoding="utf-8") as stdin_stream,
+        open(
+            os.devnull,
+            "w",
+            encoding="utf-8",
+        ) as stdout_stream,
+        open(error_path, "w", encoding="utf-8") as stderr_stream,
+    ):
         process = subprocess.Popen(
             command,
             stdin=stdin_stream,
@@ -96,7 +104,9 @@ def _spawn_background_preview(path: Path, *, port: int) -> dict[str, object]:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=1)
-            raise AgentSlidesError(SCHEMA_ERROR, "Preview server did not start within 5 seconds.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Preview server did not start within 5 seconds."
+            )
 
         return {
             "url": started_payload["url"],
@@ -130,7 +140,9 @@ class _ForegroundPreviewServer:
         return self._server.origin
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="agent-slides-preview", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="agent-slides-preview", daemon=True
+        )
         self._thread.start()
         if not self._ready.wait(timeout=5):
             raise RuntimeError("Preview server did not start within 5 seconds.")
@@ -169,7 +181,9 @@ class _ForegroundPreviewServer:
 @click.option("--port", type=int, default=8765, show_default=True)
 @click.option("--no-open", is_flag=True, default=False)
 @click.option("--background", is_flag=True, default=False)
-@click.option("--ready-file", type=click.Path(dir_okay=False, path_type=Path), hidden=True)
+@click.option(
+    "--ready-file", type=click.Path(dir_okay=False, path_type=Path), hidden=True
+)
 def preview_command(
     path: Path,
     port: int,

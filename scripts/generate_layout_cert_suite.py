@@ -86,14 +86,20 @@ def _load_fixture_payloads(fixtures_dir: Path) -> dict[str, dict[str, dict[str, 
         variants: dict[str, dict[str, Any]] = {}
         for variant_name, variant_payload in sorted(fixture_payload.items()):
             if not isinstance(variant_name, str) or not variant_name.strip():
-                raise ValueError(f"Fixture variant names must be non-empty strings in {fixture_path}")
+                raise ValueError(
+                    f"Fixture variant names must be non-empty strings in {fixture_path}"
+                )
             if not isinstance(variant_payload, dict):
-                raise ValueError(f"Fixture variant '{variant_name}' in {fixture_path} must be an object")
+                raise ValueError(
+                    f"Fixture variant '{variant_name}' in {fixture_path} must be an object"
+                )
             variants[variant_name] = dict(variant_payload)
         payloads[fixture_path.stem] = variants
 
     if not payloads:
-        raise ValueError(f"Fixtures directory does not contain any JSON fixture files: {fixtures_dir}")
+        raise ValueError(
+            f"Fixtures directory does not contain any JSON fixture files: {fixtures_dir}"
+        )
     return payloads
 
 
@@ -113,17 +119,27 @@ def _iter_testable_layouts(inventory: dict[str, Any]) -> list[dict[str, Any]]:
         slot_structure = raw_layout.get("slot_structure")
         fillable_slots = raw_layout.get("fillable_slots")
         if not isinstance(slug, str) or not slug.strip():
-            raise ValueError(f"Inventory layouts[{index}] must include a non-empty slug")
+            raise ValueError(
+                f"Inventory layouts[{index}] must include a non-empty slug"
+            )
         if not isinstance(slot_structure, str) or not slot_structure.strip():
-            raise ValueError(f"Inventory layout '{slug}' must include a non-empty slot_structure")
-        if not isinstance(fillable_slots, list) or not all(isinstance(slot, str) and slot.strip() for slot in fillable_slots):
-            raise ValueError(f"Inventory layout '{slug}' fillable_slots must be a list of non-empty strings")
+            raise ValueError(
+                f"Inventory layout '{slug}' must include a non-empty slot_structure"
+            )
+        if not isinstance(fillable_slots, list) or not all(
+            isinstance(slot, str) and slot.strip() for slot in fillable_slots
+        ):
+            raise ValueError(
+                f"Inventory layout '{slug}' fillable_slots must be a list of non-empty strings"
+            )
 
         layouts.append(
             {
                 "slug": slug.strip(),
                 "slot_structure": slot_structure.strip(),
-                "fillable_slots": sorted({slot.strip() for slot in fillable_slots}, key=_slot_sort_key),
+                "fillable_slots": sorted(
+                    {slot.strip() for slot in fillable_slots}, key=_slot_sort_key
+                ),
             }
         )
 
@@ -169,7 +185,9 @@ def _build_nodes(
         if raw_payload is None:
             continue
         if not isinstance(raw_payload, dict):
-            raise ValueError(f"Fixture payload for slot '{slot_name}' must be an object")
+            raise ValueError(
+                f"Fixture payload for slot '{slot_name}' must be an object"
+            )
 
         node_id = f"n-{len(nodes) + 1}"
         if "image_path" in raw_payload:
@@ -180,7 +198,9 @@ def _build_nodes(
                     "type": "image",
                     "content": {"blocks": []},
                     "image_fit": raw_payload.get("image_fit", "contain"),
-                    "image_path": _resolve_fixture_image_path(str(raw_payload["image_path"]), deck_dir=deck_dir),
+                    "image_path": _resolve_fixture_image_path(
+                        str(raw_payload["image_path"]), deck_dir=deck_dir
+                    ),
                 }
             )
         else:
@@ -221,7 +241,9 @@ def build_cert_suite(
         fillable_slots = list(layout["fillable_slots"])
         slot_structure = str(layout["slot_structure"])
 
-        registry_slots = sorted(registry.get_slot_names(layout_slug), key=_slot_sort_key)
+        registry_slots = sorted(
+            registry.get_slot_names(layout_slug), key=_slot_sort_key
+        )
         if registry_slots != fillable_slots:
             raise ValueError(
                 f"Inventory layout '{layout_slug}' fillable_slots do not match manifest slots: "
@@ -230,11 +252,15 @@ def build_cert_suite(
 
         variants = fixture_payloads.get(slot_structure)
         if variants is None:
-            raise ValueError(f"No fixture file found for slot structure '{slot_structure}'")
+            raise ValueError(
+                f"No fixture file found for slot structure '{slot_structure}'"
+            )
 
         for variant_name, raw_slot_payloads in sorted(variants.items()):
             deck_dir = output_dir / template_slug / layout_slug / variant_name
-            nodes = _build_nodes(raw_slot_payloads, fillable_slots=fillable_slots, deck_dir=deck_dir)
+            nodes = _build_nodes(
+                raw_slot_payloads, fillable_slots=fillable_slots, deck_dir=deck_dir
+            )
             deck = Deck(
                 deck_id=f"cert-{template_slug}-{layout_slug}-{variant_name}",
                 revision=0,

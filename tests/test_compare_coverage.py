@@ -28,7 +28,9 @@ def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _write_coverage(path: Path, *, template: str, layouts: list[dict[str, object]]) -> None:
+def _write_coverage(
+    path: Path, *, template: str, layouts: list[dict[str, object]]
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"template": template, "layouts": layouts}, indent=2) + "\n",
@@ -36,7 +38,9 @@ def _write_coverage(path: Path, *, template: str, layouts: list[dict[str, object
     )
 
 
-def test_compare_coverage_detects_regressions_improvements_and_new_layouts(tmp_path: Path) -> None:
+def test_compare_coverage_detects_regressions_improvements_and_new_layouts(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
     before_path = tmp_path / "before.json"
     after_path = tmp_path / "after.json"
@@ -63,9 +67,15 @@ def test_compare_coverage_detects_regressions_improvements_and_new_layouts(tmp_p
 
     diff = module.compare_coverage_files(before_path=before_path, after_path=after_path)
 
-    assert diff["regressions"] == [{"slug": "title_only", "before_passed": 2, "after_passed": 0}]
-    assert diff["improvements"] == [{"slug": "image_left", "before_passed": 0, "after_passed": 1}]
-    assert diff["new_layouts"] == [{"slug": "hero_image", "before_passed": 0, "after_passed": 1}]
+    assert diff["regressions"] == [
+        {"slug": "title_only", "before_passed": 2, "after_passed": 0}
+    ]
+    assert diff["improvements"] == [
+        {"slug": "image_left", "before_passed": 0, "after_passed": 1}
+    ]
+    assert diff["new_layouts"] == [
+        {"slug": "hero_image", "before_passed": 0, "after_passed": 1}
+    ]
     assert diff["unchanged"] == [
         {"slug": "gallery", "before_passed": 0, "after_passed": 0},
         {"slug": "quote", "before_passed": 1, "after_passed": 3},
@@ -90,7 +100,9 @@ def test_compare_coverage_script_exit_code_reflects_regressions(tmp_path: Path) 
 
     assert result.returncode == 1
     payload = json.loads(result.stdout)
-    assert payload["regressions"] == [{"slug": "title_only", "before_passed": 1, "after_passed": 0}]
+    assert payload["regressions"] == [
+        {"slug": "title_only", "before_passed": 1, "after_passed": 0}
+    ]
 
 
 def test_compare_coverage_script_exits_zero_without_regressions(tmp_path: Path) -> None:
@@ -115,5 +127,9 @@ def test_compare_coverage_script_exits_zero_without_regressions(tmp_path: Path) 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["regressions"] == []
-    assert payload["improvements"] == [{"slug": "title_only", "before_passed": 0, "after_passed": 1}]
-    assert payload["new_layouts"] == [{"slug": "hero_image", "before_passed": 0, "after_passed": 1}]
+    assert payload["improvements"] == [
+        {"slug": "title_only", "before_passed": 0, "after_passed": 1}
+    ]
+    assert payload["new_layouts"] == [
+        {"slug": "hero_image", "before_passed": 0, "after_passed": 1}
+    ]

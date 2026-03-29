@@ -120,7 +120,9 @@ def _is_template_bounds_layout(layout_def: LayoutDef) -> bool:
     )
 
 
-def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, SlotConstraints]:
+def constraints_from_layout(
+    layout_def: LayoutDef, theme: Theme
+) -> dict[str, SlotConstraints]:
     """Convert a layout definition into solver-friendly slot constraints."""
 
     constraints: dict[str, SlotConstraints] = {}
@@ -139,13 +141,18 @@ def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, Sl
             top, bottom = shared_vertical_bounds[group]
         else:
             top = _slide_edge_offset(frame.y, "top", SLIDE_HEIGHT_PT)
-            bottom = _slide_edge_offset(frame.y + frame.height, "bottom", SLIDE_HEIGHT_PT)
+            bottom = _slide_edge_offset(
+                frame.y + frame.height, "bottom", SLIDE_HEIGHT_PT
+            )
             if group:
                 shared_vertical_bounds[group] = (top, bottom)
 
         share_group = None
         if slot.width_mode == "equal_share":
-            share_group = slot.alignment_group or f"{layout_def.name}:row:{_slot_row_key(layout_def, slot_name)!r}"
+            share_group = (
+                slot.alignment_group
+                or f"{layout_def.name}:row:{_slot_row_key(layout_def, slot_name)!r}"
+            )
             share_groups[share_group].append(slot_name)
 
         constraints[slot_name] = SlotConstraints(
@@ -155,7 +162,9 @@ def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, Sl
             bottom=None if slot.height_mode != "fixed" else bottom,
             height_mode=slot.height_mode,
             width_mode=slot.width_mode,
-            reading_order=slot.reading_order if slot.reading_order is not None else index,
+            reading_order=slot.reading_order
+            if slot.reading_order is not None
+            else index,
             share_group=share_group,
         )
 
@@ -163,9 +172,16 @@ def constraints_from_layout(layout_def: LayoutDef, theme: Theme) -> dict[str, Sl
     return constraints
 
 
-def _constraint_dependencies(slot_name: str, constraint: SlotConstraints, known_slots: set[str]) -> set[str]:
+def _constraint_dependencies(
+    slot_name: str, constraint: SlotConstraints, known_slots: set[str]
+) -> set[str]:
     dependencies: set[str] = set()
-    for anchor in (constraint.left, constraint.top, constraint.right, constraint.bottom):
+    for anchor in (
+        constraint.left,
+        constraint.top,
+        constraint.right,
+        constraint.bottom,
+    ):
         if anchor is None or anchor.reference == "slide":
             continue
         if anchor.reference not in known_slots:
@@ -184,7 +200,10 @@ def _ordered_constraints(constraints: Mapping[str, SlotConstraints]) -> list[str
         for slot_name, constraint in constraints.items()
     }
     dependents: dict[str, set[str]] = {slot_name: set() for slot_name in constraints}
-    indegree = {slot_name: len(slot_dependencies) for slot_name, slot_dependencies in dependencies.items()}
+    indegree = {
+        slot_name: len(slot_dependencies)
+        for slot_name, slot_dependencies in dependencies.items()
+    }
     for slot_name, slot_dependencies in dependencies.items():
         for dependency in slot_dependencies:
             dependents[dependency].add(slot_name)
@@ -220,7 +239,12 @@ def validate_constraints(constraints: Mapping[str, SlotConstraints]) -> None:
     _ordered_constraints(constraints)
 
 
-def _resolve_anchor(anchor: Anchor, resolved: Mapping[str, Rect], slide_width: float, slide_height: float) -> float:
+def _resolve_anchor(
+    anchor: Anchor,
+    resolved: Mapping[str, Rect],
+    slide_width: float,
+    slide_height: float,
+) -> float:
     if anchor.reference == "slide":
         if anchor.edge == "left":
             return anchor.offset
@@ -232,7 +256,9 @@ def _resolve_anchor(anchor: Anchor, resolved: Mapping[str, Rect], slide_width: f
             return slide_height + anchor.offset
         if anchor.edge == "center_x":
             return (slide_width / 2.0) + anchor.offset
-        raise AgentSlidesError(INVALID_SLOT, f"Unsupported slide anchor edge '{anchor.edge}'.")
+        raise AgentSlidesError(
+            INVALID_SLOT, f"Unsupported slide anchor edge '{anchor.edge}'."
+        )
 
     rect = resolved[anchor.reference]
     if anchor.edge == "left":
@@ -245,7 +271,9 @@ def _resolve_anchor(anchor: Anchor, resolved: Mapping[str, Rect], slide_width: f
         return rect.y + rect.height + anchor.offset
     if anchor.edge == "center_x":
         return rect.x + (rect.width / 2.0) + anchor.offset
-    raise AgentSlidesError(INVALID_SLOT, f"Unsupported slot anchor edge '{anchor.edge}'.")
+    raise AgentSlidesError(
+        INVALID_SLOT, f"Unsupported slot anchor edge '{anchor.edge}'."
+    )
 
 
 def solve(
@@ -267,7 +295,9 @@ def solve(
         if group:
             share_groups[group].append(slot_name)
     for group_name, members in share_groups.items():
-        members.sort(key=lambda slot_name: (constraints[slot_name].reading_order, slot_name))
+        members.sort(
+            key=lambda slot_name: (constraints[slot_name].reading_order, slot_name)
+        )
         share_groups[group_name] = members
 
     for slot_name in order:
@@ -275,7 +305,10 @@ def solve(
         left = _resolve_anchor(constraint.left, resolved, slide_width, slide_height)
         right = _resolve_anchor(constraint.right, resolved, slide_width, slide_height)
 
-        if constraint.width_mode == "equal_share" and constraint.share_group is not None:
+        if (
+            constraint.width_mode == "equal_share"
+            and constraint.share_group is not None
+        ):
             members = share_groups[constraint.share_group]
             share_width = (right - left) / max(len(members), 1)
             member_index = members.index(slot_name)

@@ -24,7 +24,9 @@ def _parse_batch_operations(stdin_payload: str) -> list[dict[str, Any]]:
         ) from exc
 
     if not isinstance(payload, list):
-        raise AgentSlidesError(SCHEMA_ERROR, "Batch payload must be a JSON array of operations")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Batch payload must be a JSON array of operations"
+        )
 
     operations: list[dict[str, Any]] = []
     for index, item in enumerate(payload):
@@ -33,7 +35,9 @@ def _parse_batch_operations(stdin_payload: str) -> list[dict[str, Any]]:
 
         command = item.get("command")
         if not isinstance(command, str) or not command.strip():
-            raise AgentSlidesError(SCHEMA_ERROR, f"Operation {index} is missing a non-empty 'command'")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Operation {index} is missing a non-empty 'command'"
+            )
         if command not in SUPPORTED_MUTATION_COMMANDS:
             supported = ", ".join(sorted(SUPPORTED_MUTATION_COMMANDS))
             raise AgentSlidesError(
@@ -43,7 +47,9 @@ def _parse_batch_operations(stdin_payload: str) -> list[dict[str, Any]]:
 
         args = item.get("args", {})
         if not isinstance(args, dict):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Operation {index} field 'args' must be an object")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Operation {index} field 'args' must be an object"
+            )
 
         operations.append({"command": command, "args": args})
 
@@ -64,7 +70,11 @@ def batch(path: str) -> None:
         results: list[dict[str, Any]] = []
         for index, operation in enumerate(operations):
             try:
-                results.append(apply_mutation(deck, operation["command"], operation["args"], provider))
+                results.append(
+                    apply_mutation(
+                        deck, operation["command"], operation["args"], provider
+                    )
+                )
             except AgentSlidesError as exc:
                 raise AgentSlidesError(
                     exc.code,

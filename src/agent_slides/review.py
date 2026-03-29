@@ -14,10 +14,20 @@ from typing import Any
 
 from agent_slides.engine.reflow import reflow_deck
 from agent_slides.errors import AgentSlidesError, SCHEMA_ERROR
-from agent_slides.io import mutate_deck, read_deck, resolve_manifest_path, write_computed_deck, write_pptx
+from agent_slides.io import (
+    mutate_deck,
+    read_deck,
+    resolve_manifest_path,
+    write_computed_deck,
+    write_pptx,
+)
 from agent_slides.model import Deck, Node, NodeContent, Slide
 from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
-from agent_slides.model.types import STANDARD_SLIDE_HEIGHT_PT, STANDARD_SLIDE_WIDTH_PT, TextBlock
+from agent_slides.model.types import (
+    STANDARD_SLIDE_HEIGHT_PT,
+    STANDARD_SLIDE_WIDTH_PT,
+    TextBlock,
+)
 from agent_slides.render_oracle import generate_render_signals
 
 CHECKLIST: dict[str, list[dict[str, str]]] = {
@@ -32,18 +42,30 @@ CHECKLIST: dict[str, list[dict[str, str]]] = {
     "Typography": [
         {"key": "heading_size_range", "label": "Heading font size is 24-44pt"},
         {"key": "body_size_range", "label": "Body font size is 10-18pt"},
-        {"key": "font_size_consistency", "label": "Font sizes are consistent across the deck"},
+        {
+            "key": "font_size_consistency",
+            "label": "Font sizes are consistent across the deck",
+        },
         {"key": "font_family_limit", "label": "No more than 2 font families are used"},
         {"key": "bold_sparing", "label": "Bold is used sparingly"},
-        {"key": "no_visible_overflow", "label": "Text is not visibly truncated or overflowing"},
+        {
+            "key": "no_visible_overflow",
+            "label": "Text is not visibly truncated or overflowing",
+        },
     ],
     "Layout Quality": [
-        {"key": "layout_matches_content", "label": "Layout matches the content relationship"},
+        {
+            "key": "layout_matches_content",
+            "label": "Layout matches the content relationship",
+        },
         {"key": "columns_balanced", "label": "Columns are balanced"},
         {"key": "charts_within_bounds", "label": "Charts stay within slot bounds"},
         {"key": "content_density", "label": "Content areas are not excessively empty"},
         {"key": "grid_alignment", "label": "Grid alignment is consistent"},
-        {"key": "image_slots_intentional", "label": "Image slots are filled or intentionally empty"},
+        {
+            "key": "image_slots_intentional",
+            "label": "Image slots are filled or intentionally empty",
+        },
     ],
     "Content Quality": [
         {"key": "action_title", "label": "Title is an action title"},
@@ -57,61 +79,193 @@ CHECKLIST: dict[str, list[dict[str, str]]] = {
     ],
     "Deck-Level Patterns": [
         {"key": "layout_variety", "label": "Deck uses layout variety"},
-        {"key": "no_three_repeat", "label": "Deck avoids 3+ consecutive duplicate layouts"},
+        {
+            "key": "no_three_repeat",
+            "label": "Deck avoids 3+ consecutive duplicate layouts",
+        },
         {"key": "title_slide_present", "label": "Title slide is present"},
         {"key": "closing_slide_present", "label": "Closing slide is present"},
-        {"key": "visual_rhythm", "label": "Deck has visual rhythm across content types"},
+        {
+            "key": "visual_rhythm",
+            "label": "Deck has visual rhythm across content types",
+        },
         {"key": "theme_consistent", "label": "Theme stays visually consistent"},
     ],
     "AI Slop Detection": [
-        {"key": "not_same_layout_everywhere", "label": "Not every slide uses the same layout"},
+        {
+            "key": "not_same_layout_everywhere",
+            "label": "Not every slide uses the same layout",
+        },
         {"key": "no_generic_titles", "label": "Titles avoid generic labels"},
         {"key": "not_bullet_wall_deck", "label": "Deck avoids bullet-wall repetition"},
-        {"key": "no_empty_visual_slots", "label": "No empty image or chart slots remain"},
-        {"key": "title_capitalization_consistent", "label": "Title capitalization is consistent"},
-        {"key": "not_auto_generated", "label": "Content avoids auto-generated repetition"},
+        {
+            "key": "no_empty_visual_slots",
+            "label": "No empty image or chart slots remain",
+        },
+        {
+            "key": "title_capitalization_consistent",
+            "label": "Title capitalization is consistent",
+        },
+        {
+            "key": "not_auto_generated",
+            "label": "Content avoids auto-generated repetition",
+        },
     ],
 }
 
 ITEM_METADATA: dict[str, dict[str, object]] = {
-    "title_dominates": {"recommendation": "Increase title contrast or reduce competing text emphasis.", "severity": 4},
-    "reading_order": {"recommendation": "Pull the main title upward and simplify left-to-right scanning.", "severity": 3},
-    "one_focal_point": {"recommendation": "Remove or downweight secondary focal elements.", "severity": 3},
-    "intentional_whitespace": {"recommendation": "Rebalance density so the slide neither feels cramped nor vacant.", "severity": 2},
-    "squint_test": {"recommendation": "Strengthen the size or contrast difference between title and body.", "severity": 3},
-    "margins_respected": {"recommendation": "Bring content back inside the layout margin.", "severity": 4},
-    "heading_size_range": {"recommendation": "Keep headings within a 24-44pt working range.", "severity": 3},
-    "body_size_range": {"recommendation": "Keep body copy within a 10-18pt readable range.", "severity": 4},
-    "font_size_consistency": {"recommendation": "Normalize type sizes for the same role across slides.", "severity": 2},
-    "font_family_limit": {"recommendation": "Reduce typography to at most two font families.", "severity": 2},
-    "bold_sparing": {"recommendation": "Reserve bold for headings or the smallest possible emphasis set.", "severity": 2},
-    "no_visible_overflow": {"recommendation": "Edit or split content until visible overflow disappears.", "severity": 5},
-    "layout_matches_content": {"recommendation": "Choose a layout whose structure matches the relationship in the content.", "severity": 4},
-    "columns_balanced": {"recommendation": "Balance content density across parallel columns.", "severity": 3},
-    "charts_within_bounds": {"recommendation": "Give charts more space or reduce nearby text.", "severity": 4},
-    "content_density": {"recommendation": "Use the content area more intentionally or simplify the layout.", "severity": 2},
-    "grid_alignment": {"recommendation": "Realign elements to consistent column and row anchors.", "severity": 2},
-    "image_slots_intentional": {"recommendation": "Fill image slots or switch to a non-image layout.", "severity": 3},
-    "action_title": {"recommendation": "Rewrite the title as a takeaway sentence with a clear so-what.", "severity": 5},
-    "not_topic_label": {"recommendation": "Replace the topic label with a conclusion-oriented title.", "severity": 5},
-    "body_proves_title": {"recommendation": "Add evidence that directly supports the headline claim.", "severity": 4},
-    "bullet_limit": {"recommendation": "Split or condense bullets to stay within six points.", "severity": 4},
-    "bullet_concise": {"recommendation": "Shorten bullets to crisp fragments instead of paragraphs.", "severity": 3},
-    "source_present": {"recommendation": "Add a source line for quantified or chart-driven claims.", "severity": 4},
-    "chart_labeled": {"recommendation": "Add a chart title and make labels explicit.", "severity": 4},
-    "numbers_rounded": {"recommendation": "Round large values to readable units and cut excess precision.", "severity": 2},
-    "layout_variety": {"recommendation": "Introduce a second layout to avoid monotony.", "severity": 3},
-    "no_three_repeat": {"recommendation": "Break up runs of identical layouts.", "severity": 2},
-    "title_slide_present": {"recommendation": "Add a title slide that frames the story.", "severity": 4},
-    "closing_slide_present": {"recommendation": "Add a closing slide with the takeaway or call to action.", "severity": 4},
-    "visual_rhythm": {"recommendation": "Vary the mix of text, chart, and image-led slides.", "severity": 3},
-    "theme_consistent": {"recommendation": "Keep type and color treatments aligned across the deck.", "severity": 2},
-    "not_same_layout_everywhere": {"recommendation": "Avoid using the same layout on every slide.", "severity": 3},
-    "no_generic_titles": {"recommendation": "Replace generic labels with slide-specific conclusions.", "severity": 5},
-    "not_bullet_wall_deck": {"recommendation": "Introduce visuals or alternate structures to break up bullet walls.", "severity": 4},
-    "no_empty_visual_slots": {"recommendation": "Remove or fill empty visual placeholders.", "severity": 3},
-    "title_capitalization_consistent": {"recommendation": "Normalize title capitalization across the deck.", "severity": 1},
-    "not_auto_generated": {"recommendation": "Reduce repetitive title and slide structures so the story feels authored.", "severity": 3},
+    "title_dominates": {
+        "recommendation": "Increase title contrast or reduce competing text emphasis.",
+        "severity": 4,
+    },
+    "reading_order": {
+        "recommendation": "Pull the main title upward and simplify left-to-right scanning.",
+        "severity": 3,
+    },
+    "one_focal_point": {
+        "recommendation": "Remove or downweight secondary focal elements.",
+        "severity": 3,
+    },
+    "intentional_whitespace": {
+        "recommendation": "Rebalance density so the slide neither feels cramped nor vacant.",
+        "severity": 2,
+    },
+    "squint_test": {
+        "recommendation": "Strengthen the size or contrast difference between title and body.",
+        "severity": 3,
+    },
+    "margins_respected": {
+        "recommendation": "Bring content back inside the layout margin.",
+        "severity": 4,
+    },
+    "heading_size_range": {
+        "recommendation": "Keep headings within a 24-44pt working range.",
+        "severity": 3,
+    },
+    "body_size_range": {
+        "recommendation": "Keep body copy within a 10-18pt readable range.",
+        "severity": 4,
+    },
+    "font_size_consistency": {
+        "recommendation": "Normalize type sizes for the same role across slides.",
+        "severity": 2,
+    },
+    "font_family_limit": {
+        "recommendation": "Reduce typography to at most two font families.",
+        "severity": 2,
+    },
+    "bold_sparing": {
+        "recommendation": "Reserve bold for headings or the smallest possible emphasis set.",
+        "severity": 2,
+    },
+    "no_visible_overflow": {
+        "recommendation": "Edit or split content until visible overflow disappears.",
+        "severity": 5,
+    },
+    "layout_matches_content": {
+        "recommendation": "Choose a layout whose structure matches the relationship in the content.",
+        "severity": 4,
+    },
+    "columns_balanced": {
+        "recommendation": "Balance content density across parallel columns.",
+        "severity": 3,
+    },
+    "charts_within_bounds": {
+        "recommendation": "Give charts more space or reduce nearby text.",
+        "severity": 4,
+    },
+    "content_density": {
+        "recommendation": "Use the content area more intentionally or simplify the layout.",
+        "severity": 2,
+    },
+    "grid_alignment": {
+        "recommendation": "Realign elements to consistent column and row anchors.",
+        "severity": 2,
+    },
+    "image_slots_intentional": {
+        "recommendation": "Fill image slots or switch to a non-image layout.",
+        "severity": 3,
+    },
+    "action_title": {
+        "recommendation": "Rewrite the title as a takeaway sentence with a clear so-what.",
+        "severity": 5,
+    },
+    "not_topic_label": {
+        "recommendation": "Replace the topic label with a conclusion-oriented title.",
+        "severity": 5,
+    },
+    "body_proves_title": {
+        "recommendation": "Add evidence that directly supports the headline claim.",
+        "severity": 4,
+    },
+    "bullet_limit": {
+        "recommendation": "Split or condense bullets to stay within six points.",
+        "severity": 4,
+    },
+    "bullet_concise": {
+        "recommendation": "Shorten bullets to crisp fragments instead of paragraphs.",
+        "severity": 3,
+    },
+    "source_present": {
+        "recommendation": "Add a source line for quantified or chart-driven claims.",
+        "severity": 4,
+    },
+    "chart_labeled": {
+        "recommendation": "Add a chart title and make labels explicit.",
+        "severity": 4,
+    },
+    "numbers_rounded": {
+        "recommendation": "Round large values to readable units and cut excess precision.",
+        "severity": 2,
+    },
+    "layout_variety": {
+        "recommendation": "Introduce a second layout to avoid monotony.",
+        "severity": 3,
+    },
+    "no_three_repeat": {
+        "recommendation": "Break up runs of identical layouts.",
+        "severity": 2,
+    },
+    "title_slide_present": {
+        "recommendation": "Add a title slide that frames the story.",
+        "severity": 4,
+    },
+    "closing_slide_present": {
+        "recommendation": "Add a closing slide with the takeaway or call to action.",
+        "severity": 4,
+    },
+    "visual_rhythm": {
+        "recommendation": "Vary the mix of text, chart, and image-led slides.",
+        "severity": 3,
+    },
+    "theme_consistent": {
+        "recommendation": "Keep type and color treatments aligned across the deck.",
+        "severity": 2,
+    },
+    "not_same_layout_everywhere": {
+        "recommendation": "Avoid using the same layout on every slide.",
+        "severity": 3,
+    },
+    "no_generic_titles": {
+        "recommendation": "Replace generic labels with slide-specific conclusions.",
+        "severity": 5,
+    },
+    "not_bullet_wall_deck": {
+        "recommendation": "Introduce visuals or alternate structures to break up bullet walls.",
+        "severity": 4,
+    },
+    "no_empty_visual_slots": {
+        "recommendation": "Remove or fill empty visual placeholders.",
+        "severity": 3,
+    },
+    "title_capitalization_consistent": {
+        "recommendation": "Normalize title capitalization across the deck.",
+        "severity": 1,
+    },
+    "not_auto_generated": {
+        "recommendation": "Reduce repetitive title and slide structures so the story feels authored.",
+        "severity": 3,
+    },
 }
 
 GENERIC_TITLE_PATTERNS = (
@@ -199,7 +353,9 @@ def _relative_path(path: Path, base: Path) -> str:
     return str(path.resolve().relative_to(base.resolve()))
 
 
-def _build_deck_artifact(deck_path: Path, pptx_path: Path) -> tuple[Deck, LayoutProvider]:
+def _build_deck_artifact(
+    deck_path: Path, pptx_path: Path
+) -> tuple[Deck, LayoutProvider]:
     deck = read_deck(str(deck_path))
     manifest_path = resolve_manifest_path(str(deck_path), deck)
     if manifest_path is not None:
@@ -214,19 +370,28 @@ def _build_deck_artifact(deck_path: Path, pptx_path: Path) -> tuple[Deck, Layout
 def _require_command(name: str) -> str:
     resolved = shutil.which(name)
     if resolved is None:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Visual review requires '{name}' to be installed and available on PATH.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            f"Visual review requires '{name}' to be installed and available on PATH.",
+        )
     return resolved
 
 
-def _run_process(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run_process(
+    args: list[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(args, check=True, capture_output=True, text=True, cwd=cwd)
     except subprocess.CalledProcessError as exc:
         message = exc.stderr.strip() or exc.stdout.strip() or "external tool failed"
-        raise AgentSlidesError(SCHEMA_ERROR, f"Visual review command failed: {message}") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Visual review command failed: {message}"
+        ) from exc
 
 
-def render_pptx_to_pngs(pptx_path: Path, output_dir: Path, *, dpi: int) -> tuple[Path, list[Path]]:
+def render_pptx_to_pngs(
+    pptx_path: Path, output_dir: Path, *, dpi: int
+) -> tuple[Path, list[Path]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_dir = output_dir / "pdf"
     png_dir = output_dir / "slides"
@@ -236,10 +401,22 @@ def render_pptx_to_pngs(pptx_path: Path, output_dir: Path, *, dpi: int) -> tuple
     soffice = _require_command("soffice")
     pdftoppm = _require_command("pdftoppm")
 
-    _run_process([soffice, "--headless", "--convert-to", "pdf", "--outdir", str(pdf_dir), str(pptx_path)])
+    _run_process(
+        [
+            soffice,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(pdf_dir),
+            str(pptx_path),
+        ]
+    )
     pdf_path = pdf_dir / f"{pptx_path.stem}.pdf"
     if not pdf_path.exists():
-        raise AgentSlidesError(SCHEMA_ERROR, f"LibreOffice did not produce the expected PDF: {pdf_path}")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"LibreOffice did not produce the expected PDF: {pdf_path}"
+        )
 
     prefix = png_dir / "slide"
     _run_process([pdftoppm, "-png", "-r", str(dpi), str(pdf_path), str(prefix)])
@@ -291,7 +468,9 @@ def _title_case_style(text: str) -> str:
     if stripped.isupper():
         return "upper"
     words = [word for word in re.split(r"\s+", stripped) if word]
-    title_like = sum(1 for word in words if word[:1].isupper()) >= max(1, len(words) - 1)
+    title_like = sum(1 for word in words if word[:1].isupper()) >= max(
+        1, len(words) - 1
+    )
     if title_like:
         return "title"
     if stripped[:1].isupper():
@@ -305,7 +484,10 @@ def _is_generic_title(title: str) -> bool:
         return True
     if normalized in GENERIC_TITLE_PATTERNS:
         return True
-    if any(normalized.endswith(pattern) for pattern in ("overview", "analysis", "summary", "introduction")):
+    if any(
+        normalized.endswith(pattern)
+        for pattern in ("overview", "analysis", "summary", "introduction")
+    ):
         return True
     words = normalized.split()
     if len(words) <= 3 and not any(word in ACTION_VERBS for word in words):
@@ -347,11 +529,17 @@ def _all_font_families(deck: Deck) -> set[str]:
 
 
 def _find_title_node(slide: Slide, slots: dict[str, Any]) -> Node | None:
-    headings = [node for node in slide.nodes if _role_for_node(node, slots) == "heading" and _node_text(node)]
+    headings = [
+        node
+        for node in slide.nodes
+        if _role_for_node(node, slots) == "heading" and _node_text(node)
+    ]
     if headings:
         return headings[0]
 
-    text_nodes = [node for node in slide.nodes if node.type == "text" and _node_text(node)]
+    text_nodes = [
+        node for node in slide.nodes if node.type == "text" and _node_text(node)
+    ]
     if not text_nodes:
         return None
     return max(
@@ -363,12 +551,20 @@ def _find_title_node(slide: Slide, slots: dict[str, Any]) -> Node | None:
     )
 
 
-def _make_slide_contexts(deck: Deck, provider: LayoutProvider, screenshots: list[Path]) -> list[SlideContext]:
+def _make_slide_contexts(
+    deck: Deck, provider: LayoutProvider, screenshots: list[Path]
+) -> list[SlideContext]:
     contexts: list[SlideContext] = []
     for index, slide in enumerate(deck.slides):
         slots = provider.get_layout(slide.layout).slots
-        text_nodes = [node for node in slide.nodes if node.type == "text" and _node_text(node)]
-        body_nodes = [node for node in text_nodes if _role_for_node(node, slots) in {"body", "quote", "attribution"}]
+        text_nodes = [
+            node for node in slide.nodes if node.type == "text" and _node_text(node)
+        ]
+        body_nodes = [
+            node
+            for node in text_nodes
+            if _role_for_node(node, slots) in {"body", "quote", "attribution"}
+        ]
         chart_nodes = [node for node in slide.nodes if node.type == "chart"]
         image_nodes = [node for node in slide.nodes if node.type == "image"]
         contexts.append(
@@ -393,7 +589,10 @@ def _occupancy_ratio(context: SlideContext) -> float:
         computed = _computed(context.slide, node)
         if computed is None:
             continue
-        occupied_area += min(computed.width * computed.height, STANDARD_SLIDE_WIDTH_PT * STANDARD_SLIDE_HEIGHT_PT)
+        occupied_area += min(
+            computed.width * computed.height,
+            STANDARD_SLIDE_WIDTH_PT * STANDARD_SLIDE_HEIGHT_PT,
+        )
     slide_area = STANDARD_SLIDE_WIDTH_PT * STANDARD_SLIDE_HEIGHT_PT
     return min(occupied_area / slide_area, 1.0)
 
@@ -426,7 +625,11 @@ def _body_word_counts(context: SlideContext) -> list[int]:
     for slot_name, slot_def in context.layout_slots.items():
         if str(slot_def.role) not in {"body", "quote"}:
             continue
-        text = " ".join(_node_text(node) for node in context.slide.nodes if node.slot_binding == slot_name).strip()
+        text = " ".join(
+            _node_text(node)
+            for node in context.slide.nodes
+            if node.slot_binding == slot_name
+        ).strip()
         if text:
             counts.append(_word_count(text))
     return counts
@@ -505,11 +708,19 @@ def _title_rewrite(context: SlideContext) -> str | None:
     return None
 
 
-def _slide_checks(context: SlideContext, *, median_heading_size: float, median_body_size: float, deck_families: set[str]) -> dict[str, tuple[bool, str]]:
+def _slide_checks(
+    context: SlideContext,
+    *,
+    median_heading_size: float,
+    median_body_size: float,
+    deck_families: set[str],
+) -> dict[str, tuple[bool, str]]:
     checks: dict[str, tuple[bool, str]] = {}
     title_node = context.title_node
     title_text = _node_text(title_node) if title_node is not None else ""
-    title_computed = _computed(context.slide, title_node) if title_node is not None else None
+    title_computed = (
+        _computed(context.slide, title_node) if title_node is not None else None
+    )
     title_font_size = title_computed.font_size_pt if title_computed is not None else 0.0
     body_sizes = [
         computed.font_size_pt
@@ -519,15 +730,19 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
     non_title_sizes = [
         computed.font_size_pt
         for node in context.text_nodes
-        if node is not title_node and (computed := _computed(context.slide, node)) is not None
+        if node is not title_node
+        and (computed := _computed(context.slide, node)) is not None
     ]
     ratio = _occupancy_ratio(context)
-    bullet_blocks = [block for block in _body_blocks(context.body_nodes) if block.type == "bullet"]
+    bullet_blocks = [
+        block for block in _body_blocks(context.body_nodes) if block.type == "bullet"
+    ]
     body_text = " ".join(_node_text(node) for node in context.body_nodes).strip()
     bold_body_nodes = [
         node
         for node in context.body_nodes
-        if (computed := _computed(context.slide, node)) is not None and computed.font_bold
+        if (computed := _computed(context.slide, node)) is not None
+        and computed.font_bold
     ]
     slide_families = {
         computed.font_family.strip()
@@ -551,31 +766,63 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
         if computed is None:
             continue
         large_text = computed.font_size_pt >= max(title_font_size - 2.0, 20.0)
-        large_area = computed.width * computed.height > (STANDARD_SLIDE_WIDTH_PT * STANDARD_SLIDE_HEIGHT_PT * 0.22)
+        large_area = computed.width * computed.height > (
+            STANDARD_SLIDE_WIDTH_PT * STANDARD_SLIDE_HEIGHT_PT * 0.22
+        )
         if large_text or large_area:
             prominent_nodes += 1
 
     checks["title_dominates"] = (
-        title_node is not None and (not non_title_sizes or title_font_size >= max(non_title_sizes) + 4.0),
+        title_node is not None
+        and (not non_title_sizes or title_font_size >= max(non_title_sizes) + 4.0),
         f"title={title_font_size:.1f}pt",
     )
     checks["reading_order"] = (title_order_ok, "title appears first in the visual scan")
-    checks["one_focal_point"] = (prominent_nodes <= 2, f"{prominent_nodes} prominent elements detected")
-    checks["intentional_whitespace"] = (0.08 <= ratio <= 0.78, f"occupancy ratio {ratio:.2f}")
+    checks["one_focal_point"] = (
+        prominent_nodes <= 2,
+        f"{prominent_nodes} prominent elements detected",
+    )
+    checks["intentional_whitespace"] = (
+        0.08 <= ratio <= 0.78,
+        f"occupancy ratio {ratio:.2f}",
+    )
     checks["squint_test"] = (
-        title_node is not None and (title_font_size >= max(non_title_sizes or [0.0]) * 1.2 or bool(context.chart_nodes or context.image_nodes)),
+        title_node is not None
+        and (
+            title_font_size >= max(non_title_sizes or [0.0]) * 1.2
+            or bool(context.chart_nodes or context.image_nodes)
+        ),
         "title contrast or single visual focus remains visible",
     )
-    checks["margins_respected"] = (_bounds_inside_margin(context), "all computed bounds stay inside margins")
+    checks["margins_respected"] = (
+        _bounds_inside_margin(context),
+        "all computed bounds stay inside margins",
+    )
 
-    checks["heading_size_range"] = (24.0 <= title_font_size <= 44.0, f"heading size {title_font_size:.1f}pt")
-    checks["body_size_range"] = (all(10.0 <= size <= 18.0 for size in body_sizes), f"body sizes {body_sizes or ['n/a']}")
+    checks["heading_size_range"] = (
+        24.0 <= title_font_size <= 44.0,
+        f"heading size {title_font_size:.1f}pt",
+    )
+    checks["body_size_range"] = (
+        all(10.0 <= size <= 18.0 for size in body_sizes),
+        f"body sizes {body_sizes or ['n/a']}",
+    )
     checks["font_size_consistency"] = (
-        abs(title_font_size - median_heading_size) <= 4.0 and all(abs(size - median_body_size) <= 3.0 for size in body_sizes or [median_body_size]),
+        abs(title_font_size - median_heading_size) <= 4.0
+        and all(
+            abs(size - median_body_size) <= 3.0
+            for size in body_sizes or [median_body_size]
+        ),
         f"heading median {median_heading_size:.1f}pt, body median {median_body_size:.1f}pt",
     )
-    checks["font_family_limit"] = (len(deck_families) <= 2 and len(slide_families) <= 2, f"deck families={sorted(deck_families)}")
-    checks["bold_sparing"] = (len(bold_body_nodes) <= 1, f"{len(bold_body_nodes)} bold body nodes")
+    checks["font_family_limit"] = (
+        len(deck_families) <= 2 and len(slide_families) <= 2,
+        f"deck families={sorted(deck_families)}",
+    )
+    checks["bold_sparing"] = (
+        len(bold_body_nodes) <= 1,
+        f"{len(bold_body_nodes)} bold body nodes",
+    )
     checks["no_visible_overflow"] = (
         not any(computed.text_overflow for computed in context.slide.computed.values()),
         "no computed text overflow",
@@ -589,8 +836,14 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
     if context.slide.layout in {"two_col", "comparison", "three_col"}:
         filled_body_slots = [count for count in body_counts if count > 0]
         layout_ok = len(filled_body_slots) >= 2
-    if context.slide.layout in {"image_left", "image_right", "gallery", "hero_image"} and not any(
-        node.image_path and not node.style_overrides.get("placeholder") for node in context.image_nodes
+    if context.slide.layout in {
+        "image_left",
+        "image_right",
+        "gallery",
+        "hero_image",
+    } and not any(
+        node.image_path and not node.style_overrides.get("placeholder")
+        for node in context.image_nodes
     ):
         layout_ok = False
 
@@ -611,13 +864,22 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
             break
 
     image_slot_ok = True
-    image_slot_names = [slot_name for slot_name, slot_def in context.layout_slots.items() if str(slot_def.role) == "image"]
+    image_slot_names = [
+        slot_name
+        for slot_name, slot_def in context.layout_slots.items()
+        if str(slot_def.role) == "image"
+    ]
     for slot_name in image_slot_names:
-        slot_images = [node for node in context.image_nodes if node.slot_binding == slot_name]
+        slot_images = [
+            node for node in context.image_nodes if node.slot_binding == slot_name
+        ]
         if not slot_images:
             image_slot_ok = False
             break
-        if all(not node.image_path and not node.style_overrides.get("placeholder") for node in slot_images):
+        if all(
+            not node.image_path and not node.style_overrides.get("placeholder")
+            for node in slot_images
+        ):
             image_slot_ok = False
             break
 
@@ -629,11 +891,23 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
     alignment_ok = len(set(x_positions)) <= max(3, len(context.layout_slots))
 
     checks["layout_matches_content"] = (layout_ok, f"layout={context.slide.layout}")
-    checks["columns_balanced"] = (column_balance, f"column word counts={body_counts or ['n/a']}")
-    checks["charts_within_bounds"] = (chart_overlap_ok, "charts do not overlap neighboring nodes")
-    checks["content_density"] = (ratio >= 0.12 or len(context.slide.nodes) <= 1, f"occupancy ratio {ratio:.2f}")
+    checks["columns_balanced"] = (
+        column_balance,
+        f"column word counts={body_counts or ['n/a']}",
+    )
+    checks["charts_within_bounds"] = (
+        chart_overlap_ok,
+        "charts do not overlap neighboring nodes",
+    )
+    checks["content_density"] = (
+        ratio >= 0.12 or len(context.slide.nodes) <= 1,
+        f"occupancy ratio {ratio:.2f}",
+    )
     checks["grid_alignment"] = (alignment_ok, f"x anchors={x_positions}")
-    checks["image_slots_intentional"] = (image_slot_ok, f"image slots={image_slot_names or ['none']}")
+    checks["image_slots_intentional"] = (
+        image_slot_ok,
+        f"image slots={image_slot_names or ['none']}",
+    )
 
     chart_labeled = True
     for chart_node in context.chart_nodes:
@@ -642,16 +916,28 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
             chart_labeled = False
             break
         if chart.chart_type == "scatter":
-            if not chart.scatter_series or any(not series.name for series in chart.scatter_series):
+            if not chart.scatter_series or any(
+                not series.name for series in chart.scatter_series
+            ):
                 chart_labeled = False
                 break
         else:
-            if not chart.categories or not chart.series or any(not series.name for series in chart.series):
+            if (
+                not chart.categories
+                or not chart.series
+                or any(not series.name for series in chart.series)
+            ):
                 chart_labeled = False
                 break
 
-    checks["action_title"] = (_looks_action_title(title_text), title_text or "missing title")
-    checks["not_topic_label"] = (not _is_generic_title(title_text), title_text or "missing title")
+    checks["action_title"] = (
+        _looks_action_title(title_text),
+        title_text or "missing title",
+    )
+    checks["not_topic_label"] = (
+        not _is_generic_title(title_text),
+        title_text or "missing title",
+    )
     checks["body_proves_title"] = (
         bool(body_text or context.chart_nodes or context.image_nodes),
         f"body words={_word_count(body_text)} chart_count={len(context.chart_nodes)}",
@@ -666,17 +952,26 @@ def _slide_checks(context: SlideContext, *, median_heading_size: float, median_b
         "source line required for quantified claims",
     )
     checks["chart_labeled"] = (chart_labeled, f"{len(context.chart_nodes)} chart nodes")
-    checks["numbers_rounded"] = (_numbers_readable(context), "no unreadable raw numbers detected")
+    checks["numbers_rounded"] = (
+        _numbers_readable(context),
+        "no unreadable raw numbers detected",
+    )
 
     return checks
 
 
-def _aggregate_item_status(slide_results: list[dict[str, tuple[bool, str]]], item_key: str) -> tuple[bool, int]:
-    failures = sum(1 for result in slide_results if item_key in result and not result[item_key][0])
+def _aggregate_item_status(
+    slide_results: list[dict[str, tuple[bool, str]]], item_key: str
+) -> tuple[bool, int]:
+    failures = sum(
+        1 for result in slide_results if item_key in result and not result[item_key][0]
+    )
     return failures == 0, failures
 
 
-def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tuple[bool, str, int | None]]:
+def _deck_level_checks(
+    contexts: list[SlideContext], deck: Deck
+) -> dict[str, tuple[bool, str, int | None]]:
     layouts = [context.slide.layout for context in contexts]
     unique_layouts = set(layouts)
     max_run = 1
@@ -705,13 +1000,21 @@ def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tu
         if context.body_nodes:
             content_kinds.add("text")
 
-        title_text = _node_text(context.title_node) if context.title_node is not None else ""
+        title_text = (
+            _node_text(context.title_node) if context.title_node is not None else ""
+        )
         if title_text:
             title_texts.append(title_text.casefold())
             title_styles[_title_case_style(title_text)] += 1
         if _is_generic_title(title_text):
             generic_title_failures += 1
-        bullet_count = len([block for block in _body_blocks(context.body_nodes) if block.type == "bullet"])
+        bullet_count = len(
+            [
+                block
+                for block in _body_blocks(context.body_nodes)
+                if block.type == "bullet"
+            ]
+        )
         if bullet_count >= 5:
             bullet_wall_slides += 1
         if not _slide_checks(
@@ -720,7 +1023,8 @@ def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tu
                 [
                     (_computed(item.slide, item.title_node).font_size_pt)
                     for item in contexts
-                    if item.title_node is not None and _computed(item.slide, item.title_node) is not None
+                    if item.title_node is not None
+                    and _computed(item.slide, item.title_node) is not None
                 ]
                 or [32.0]
             ),
@@ -742,18 +1046,46 @@ def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tu
     theme_consistent = len(_all_font_families(deck)) <= 2
 
     return {
-        "layout_variety": (len(deck.slides) < 6 or len(unique_layouts) >= 2, f"{len(unique_layouts)} unique layouts", None),
-        "no_three_repeat": (max_run < 3, f"longest identical layout run={max_run}", None),
-        "title_slide_present": (has_title_slide, "deck includes a title slide", 0 if not has_title_slide and contexts else None),
+        "layout_variety": (
+            len(deck.slides) < 6 or len(unique_layouts) >= 2,
+            f"{len(unique_layouts)} unique layouts",
+            None,
+        ),
+        "no_three_repeat": (
+            max_run < 3,
+            f"longest identical layout run={max_run}",
+            None,
+        ),
+        "title_slide_present": (
+            has_title_slide,
+            "deck includes a title slide",
+            0 if not has_title_slide and contexts else None,
+        ),
         "closing_slide_present": (
             has_closing_slide,
             "deck includes a closing slide",
             len(contexts) - 1 if not has_closing_slide and contexts else None,
         ),
-        "visual_rhythm": (len(content_kinds) >= 2, f"content mix={sorted(content_kinds)}", None),
-        "theme_consistent": (theme_consistent, f"font families={sorted(_all_font_families(deck))}", None),
-        "not_same_layout_everywhere": (len(unique_layouts) > 1, f"{len(unique_layouts)} unique layouts", None),
-        "no_generic_titles": (generic_title_failures == 0, f"{generic_title_failures} generic titles", None),
+        "visual_rhythm": (
+            len(content_kinds) >= 2,
+            f"content mix={sorted(content_kinds)}",
+            None,
+        ),
+        "theme_consistent": (
+            theme_consistent,
+            f"font families={sorted(_all_font_families(deck))}",
+            None,
+        ),
+        "not_same_layout_everywhere": (
+            len(unique_layouts) > 1,
+            f"{len(unique_layouts)} unique layouts",
+            None,
+        ),
+        "no_generic_titles": (
+            generic_title_failures == 0,
+            f"{generic_title_failures} generic titles",
+            None,
+        ),
         "not_bullet_wall_deck": (
             bullet_wall_slides < max(2, len(contexts) // 2),
             f"{bullet_wall_slides} bullet-heavy slides",
@@ -765,7 +1097,14 @@ def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tu
             None,
         ),
         "title_capitalization_consistent": (
-            len([style for style, count in title_styles.items() if count > 0 and style != "empty"]) <= 2,
+            len(
+                [
+                    style
+                    for style, count in title_styles.items()
+                    if count > 0 and style != "empty"
+                ]
+            )
+            <= 2,
             f"title capitalization styles={dict(title_styles)}",
             None,
         ),
@@ -777,17 +1116,36 @@ def _deck_level_checks(contexts: list[SlideContext], deck: Deck) -> dict[str, tu
     }
 
 
-def _first_impression(contexts: list[SlideContext], overall_grade: str, *, unique_layouts: int) -> dict[str, str]:
-    bullet_heavy = sum(1 for context in contexts if len([block for block in _body_blocks(context.body_nodes) if block.type == "bullet"]) >= 5)
+def _first_impression(
+    contexts: list[SlideContext], overall_grade: str, *, unique_layouts: int
+) -> dict[str, str]:
+    bullet_heavy = sum(
+        1
+        for context in contexts
+        if len(
+            [
+                block
+                for block in _body_blocks(context.body_nodes)
+                if block.type == "bullet"
+            ]
+        )
+        >= 5
+    )
     chart_slides = sum(1 for context in contexts if context.chart_nodes)
-    image_slides = sum(1 for context in contexts if any(node.image_path for node in context.image_nodes))
+    image_slides = sum(
+        1
+        for context in contexts
+        if any(node.image_path for node in context.image_nodes)
+    )
 
     if bullet_heavy >= max(2, len(contexts) // 2):
         communicates = "The deck communicates a text-heavy story that needs sharper visual distillation."
     elif chart_slides or image_slides:
         communicates = "The deck communicates an evidence-led story with visible support from charts or imagery."
     else:
-        communicates = "The deck communicates the core story, but leans heavily on text."
+        communicates = (
+            "The deck communicates the core story, but leans heavily on text."
+        )
 
     if unique_layouts <= 1:
         rhythm = "The visual rhythm is repetitive because the same layout carries most of the argument."
@@ -803,12 +1161,19 @@ def _first_impression(contexts: list[SlideContext], overall_grade: str, *, uniqu
     }
 
 
-def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_paths: list[Path], *, artifacts_dir: Path) -> dict[str, Any]:
+def generate_review_report(
+    deck: Deck,
+    provider: LayoutProvider,
+    screenshot_paths: list[Path],
+    *,
+    artifacts_dir: Path,
+) -> dict[str, Any]:
     contexts = _make_slide_contexts(deck, provider, screenshot_paths)
     heading_sizes = [
         _computed(context.slide, context.title_node).font_size_pt
         for context in contexts
-        if context.title_node is not None and _computed(context.slide, context.title_node) is not None
+        if context.title_node is not None
+        and _computed(context.slide, context.title_node) is not None
     ] or [32.0]
     body_sizes = [
         _computed(context.slide, node).font_size_pt
@@ -845,7 +1210,11 @@ def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_path
                 failures = 0 if passed else 1
             else:
                 passed, failures = _aggregate_item_status(slide_results, item_key)
-                detail = "passes on all reviewed slides" if passed else f"fails on {failures} slide(s)"
+                detail = (
+                    "passes on all reviewed slides"
+                    if passed
+                    else f"fails on {failures} slide(s)"
+                )
                 slide_index = None
                 if not passed:
                     for index, result in enumerate(slide_results):
@@ -859,7 +1228,11 @@ def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_path
                 checklist_passed += 1
             else:
                 severity = int(ITEM_METADATA[item_key]["severity"])
-                screenshot = contexts[slide_index].screenshot_path if slide_index is not None else None
+                screenshot = (
+                    contexts[slide_index].screenshot_path
+                    if slide_index is not None
+                    else None
+                )
                 issues.append(
                     {
                         "category": category_name,
@@ -867,8 +1240,12 @@ def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_path
                         "severity": severity,
                         "slide": None if slide_index is None else slide_index + 1,
                         "detail": detail,
-                        "recommendation": str(ITEM_METADATA[item_key]["recommendation"]),
-                        "screenshot": None if screenshot is None else _relative_path(screenshot, artifacts_dir),
+                        "recommendation": str(
+                            ITEM_METADATA[item_key]["recommendation"]
+                        ),
+                        "screenshot": None
+                        if screenshot is None
+                        else _relative_path(screenshot, artifacts_dir),
                     }
                 )
 
@@ -908,7 +1285,9 @@ def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_path
                 "slide": context.slide_index + 1,
                 "slide_id": context.slide.slide_id,
                 "layout": context.slide.layout,
-                "title": _node_text(context.title_node) if context.title_node is not None else "",
+                "title": _node_text(context.title_node)
+                if context.title_node is not None
+                else "",
                 "screenshot": _relative_path(context.screenshot_path, artifacts_dir),
                 "failed_checks": failures,
             }
@@ -917,7 +1296,11 @@ def generate_review_report(deck: Deck, provider: LayoutProvider, screenshot_path
     issues.sort(key=lambda item: (-item["severity"], item["slide"] or 999))
     overall_ratio = checklist_passed / checklist_total if checklist_total else 1.0
     overall_grade = _grade_from_ratio(overall_ratio)
-    first_impression = _first_impression(contexts, overall_grade, unique_layouts=len(set(context.slide.layout for context in contexts)))
+    first_impression = _first_impression(
+        contexts,
+        overall_grade,
+        unique_layouts=len(set(context.slide.layout for context in contexts)),
+    )
 
     return {
         "deck": {
@@ -970,7 +1353,9 @@ def report_to_markdown(report: dict[str, Any], *, deck_name: str) -> str:
         lines.append("No critical issues detected.")
     else:
         for index, issue in enumerate(report["top_issues"], start=1):
-            slide_ref = f"Slide {issue['slide']}" if issue["slide"] is not None else "Deck"
+            slide_ref = (
+                f"Slide {issue['slide']}" if issue["slide"] is not None else "Deck"
+            )
             lines.append(f"{index}. {slide_ref}: {issue['item']} -> {issue['detail']}")
             lines.append(f"   Fix: {issue['recommendation']}")
             if issue["screenshot"] is not None:
@@ -985,7 +1370,9 @@ def report_to_markdown(report: dict[str, Any], *, deck_name: str) -> str:
             lines.append("  Pass")
             continue
         for failure in slide["failed_checks"]:
-            lines.append(f"  - {failure['category']}: {failure['item']} -> {failure['detail']}")
+            lines.append(
+                f"  - {failure['category']}: {failure['item']} -> {failure['detail']}"
+            )
 
     return "\n".join(lines) + "\n"
 
@@ -1011,11 +1398,16 @@ def apply_review_fixes(deck_path: Path) -> list[dict[str, Any]]:
                 slide_index=index,
                 layout_slots=slots,
                 title_node=title_node,
-                text_nodes=[node for node in slide.nodes if node.type == "text" and _node_text(node)],
+                text_nodes=[
+                    node
+                    for node in slide.nodes
+                    if node.type == "text" and _node_text(node)
+                ],
                 body_nodes=[
                     node
                     for node in slide.nodes
-                    if node.type == "text" and _role_for_node(node, slots) in {"body", "quote", "attribution"}
+                    if node.type == "text"
+                    and _role_for_node(node, slots) in {"body", "quote", "attribution"}
                 ],
                 chart_nodes=[node for node in slide.nodes if node.type == "chart"],
                 image_nodes=[node for node in slide.nodes if node.type == "image"],
@@ -1023,26 +1415,50 @@ def apply_review_fixes(deck_path: Path) -> list[dict[str, Any]]:
             )
 
             rewritten_title = _title_rewrite(context)
-            if rewritten_title and title_node is not None and rewritten_title != _node_text(title_node):
+            if (
+                rewritten_title
+                and title_node is not None
+                and rewritten_title != _node_text(title_node)
+            ):
                 _set_text(title_node, rewritten_title)
-                fixes.append({"slide": index + 1, "type": "rewrite_title", "value": rewritten_title})
+                fixes.append(
+                    {
+                        "slide": index + 1,
+                        "type": "rewrite_title",
+                        "value": rewritten_title,
+                    }
+                )
 
             for chart_node in context.chart_nodes:
                 chart = chart_node.chart_spec
                 if chart is None or chart.title:
                     continue
                 chart.title = _default_chart_title(context, chart_node)
-                fixes.append({"slide": index + 1, "type": "chart_title", "value": chart.title})
+                fixes.append(
+                    {"slide": index + 1, "type": "chart_title", "value": chart.title}
+                )
 
             if slide.layout == "title_content":
-                body_nodes = [node for node in context.body_nodes if node.slot_binding == "body"]
+                body_nodes = [
+                    node for node in context.body_nodes if node.slot_binding == "body"
+                ]
                 if len(body_nodes) == 1:
                     body_node = body_nodes[0]
-                    bullet_blocks = [block for block in _node_blocks(body_node) if block.type == "bullet"]
+                    bullet_blocks = [
+                        block
+                        for block in _node_blocks(body_node)
+                        if block.type == "bullet"
+                    ]
                     if len(bullet_blocks) > 6:
                         split_at = len(bullet_blocks) // 2
-                        leading_blocks = [block for block in _node_blocks(body_node) if block.type != "bullet"]
-                        first_half = _clone_blocks(leading_blocks + bullet_blocks[:split_at])
+                        leading_blocks = [
+                            block
+                            for block in _node_blocks(body_node)
+                            if block.type != "bullet"
+                        ]
+                        first_half = _clone_blocks(
+                            leading_blocks + bullet_blocks[:split_at]
+                        )
                         second_half = _clone_blocks(bullet_blocks[split_at:])
                         body_node.content = NodeContent(blocks=first_half)
                         follow_up = Slide(
@@ -1082,7 +1498,9 @@ def apply_review_fixes(deck_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool = False) -> dict[str, Any]:
+def review_deck(
+    deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool = False
+) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     before_dir = output_dir / ("before" if fix else "run")
     before_dir.mkdir(parents=True, exist_ok=True)
@@ -1091,7 +1509,9 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
     before_deck, before_provider = _build_deck_artifact(deck_path, before_pptx)
     before_signals = generate_render_signals(before_deck, before_provider)
     _, before_pngs = render_pptx_to_pngs(before_pptx, before_dir, dpi=dpi)
-    before_report = generate_review_report(before_deck, before_provider, before_pngs, artifacts_dir=output_dir)
+    before_report = generate_review_report(
+        before_deck, before_provider, before_pngs, artifacts_dir=output_dir
+    )
 
     report: dict[str, Any] = {
         "before": before_report,
@@ -1107,7 +1527,9 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
         after_deck, after_provider = _build_deck_artifact(deck_path, after_pptx)
         active_signals = generate_render_signals(after_deck, after_provider)
         _, after_pngs = render_pptx_to_pngs(after_pptx, after_dir, dpi=dpi)
-        after_report = generate_review_report(after_deck, after_provider, after_pngs, artifacts_dir=output_dir)
+        after_report = generate_review_report(
+            after_deck, after_provider, after_pngs, artifacts_dir=output_dir
+        )
         report["after"] = after_report
         report["comparison"] = {
             "before_grade": before_report["overall"]["grade"],
@@ -1125,9 +1547,7 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
             active_markdown += f"- Slide {fix_item['slide']}: {fix_item['type']} -> {fix_item['value']}\n"
         comparison = report.get("comparison")
         if comparison is not None:
-            active_markdown += (
-                f"\nBefore/after overall grade: {comparison['before_grade']} -> {comparison['after_grade']}\n"
-            )
+            active_markdown += f"\nBefore/after overall grade: {comparison['before_grade']} -> {comparison['after_grade']}\n"
 
     report_md_path = output_dir / "report.md"
     report_json_path = output_dir / "report.json"

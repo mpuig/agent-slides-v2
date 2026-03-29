@@ -34,7 +34,9 @@ def _node_fills_slot(node: Node, slot: SlotDef) -> bool:
     return _node_has_semantic_content(node)
 
 
-def generate_render_signals(deck: Deck, provider: LayoutProvider) -> list[dict[str, Any]]:
+def generate_render_signals(
+    deck: Deck, provider: LayoutProvider
+) -> list[dict[str, Any]]:
     """Return per-slide semantic signals for machine-consumable review."""
 
     payload: list[dict[str, Any]] = []
@@ -53,16 +55,18 @@ def generate_render_signals(deck: Deck, provider: LayoutProvider) -> list[dict[s
             if not any(_node_fills_slot(node, slot) for node in slot_nodes):
                 placeholder_empty = True
             if slot.role == "image" and not any(
-                node.type == "image" and bool(node.image_path and node.image_path.strip()) for node in slot_nodes
+                node.type == "image"
+                and bool(node.image_path and node.image_path.strip())
+                for node in slot_nodes
             ):
                 image_missing = True
 
         text_clipped = any(
-            computed.text_overflow
-            for computed in slide.computed.values()
+            computed.text_overflow for computed in slide.computed.values()
         )
         font_too_small = any(
-            computed is not None and 0.0 < computed.font_size_pt < _MIN_SIGNAL_FONT_SIZE_PT
+            computed is not None
+            and 0.0 < computed.font_size_pt < _MIN_SIGNAL_FONT_SIZE_PT
             for node in slide.nodes
             if node.type == "text"
             for computed in [slide.computed.get(node.node_id)]

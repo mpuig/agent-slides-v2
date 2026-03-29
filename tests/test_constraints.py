@@ -5,9 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from agent_slides.engine.constraints import Anchor, SlotConstraints, constraints_from_layout, solve, validate_constraints
+from agent_slides.engine.constraints import (
+    Anchor,
+    SlotConstraints,
+    constraints_from_layout,
+    solve,
+    validate_constraints,
+)
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
-from agent_slides.model import GridDef, LayoutDef, SlotDef, TemplateLayoutRegistry, TextFitting, list_layouts
+from agent_slides.model import (
+    GridDef,
+    LayoutDef,
+    SlotDef,
+    TemplateLayoutRegistry,
+    TextFitting,
+    list_layouts,
+)
 from agent_slides.model.layouts import SLIDE_HEIGHT_PT, SLIDE_WIDTH_PT, get_layout
 from agent_slides.model.themes import load_theme
 
@@ -27,11 +40,21 @@ def _write_manifest(path: Path) -> None:
                         "slot_mapping": {
                             "heading": {
                                 "role": "heading",
-                                "bounds": {"x": 72.0, "y": 64.0, "width": 560.0, "height": 96.0},
+                                "bounds": {
+                                    "x": 72.0,
+                                    "y": 64.0,
+                                    "width": 560.0,
+                                    "height": 96.0,
+                                },
                             },
                             "body": {
                                 "role": "body",
-                                "bounds": {"x": 72.0, "y": 180.0, "width": 560.0, "height": 220.0},
+                                "bounds": {
+                                    "x": 72.0,
+                                    "y": 180.0,
+                                    "width": 560.0,
+                                    "height": 220.0,
+                                },
                             },
                         },
                     }
@@ -68,7 +91,9 @@ def test_constraints_from_layout_preserves_template_bounds(tmp_path: Path) -> No
     _write_manifest(manifest_path)
     layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("photo_story")
 
-    constraints = constraints_from_layout(layout, TemplateLayoutRegistry(str(manifest_path)).theme)
+    constraints = constraints_from_layout(
+        layout, TemplateLayoutRegistry(str(manifest_path)).theme
+    )
 
     heading = constraints["heading"]
     assert heading.left == Anchor(reference="slide", edge="left", offset=72.0)
@@ -102,7 +127,14 @@ def test_constraints_from_layout_reuses_vertical_alignment_group_bounds() -> Non
                 alignment_group="body-row",
             ),
         },
-        grid=GridDef(columns=2, rows=1, row_heights=[1.0], col_widths=[0.5, 0.5], margin=0.0, gutter=0.0),
+        grid=GridDef(
+            columns=2,
+            rows=1,
+            row_heights=[1.0],
+            col_widths=[0.5, 0.5],
+            margin=0.0,
+            gutter=0.0,
+        ),
         text_fitting={"body": TextFitting(default_size=18.0, min_size=10.0)},
     )
 
@@ -163,7 +195,9 @@ def test_solve_supports_equal_share_fit_content_and_fill_remaining() -> None:
         measurements.append((slot_name, width))
         return 120.0
 
-    rects = solve(constraints, {"body": "copy"}, measure, SLIDE_WIDTH_PT, SLIDE_HEIGHT_PT)
+    rects = solve(
+        constraints, {"body": "copy"}, measure, SLIDE_WIDTH_PT, SLIDE_HEIGHT_PT
+    )
 
     assert rects["body"].height == pytest.approx(120.0)
     assert rects["col1"].width == pytest.approx(300.0)

@@ -28,7 +28,9 @@ INVALID_ICON = "INVALID_ICON"
 class AgentSlidesError(Exception):
     """Single application error type used across the CLI."""
 
-    def __init__(self, code: str, message: str, *, details: dict[str, object] | None = None) -> None:
+    def __init__(
+        self, code: str, message: str, *, details: dict[str, object] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -36,6 +38,7 @@ class AgentSlidesError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
 
 __all__ = [
     "AgentSlidesError",

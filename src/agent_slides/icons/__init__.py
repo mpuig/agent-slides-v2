@@ -16,7 +16,11 @@ _PATH_TOKEN_RE = re.compile(r"[MLHVZ]|-?(?:\d+(?:\.\d*)?|\.\d+)")
 
 @lru_cache(maxsize=1)
 def _icon_index() -> dict[str, str]:
-    payload = resources.files("agent_slides.icons").joinpath("library.json").read_text(encoding="utf-8")
+    payload = (
+        resources.files("agent_slides.icons")
+        .joinpath("library.json")
+        .read_text(encoding="utf-8")
+    )
     raw = json.loads(payload)
     if not isinstance(raw, dict):
         raise AgentSlidesError(SCHEMA_ERROR, "Built-in icon library is invalid")
@@ -53,7 +57,9 @@ def normalize_hex_color(value: object, *, field_name: str = "color") -> str:
     """Normalize a hex color to #RRGGBB."""
 
     if not isinstance(value, str) or not _HEX_COLOR_RE.fullmatch(value.strip()):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{field_name}' must be a hex color like '#1A73E8'")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{field_name}' must be a hex color like '#1A73E8'"
+        )
 
     normalized = value.strip().lstrip("#").upper()
     if len(normalized) == 3:
@@ -84,11 +90,15 @@ def svg_path_subpaths(path_data: str) -> list[list[tuple[float, float]]]:
     def take_number() -> float:
         nonlocal index
         if index >= len(tokens):
-            raise AgentSlidesError(SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data"
+            )
         token = tokens[index]
         index += 1
         if token in {"M", "L", "H", "V", "Z"}:
-            raise AgentSlidesError(SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data"
+            )
         return float(token)
 
     while index < len(tokens):
@@ -103,7 +113,9 @@ def svg_path_subpaths(path_data: str) -> list[list[tuple[float, float]]]:
                 current = start
                 continue
         elif not command:
-            raise AgentSlidesError(SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Built-in icon library contains malformed SVG path data"
+            )
 
         if command == "M":
             x = take_number()
@@ -132,7 +144,9 @@ def svg_path_subpaths(path_data: str) -> list[list[tuple[float, float]]]:
             active.append(current)
             continue
 
-        raise AgentSlidesError(SCHEMA_ERROR, "Built-in icon library contains unsupported SVG path data")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Built-in icon library contains unsupported SVG path data"
+        )
 
     flush()
     return [subpath for subpath in subpaths if len(subpath) >= 2]

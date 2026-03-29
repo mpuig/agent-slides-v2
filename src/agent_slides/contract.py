@@ -29,7 +29,12 @@ from agent_slides.errors import (
 )
 from agent_slides.model import Deck, NodeContent, TableSpec
 from agent_slides.model.constraints import Constraint
-from agent_slides.model.types import CHART_TYPE_VALUES, PATTERN_TYPE_VALUES, SHAPE_DASH_VALUES, SHAPE_TYPE_VALUES
+from agent_slides.model.types import (
+    CHART_TYPE_VALUES,
+    PATTERN_TYPE_VALUES,
+    SHAPE_DASH_VALUES,
+    SHAPE_TYPE_VALUES,
+)
 
 CONTRACT_VERSION = 1
 
@@ -67,7 +72,9 @@ def _number_schema() -> dict[str, Any]:
     return {"type": "number"}
 
 
-def _integer_schema(*, minimum: int | None = None, default: int | None = None) -> dict[str, Any]:
+def _integer_schema(
+    *, minimum: int | None = None, default: int | None = None
+) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "integer"}
     if minimum is not None:
         schema["minimum"] = minimum
@@ -202,7 +209,17 @@ DEFINITIONS: dict[str, Any] = {
             "image_fit": _string_schema(min_length=1),
             "font_size": {"type": ["number", "null"]},
         },
-        required=["slide_id", "slot", "node_id", "type", "text", "content", "image_path", "image_fit", "font_size"],
+        required=[
+            "slide_id",
+            "slot",
+            "node_id",
+            "type",
+            "text",
+            "content",
+            "image_path",
+            "image_fit",
+            "font_size",
+        ],
     ),
     "slot_clear_result": _object_schema(
         {
@@ -428,7 +445,9 @@ DEFINITIONS: dict[str, Any] = {
     ),
     "suggest_layout_result": _object_schema(
         {
-            "suggestions": _array_schema(_object_schema({}, additional_properties=True)),
+            "suggestions": _array_schema(
+                _object_schema({}, additional_properties=True)
+            ),
         },
         required=["suggestions"],
     ),
@@ -455,7 +474,15 @@ DEFINITIONS: dict[str, Any] = {
             "output_path": _string_schema(min_length=1),
             "download_url": _string_schema(min_length=1),
         },
-        required=["ok", "tool", "result", "warnings", "deck_revision", "output_path", "download_url"],
+        required=[
+            "ok",
+            "tool",
+            "result",
+            "warnings",
+            "deck_revision",
+            "output_path",
+            "download_url",
+        ],
     ),
     "tool_result_get_deck_info": _object_schema(
         {
@@ -482,25 +509,55 @@ DEFINITIONS: dict[str, Any] = {
 }
 
 ERROR_CONTRACTS: dict[str, dict[str, str]] = {
-    INVALID_SLIDE: {"description": "The requested slide index or slide id does not exist."},
-    INVALID_SLOT: {"description": "The requested slot name is not valid for the target layout."},
-    INVALID_LAYOUT: {"description": "The requested layout is unknown for the active layout provider."},
-    FILE_NOT_FOUND: {"description": "A required file, manifest, or asset could not be found."},
-    SCHEMA_ERROR: {"description": "Input, JSON payload, or file structure validation failed."},
+    INVALID_SLIDE: {
+        "description": "The requested slide index or slide id does not exist."
+    },
+    INVALID_SLOT: {
+        "description": "The requested slot name is not valid for the target layout."
+    },
+    INVALID_LAYOUT: {
+        "description": "The requested layout is unknown for the active layout provider."
+    },
+    FILE_NOT_FOUND: {
+        "description": "A required file, manifest, or asset could not be found."
+    },
+    SCHEMA_ERROR: {
+        "description": "Input, JSON payload, or file structure validation failed."
+    },
     OVERFLOW: {"description": "Rendered text overflowed its computed bounds."},
-    UNBOUND_NODES: {"description": "A layout change left one or more nodes without a slot binding."},
+    UNBOUND_NODES: {
+        "description": "A layout change left one or more nodes without a slot binding."
+    },
     INVALID_CHART_TYPE: {"description": "The requested chart type is not supported."},
-    INVALID_NODE_TYPE: {"description": "The requested node does not match the required node type."},
-    REVISION_CONFLICT: {"description": "The deck revision changed unexpectedly during a write."},
-    SLOT_OCCUPIED: {"description": "A slot could not be reused without discarding existing content."},
-    FILE_EXISTS: {"description": "The target file already exists and force/overwrite was not enabled."},
-    TEMPLATE_CHANGED: {"description": "The learned template changed and the stored manifest is stale."},
-    CHART_DATA_ERROR: {"description": "Chart payload structure or values failed validation."},
+    INVALID_NODE_TYPE: {
+        "description": "The requested node does not match the required node type."
+    },
+    REVISION_CONFLICT: {
+        "description": "The deck revision changed unexpectedly during a write."
+    },
+    SLOT_OCCUPIED: {
+        "description": "A slot could not be reused without discarding existing content."
+    },
+    FILE_EXISTS: {
+        "description": "The target file already exists and force/overwrite was not enabled."
+    },
+    TEMPLATE_CHANGED: {
+        "description": "The learned template changed and the stored manifest is stale."
+    },
+    CHART_DATA_ERROR: {
+        "description": "Chart payload structure or values failed validation."
+    },
     THEME_INVALID: {"description": "The requested theme definition is invalid."},
     THEME_NOT_FOUND: {"description": "The requested built-in theme does not exist."},
-    THEME_ROLE_NOT_FOUND: {"description": "A referenced role is missing from the loaded theme."},
-    INVALID_TOOL_INPUT: {"description": "An agent tool was called with a non-object input payload."},
-    INVALID_TOOL_NAME: {"description": "An agent tool name is not part of the declared tool profile."},
+    THEME_ROLE_NOT_FOUND: {
+        "description": "A referenced role is missing from the loaded theme."
+    },
+    INVALID_TOOL_INPUT: {
+        "description": "An agent tool was called with a non-object input payload."
+    },
+    INVALID_TOOL_NAME: {
+        "description": "An agent tool name is not part of the declared tool profile."
+    },
     INVALID_ICON: {"description": "The requested built-in icon name does not exist."},
 }
 
@@ -563,7 +620,10 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
                 "text": _string_schema(),
                 "content": _ref("structured_text"),
                 "image": _string_schema(min_length=1),
-                "image_fit": {"type": "string", "enum": ["contain", "cover", "stretch"]},
+                "image_fit": {
+                    "type": "string",
+                    "enum": ["contain", "cover", "stretch"],
+                },
                 "font_size": {"type": "number"},
             },
             required=["slide", "slot"],
@@ -616,7 +676,13 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["slide", "slot", "type", "data"],
         ),
         "result_schema": _ref("chart_add_result"),
-        "errors": [CHART_DATA_ERROR, INVALID_CHART_TYPE, INVALID_SLIDE, INVALID_SLOT, SCHEMA_ERROR],
+        "errors": [
+            CHART_DATA_ERROR,
+            INVALID_CHART_TYPE,
+            INVALID_SLIDE,
+            INVALID_SLOT,
+            SCHEMA_ERROR,
+        ],
     },
     "chart_update": {
         "kind": "mutation",
@@ -709,7 +775,11 @@ MUTATION_CONTRACTS: dict[str, dict[str, Any]] = {
 _BATCH_ERROR_CODES = sorted(
     {
         SCHEMA_ERROR,
-        *(error for payload in MUTATION_CONTRACTS.values() for error in payload["errors"]),
+        *(
+            error
+            for payload in MUTATION_CONTRACTS.values()
+            for error in payload["errors"]
+        ),
     }
 )
 
@@ -744,7 +814,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "output"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("build_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("build_result"))}
+        ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED],
     },
     "chart.add": {
@@ -765,7 +837,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path", "slide", "slot", "type"],
             one_of=[{"required": ["data"]}, {"required": ["data_file"]}],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("chart_add_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("chart_add_result"))}
+        ],
         "errors": [FILE_NOT_FOUND, *MUTATION_CONTRACTS["chart_add"]["errors"]],
     },
     "chart.update": {
@@ -781,7 +855,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "node", "data"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("chart_update_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("chart_update_result")),
+            }
+        ],
         "errors": MUTATION_CONTRACTS["chart_update"]["errors"],
     },
     "table.add": {
@@ -800,7 +879,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path", "slide", "slot"],
             one_of=[{"required": ["data"]}, {"required": ["data_file"]}],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("table_add_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("table_add_result"))}
+        ],
         "errors": [FILE_NOT_FOUND, *MUTATION_CONTRACTS["table_add"]["errors"]],
     },
     "pattern.add": {
@@ -821,7 +902,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path", "slide", "type"],
             one_of=[{"required": ["data"]}, {"required": ["data_file"]}],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("pattern_add_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("pattern_add_result")),
+            }
+        ],
         "errors": [FILE_NOT_FOUND, *MUTATION_CONTRACTS["pattern_add"]["errors"]],
     },
     "contract": {
@@ -829,14 +915,21 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "summary": "Emit the canonical machine-readable contract for commands, mutations, tools, and errors.",
         "cli_command": _cli_command("contract"),
         "input_schema": _object_schema({}),
-        "outputs": [{"channel": "stdout", "schema": _object_schema({}, additional_properties=True)}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _object_schema({}, additional_properties=True),
+            }
+        ],
         "errors": [],
     },
     "info": {
         "kind": "cli",
         "summary": "Dump the full deck sidecar JSON with indentation.",
         "cli_command": _cli_command("info"),
-        "input_schema": _object_schema({"path": _string_schema(min_length=1)}, required=["path"]),
+        "input_schema": _object_schema(
+            {"path": _string_schema(min_length=1)}, required=["path"]
+        ),
         "outputs": [{"channel": "stdout", "schema": _ref("deck")}],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
     },
@@ -857,7 +950,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "slide", "name", "x", "y", "size", "color"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("icon_add_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("icon_add_result"))}
+        ],
         "errors": MUTATION_CONTRACTS["icon_add"]["errors"],
     },
     "icon.list": {
@@ -865,7 +960,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "summary": "List the built-in vector icon names available for icon nodes and icon bullets.",
         "cli_command": _cli_command("icon", "list"),
         "input_schema": _object_schema({}),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("icon_list_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("icon_list_result"))}
+        ],
         "errors": [],
     },
     "init": {
@@ -910,7 +1007,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "kind": "cli",
         "summary": "Summarize a learned template manifest.",
         "cli_command": _cli_command("inspect"),
-        "input_schema": _object_schema({"path": _string_schema(min_length=1)}, required=["path"]),
+        "input_schema": _object_schema(
+            {"path": _string_schema(min_length=1)}, required=["path"]
+        ),
         "outputs": [{"channel": "stdout", "schema": _ref("inspect_result")}],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
     },
@@ -926,7 +1025,11 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["template_path"],
         ),
         "outputs": [
-            {"channel": "stderr", "schema": _string_schema(min_length=1), "kind": "warning_text"},
+            {
+                "channel": "stderr",
+                "schema": _string_schema(min_length=1),
+                "kind": "warning_text",
+            },
             {"channel": "stdout", "schema": _success_envelope(_ref("learn_result"))},
         ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
@@ -944,8 +1047,14 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path"],
         ),
         "outputs": [
-            {"channel": "stdout", "schema": _success_envelope(_ref("server_started_result"))},
-            {"channel": "stdout", "schema": _success_envelope(_ref("server_stopped_result"))},
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("server_started_result")),
+            },
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("server_stopped_result")),
+            },
         ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
     },
@@ -1015,7 +1124,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "slide", "type", "x", "y", "w", "h"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("shape_add_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("shape_add_result"))}
+        ],
         "errors": MUTATION_CONTRACTS["shape_add"]["errors"],
     },
     "slide.add": {
@@ -1040,7 +1151,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
                 }
             ],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("slide_add_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("slide_add_result"))}
+        ],
         "errors": MUTATION_CONTRACTS["slide_add"]["errors"],
     },
     "slide.remove": {
@@ -1055,7 +1168,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "slide"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("slide_remove_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("slide_remove_result")),
+            }
+        ],
         "errors": MUTATION_CONTRACTS["slide_remove"]["errors"],
     },
     "slide.set-layout": {
@@ -1072,8 +1190,15 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path", "slide", "layout"],
         ),
         "outputs": [
-            {"channel": "stderr", "schema": _ref("slide_set_layout_warning"), "kind": "warning"},
-            {"channel": "stdout", "schema": _success_envelope(_ref("slide_set_layout_result"))},
+            {
+                "channel": "stderr",
+                "schema": _ref("slide_set_layout_warning"),
+                "kind": "warning",
+            },
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("slide_set_layout_result")),
+            },
         ],
         "errors": MUTATION_CONTRACTS["slide_set_layout"]["errors"],
     },
@@ -1090,7 +1215,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "node", "slot"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("slot_bind_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("slot_bind_result"))}
+        ],
         "errors": MUTATION_CONTRACTS["slot_bind"]["errors"],
     },
     "slot.clear": {
@@ -1106,7 +1233,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "slide", "slot"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("slot_clear_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("slot_clear_result")),
+            }
+        ],
         "errors": MUTATION_CONTRACTS["slot_clear"]["errors"],
     },
     "slot.set": {
@@ -1125,7 +1257,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             required=["path", "slide", "slot"],
             one_of=[{"required": ["text"]}, {"required": ["image"]}],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("slot_set_result"))}],
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("slot_set_result"))}
+        ],
         "errors": MUTATION_CONTRACTS["slot_set"]["errors"],
     },
     "suggest-layout": {
@@ -1139,7 +1273,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["content"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("suggest_layout_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("suggest_layout_result")),
+            }
+        ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
     },
     "theme.apply": {
@@ -1153,7 +1292,12 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             },
             required=["path", "theme"],
         ),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("theme_apply_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("theme_apply_result")),
+            }
+        ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR, THEME_NOT_FOUND],
     },
     "theme.list": {
@@ -1161,15 +1305,24 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "summary": "List the built-in themes available to new or existing decks.",
         "cli_command": _cli_command("theme", "list"),
         "input_schema": _object_schema({}),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("theme_list_result"))}],
+        "outputs": [
+            {
+                "channel": "stdout",
+                "schema": _success_envelope(_ref("theme_list_result")),
+            }
+        ],
         "errors": [],
     },
     "validate": {
         "kind": "cli",
         "summary": "Validate a deck and emit structured design-rule warnings.",
         "cli_command": _cli_command("validate"),
-        "input_schema": _object_schema({"path": _string_schema(min_length=1)}, required=["path"]),
-        "outputs": [{"channel": "stdout", "schema": _success_envelope(_ref("validate_result"))}],
+        "input_schema": _object_schema(
+            {"path": _string_schema(min_length=1)}, required=["path"]
+        ),
+        "outputs": [
+            {"channel": "stdout", "schema": _success_envelope(_ref("validate_result"))}
+        ],
         "errors": [FILE_NOT_FOUND, SCHEMA_ERROR],
     },
 }

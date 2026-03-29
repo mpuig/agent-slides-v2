@@ -15,7 +15,9 @@ SCRIPT_PATH = ROOT / "scripts" / "export_layout_inventory.py"
 
 
 def _load_script_module():
-    spec = importlib.util.spec_from_file_location("export_layout_inventory", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "export_layout_inventory", SCRIPT_PATH
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -38,8 +40,19 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "title_only",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 72, "y": 136, "w": 560, "h": 36}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 136,
+                                            "w": 560,
+                                            "h": 36,
+                                        },
+                                    },
                                 ],
                                 "slot_mapping": {"heading": 0, "subheading": 1},
                             },
@@ -47,8 +60,19 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "body_text",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 72, "y": 156, "w": 560, "h": 220}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 156,
+                                            "w": 560,
+                                            "h": 220,
+                                        },
+                                    },
                                 ],
                                 "slot_mapping": {"heading": 0, "body": 1},
                             },
@@ -56,8 +80,19 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "visual_story",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 360, "y": 156, "w": 288, "h": 260}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 360,
+                                            "y": 156,
+                                            "w": 288,
+                                            "h": 260,
+                                        },
+                                    },
                                 ],
                                 "slot_mapping": {"heading": 0, "image": 1},
                             },
@@ -65,9 +100,28 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "mixed_story",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 72, "y": 156, "w": 252, "h": 260}},
-                                    {"idx": 2, "bounds": {"x": 360, "y": 156, "w": 288, "h": 260}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 156,
+                                            "w": 252,
+                                            "h": 260,
+                                        },
+                                    },
+                                    {
+                                        "idx": 2,
+                                        "bounds": {
+                                            "x": 360,
+                                            "y": 156,
+                                            "w": 288,
+                                            "h": 260,
+                                        },
+                                    },
                                 ],
                                 "slot_mapping": {"heading": 0, "body": 1, "image": 2},
                             },
@@ -75,12 +129,44 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "three_up",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 72, "y": 156, "w": 160, "h": 220}},
-                                    {"idx": 2, "bounds": {"x": 256, "y": 156, "w": 160, "h": 220}},
-                                    {"idx": 3, "bounds": {"x": 440, "y": 156, "w": 160, "h": 220}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 156,
+                                            "w": 160,
+                                            "h": 220,
+                                        },
+                                    },
+                                    {
+                                        "idx": 2,
+                                        "bounds": {
+                                            "x": 256,
+                                            "y": 156,
+                                            "w": 160,
+                                            "h": 220,
+                                        },
+                                    },
+                                    {
+                                        "idx": 3,
+                                        "bounds": {
+                                            "x": 440,
+                                            "y": 156,
+                                            "w": 160,
+                                            "h": 220,
+                                        },
+                                    },
                                 ],
-                                "slot_mapping": {"heading": 0, "col1": 1, "col2": 2, "col3": 3},
+                                "slot_mapping": {
+                                    "heading": 0,
+                                    "col1": 1,
+                                    "col2": 2,
+                                    "col3": 3,
+                                },
                             },
                             {
                                 "slug": "blankish",
@@ -92,8 +178,19 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "d_body_text",
                                 "usable": True,
                                 "placeholders": [
-                                    {"idx": 0, "bounds": {"x": 72, "y": 48, "w": 560, "h": 80}},
-                                    {"idx": 1, "bounds": {"x": 72, "y": 156, "w": 560, "h": 220}},
+                                    {
+                                        "idx": 0,
+                                        "bounds": {"x": 72, "y": 48, "w": 560, "h": 80},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 156,
+                                            "w": 560,
+                                            "h": 220,
+                                        },
+                                    },
                                 ],
                                 "slot_mapping": {"heading": 0, "body": 1},
                             },
@@ -101,8 +198,22 @@ def _write_manifest(path: Path) -> None:
                                 "slug": "dict_bounds_layout",
                                 "usable": True,
                                 "slot_mapping": {
-                                    "heading": {"bounds": {"x": 60, "y": 40, "width": 520, "height": 72}},
-                                    "body": {"bounds": {"left": 60, "top": 140, "width": 520, "height": 240}},
+                                    "heading": {
+                                        "bounds": {
+                                            "x": 60,
+                                            "y": 40,
+                                            "width": 520,
+                                            "height": 72,
+                                        }
+                                    },
+                                    "body": {
+                                        "bounds": {
+                                            "left": 60,
+                                            "top": 140,
+                                            "width": 520,
+                                            "height": 240,
+                                        }
+                                    },
                                 },
                             },
                         ],
@@ -176,7 +287,9 @@ def test_export_layout_inventory_cli_outputs_expected_inventory(tmp_path: Path) 
     assert layouts["mixed_story"]["fillable_slots"] == ["heading", "body", "image"]
 
 
-def test_export_layout_inventory_treats_all_usable_layouts_as_testable_without_matching_policy(tmp_path: Path) -> None:
+def test_export_layout_inventory_treats_all_usable_layouts_as_testable_without_matching_policy(
+    tmp_path: Path,
+) -> None:
     manifest_path = tmp_path / "template.manifest.json"
     policy_dir = tmp_path / "excluded-layouts"
     _write_manifest(manifest_path)
@@ -213,7 +326,9 @@ def test_export_layout_inventory_output_is_deterministic(tmp_path: Path) -> None
     assert first.stdout == second.stdout
 
 
-def test_export_layout_inventory_supports_learned_manifests_from_multiple_templates(tmp_path: Path) -> None:
+def test_export_layout_inventory_supports_learned_manifests_from_multiple_templates(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
 
     for index in range(4):
@@ -222,7 +337,9 @@ def test_export_layout_inventory_supports_learned_manifests_from_multiple_templa
         Presentation().save(template_path)
         read_template_manifest(template_path, manifest_path)
 
-        payload = module.build_inventory(json.loads(manifest_path.read_text(encoding="utf-8")))
+        payload = module.build_inventory(
+            json.loads(manifest_path.read_text(encoding="utf-8"))
+        )
 
         assert payload["layout_count"] > 0
         assert payload["testable_count"] >= 0
@@ -230,7 +347,9 @@ def test_export_layout_inventory_supports_learned_manifests_from_multiple_templa
         assert all("slot_structure" in layout for layout in payload["layouts"])
 
 
-def test_export_layout_inventory_rejects_missing_placeholder_references(tmp_path: Path) -> None:
+def test_export_layout_inventory_rejects_missing_placeholder_references(
+    tmp_path: Path,
+) -> None:
     manifest_path = tmp_path / "template.manifest.json"
     manifest_path.write_text(
         json.dumps(

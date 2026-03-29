@@ -18,7 +18,9 @@ NS = {"p": PML_NS, "a": DML_NS}
 
 ET.register_namespace("a", DML_NS)
 ET.register_namespace("p", PML_NS)
-ET.register_namespace("r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+ET.register_namespace(
+    "r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+)
 
 
 def invoke(args: list[str]) -> Result:
@@ -57,7 +59,9 @@ def create_test_template(path: Path, layouts: dict[int, str] | None = None) -> N
         "ppt/theme/theme1.xml": _set_theme_values,
     }
     for index, name in (layouts or {}).items():
-        updates[f"ppt/slideLayouts/slideLayout{index + 1}.xml"] = _layout_name_updater(name)
+        updates[f"ppt/slideLayouts/slideLayout{index + 1}.xml"] = _layout_name_updater(
+            name
+        )
 
     _rewrite_pptx(path, updates)
 
@@ -66,7 +70,9 @@ def patch_template_theme(path: Path, *, accent1: str) -> None:
     _rewrite_pptx(
         path,
         {
-            "ppt/theme/theme1.xml": lambda root: _set_scheme_color(root, "accent1", accent1),
+            "ppt/theme/theme1.xml": lambda root: _set_scheme_color(
+                root, "accent1", accent1
+            ),
         },
     )
 
@@ -157,9 +163,15 @@ def test_template_ingestion_full_flow(tmp_path: Path) -> None:
     assert inspect_payload["data"]["source"] == "brand-template.pptx"
     assert inspect_payload["data"]["layouts_found"] == 11
     assert inspect_payload["data"]["usable_layouts"] >= 3
-    assert any(layout["slug"] == "title_slide" for layout in inspect_payload["data"]["layouts"])
-    assert any(layout["slug"] == "two_content" for layout in inspect_payload["data"]["layouts"])
-    assert any(layout["slug"] == "blank" for layout in inspect_payload["data"]["layouts"])
+    assert any(
+        layout["slug"] == "title_slide" for layout in inspect_payload["data"]["layouts"]
+    )
+    assert any(
+        layout["slug"] == "two_content" for layout in inspect_payload["data"]["layouts"]
+    )
+    assert any(
+        layout["slug"] == "blank" for layout in inspect_payload["data"]["layouts"]
+    )
 
     deck_path = tmp_path / "deck.json"
     init_result = invoke(["init", str(deck_path), "--template", str(manifest_path)])
@@ -228,7 +240,9 @@ def test_template_changed_warning(tmp_path: Path) -> None:
     init_result = invoke(["init", str(deck_path), "--template", str(manifest_path)])
     assert init_result.exit_code == 0
 
-    slide_add_result = invoke(["slide", "add", str(deck_path), "--layout", "title_slide"])
+    slide_add_result = invoke(
+        ["slide", "add", str(deck_path), "--layout", "title_slide"]
+    )
     assert slide_add_result.exit_code == 0
 
     slot_result = invoke(
@@ -319,7 +333,10 @@ def test_multi_layout_template(tmp_path: Path) -> None:
         "Blank",
     ]
 
-def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path: Path) -> None:
+
+def test_template_build_applies_computed_font_sizes_to_placeholder_text(
+    tmp_path: Path,
+) -> None:
     template_path = tmp_path / "brand-template.pptx"
     create_test_template(template_path)
 
@@ -372,8 +389,18 @@ def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path
     assert json.loads(build_result.output)["ok"] is True
 
     presentation = Presentation(str(output_path))
-    title_run = presentation.slides[0].placeholders[title_layout["slot_mapping"]["heading"]].text_frame.paragraphs[0].runs[0]
-    body_run = presentation.slides[1].placeholders[two_content_layout["slot_mapping"]["col1"]].text_frame.paragraphs[0].runs[0]
+    title_run = (
+        presentation.slides[0]
+        .placeholders[title_layout["slot_mapping"]["heading"]]
+        .text_frame.paragraphs[0]
+        .runs[0]
+    )
+    body_run = (
+        presentation.slides[1]
+        .placeholders[two_content_layout["slot_mapping"]["col1"]]
+        .text_frame.paragraphs[0]
+        .runs[0]
+    )
 
     # Template runs inherit native placeholder formatting; font.size is None at
     # run level (inherited from the placeholder/layout master) unless explicitly
@@ -382,7 +409,9 @@ def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path
     assert body_run.font.size is None
 
 
-def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_path: Path) -> None:
+def test_template_build_swaps_inverted_quote_and_attribution_placeholders(
+    tmp_path: Path,
+) -> None:
     template_path = tmp_path / "quote-template.pptx"
     create_test_template(template_path)
 
@@ -428,13 +457,23 @@ def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_pa
                                         "idx": 0,
                                         "type": "BODY",
                                         "name": "Large Quote",
-                                        "bounds": {"x": 72, "y": 96, "w": 576, "h": 240},
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 96,
+                                            "w": 576,
+                                            "h": 240,
+                                        },
                                     },
                                     {
                                         "idx": 1,
                                         "type": "BODY",
                                         "name": "Small Attribution",
-                                        "bounds": {"x": 72, "y": 360, "w": 576, "h": 48},
+                                        "bounds": {
+                                            "x": 72,
+                                            "y": 360,
+                                            "w": 576,
+                                            "h": 48,
+                                        },
                                     },
                                 ],
                                 "slot_mapping": {
@@ -455,10 +494,15 @@ def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_pa
     init_result = invoke(["init", str(deck_path), "--template", str(manifest_path)])
     assert init_result.exit_code == 0
 
-    slide_add_result = invoke(["slide", "add", str(deck_path), "--layout", "quote_layout"])
+    slide_add_result = invoke(
+        ["slide", "add", str(deck_path), "--layout", "quote_layout"]
+    )
     assert slide_add_result.exit_code == 0
 
-    for slot_name, text in [("quote", "Stay hungry, stay foolish."), ("attribution", "Steve Jobs")]:
+    for slot_name, text in [
+        ("quote", "Stay hungry, stay foolish."),
+        ("attribution", "Steve Jobs"),
+    ]:
         slot_result = invoke(
             [
                 "slot",

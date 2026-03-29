@@ -59,7 +59,11 @@ def _commit_staged_writes(staged_paths: list[tuple[Path, Path]]) -> None:
             os.rename(tmp_path, path)
     except OSError as exc:
         _cleanup_tmp_files(written_tmp_paths)
-        pending = [tmp_path for tmp_path, _ in staged_paths if tmp_path not in written_tmp_paths]
+        pending = [
+            tmp_path
+            for tmp_path, _ in staged_paths
+            if tmp_path not in written_tmp_paths
+        ]
         _cleanup_tmp_files(pending)
         _raise_write_error(path, exc)
 
@@ -73,7 +77,9 @@ def _serialize_deck_payload(deck: Deck) -> str:
 
 
 def _serialize_computed_payload(deck: Deck) -> str:
-    return f"{ComputedDeck.from_deck(deck).model_dump_json(indent=2, exclude_none=True)}\n"
+    return (
+        f"{ComputedDeck.from_deck(deck).model_dump_json(indent=2, exclude_none=True)}\n"
+    )
 
 
 def _write_bundle_atomic(path: Path, deck: Deck) -> None:
@@ -81,9 +87,14 @@ def _write_bundle_atomic(path: Path, deck: Deck) -> None:
     staged_paths: list[tuple[Path, Path]] = []
 
     try:
-        staged_paths.append((_stage_atomic_write(path, _serialize_deck_payload(deck)), path))
         staged_paths.append(
-            (_stage_atomic_write(computed_path, _serialize_computed_payload(deck)), computed_path)
+            (_stage_atomic_write(path, _serialize_deck_payload(deck)), path)
+        )
+        staged_paths.append(
+            (
+                _stage_atomic_write(computed_path, _serialize_computed_payload(deck)),
+                computed_path,
+            )
         )
     except OSError as exc:
         _cleanup_tmp_files([tmp_path for tmp_path, _ in staged_paths])
@@ -170,7 +181,9 @@ def resolve_manifest_path(deck_path: str, deck: Deck) -> str | None:
     return os.path.join(deck_dir, deck.template_manifest)
 
 
-def _relative_manifest_path(deck_path: Path, manifest_path: str | Path | None) -> str | None:
+def _relative_manifest_path(
+    deck_path: Path, manifest_path: str | Path | None
+) -> str | None:
     if manifest_path is None:
         return None
 
@@ -223,7 +236,9 @@ def mutate_deck(path: str, fn: Callable[[Deck, LayoutProvider], T]) -> tuple[Dec
 
     deck = read_deck(path)
     provider = resolve_layout_provider(resolve_manifest_path(path, deck))
-    previous_slide_signatures = {slide.slide_id: slide_semantic_signature(slide) for slide in deck.slides}
+    previous_slide_signatures = {
+        slide.slide_id: slide_semantic_signature(slide) for slide in deck.slides
+    }
     expected_revision = deck.revision
     result = fn(deck, provider)
     deck.bump_revision()

@@ -53,7 +53,11 @@ class InlineAssetParser(HTMLParser):
                 self.inline_script_count += 1
         if tag == "style":
             self.inline_style_count += 1
-        if tag == "link" and attr_map.get("rel") == "stylesheet" and attr_map.get("href"):
+        if (
+            tag == "link"
+            and attr_map.get("rel") == "stylesheet"
+            and attr_map.get("href")
+        ):
             self.stylesheet_hrefs.append(str(attr_map["href"]))
 
 
@@ -101,7 +105,9 @@ def write_deck(path: Path, deck: Deck) -> None:
 
 
 class FakeSlideRenderer:
-    def __init__(self, deck_path: Path, output_dir: Path, *, available: bool = True) -> None:
+    def __init__(
+        self, deck_path: Path, output_dir: Path, *, available: bool = True
+    ) -> None:
         self.deck_path = deck_path
         self.cache_dir = output_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -120,10 +126,14 @@ class FakeSlideRenderer:
         for index, slide in enumerate(deck.slides):
             if progress_callback is not None:
                 progress_callback(index, len(deck.slides))
-            rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+            rendered.append(
+                self._render_slide(slide.slide_id, slide.revision or deck.revision)
+            )
         return rendered
 
-    async def render_indices(self, slide_indices: list[int], *, progress_callback=None) -> list[Path]:
+    async def render_indices(
+        self, slide_indices: list[int], *, progress_callback=None
+    ) -> list[Path]:
         self.render_indices_calls.append(list(slide_indices))
         deck = read_deck(str(self.deck_path))
         rendered: list[Path] = []
@@ -131,11 +141,15 @@ class FakeSlideRenderer:
             if progress_callback is not None:
                 progress_callback(index, len(deck.slides))
             slide = deck.slides[index]
-            rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+            rendered.append(
+                self._render_slide(slide.slide_id, slide.revision or deck.revision)
+            )
         return rendered
 
     def _render_slide(self, slide_id: str, revision: int) -> Path:
-        return write_png(self.cache_dir / f"{slide_id}-{revision}.png", width=48, height=36)
+        return write_png(
+            self.cache_dir / f"{slide_id}-{revision}.png", width=48, height=36
+        )
 
 
 class SilentFailureSlideRenderer(FakeSlideRenderer):
@@ -143,7 +157,9 @@ class SilentFailureSlideRenderer(FakeSlideRenderer):
         self.render_all_calls += 1
         return []
 
-    async def render_indices(self, slide_indices: list[int], *, progress_callback=None) -> list[Path]:
+    async def render_indices(
+        self, slide_indices: list[int], *, progress_callback=None
+    ) -> list[Path]:
         self.render_indices_calls.append(list(slide_indices))
         return []
 
@@ -248,8 +264,12 @@ def make_icon_preview_deck(*, revision: int) -> Deck:
                         type="text",
                         content=NodeContent(
                             blocks=[
-                                TextBlock(type="bullet", text="On track", icon="checkmark"),
-                                TextBlock(type="bullet", text="Budget risk", icon="warning"),
+                                TextBlock(
+                                    type="bullet", text="On track", icon="checkmark"
+                                ),
+                                TextBlock(
+                                    type="bullet", text="Budget risk", icon="warning"
+                                ),
                             ]
                         ),
                     ),
@@ -317,7 +337,13 @@ def make_shape_deck(*, revision: int) -> Deck:
                             shadow=True,
                             opacity=0.8,
                         ),
-                        style_overrides={"x": 48.0, "y": 120.0, "width": 624.0, "height": 240.0, "z_index": -1},
+                        style_overrides={
+                            "x": 48.0,
+                            "y": 120.0,
+                            "width": 624.0,
+                            "height": 240.0,
+                            "z_index": -1,
+                        },
                     ),
                     Node(
                         node_id="n-2",
@@ -507,7 +533,9 @@ def test_sidecar_watcher_supports_watching_computed_sidecar(tmp_path: Path) -> N
     assert not watcher.matches_event(FileModifiedEvent(str(deck_path)))
 
 
-def test_sidecar_watcher_detects_computed_only_changes_without_revision_bump(tmp_path: Path) -> None:
+def test_sidecar_watcher_detects_computed_only_changes_without_revision_bump(
+    tmp_path: Path,
+) -> None:
     async def scenario() -> None:
         deck_path = tmp_path / "deck.json"
         deck = make_deck(revision=1, content="First")
@@ -579,8 +607,12 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
 
         try:
             html = await asyncio.to_thread(_fetch_text, f"{server.origin}/")
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
-            slide_png = await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png?rev=1")
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
+            slide_png = await asyncio.to_thread(
+                _fetch_bytes, f"{server.origin}/slides/0.png?rev=1"
+            )
 
             assert "<svg" in html
             assert '<img id="stage-image"' in html
@@ -589,7 +621,7 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
             assert 'id="slide-dots"' in html
             assert 'id="slide-count"' in html
             assert 'id="status-dot"' in html
-            assert 'preview_backend' in payload
+            assert "preview_backend" in payload
             assert "wrapText" in html
             assert "preserveAspectRatio" in html
             assert payload["revision"] == 1
@@ -604,8 +636,12 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_one,
                 connect(f"ws://127.0.0.1:{server.port}/ws") as client_two,
             ):
-                initial_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
-                initial_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
+                initial_one = json.loads(
+                    await asyncio.wait_for(client_one.recv(), timeout=1.0)
+                )
+                initial_two = json.loads(
+                    await asyncio.wait_for(client_two.recv(), timeout=1.0)
+                )
 
                 assert initial_one["type"] == "slides_updated"
                 assert initial_two["type"] == "slides_updated"
@@ -622,14 +658,32 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
                 write_deck(deck_path, updated_deck)
                 write_computed_deck(str(deck_path), updated_deck)
 
-                rendering_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
-                rendering_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
-                updated_one = json.loads(await asyncio.wait_for(client_one.recv(), timeout=1.0))
-                updated_two = json.loads(await asyncio.wait_for(client_two.recv(), timeout=1.0))
+                rendering_one = json.loads(
+                    await asyncio.wait_for(client_one.recv(), timeout=1.0)
+                )
+                rendering_two = json.loads(
+                    await asyncio.wait_for(client_two.recv(), timeout=1.0)
+                )
+                updated_one = json.loads(
+                    await asyncio.wait_for(client_one.recv(), timeout=1.0)
+                )
+                updated_two = json.loads(
+                    await asyncio.wait_for(client_two.recv(), timeout=1.0)
+                )
 
                 assert renderer.render_indices_calls == [[0]]
-                assert rendering_one == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
-                assert rendering_two == {"type": "rendering", "path": str(deck_path), "slide_index": 1, "total": 1}
+                assert rendering_one == {
+                    "type": "rendering",
+                    "path": str(deck_path),
+                    "slide_index": 1,
+                    "total": 1,
+                }
+                assert rendering_two == {
+                    "type": "rendering",
+                    "path": str(deck_path),
+                    "slide_index": 1,
+                    "total": 1,
+                }
                 assert updated_one["type"] == "slides_updated"
                 assert updated_two["type"] == "slides_updated"
                 assert updated_one["revision"] == 2
@@ -652,7 +706,9 @@ def test_preview_server_serves_http_and_pushes_websocket_updates(
     assert any("Preview client disconnected" in message for message in messages)
 
 
-def test_preview_server_reports_initial_render_progress_to_new_clients(tmp_path: Path) -> None:
+def test_preview_server_reports_initial_render_progress_to_new_clients(
+    tmp_path: Path,
+) -> None:
     class BlockingSlideRenderer(FakeSlideRenderer):
         def __init__(self, deck_path: Path, output_dir: Path) -> None:
             super().__init__(deck_path, output_dir)
@@ -668,7 +724,9 @@ def test_preview_server_reports_initial_render_progress_to_new_clients(tmp_path:
                     progress_callback(index, len(deck.slides))
                 self.render_started.set()
                 await self.release_render.wait()
-                rendered.append(self._render_slide(slide.slide_id, slide.revision or deck.revision))
+                rendered.append(
+                    self._render_slide(slide.slide_id, slide.revision or deck.revision)
+                )
             return rendered
 
     async def scenario() -> None:
@@ -689,12 +747,20 @@ def test_preview_server_reports_initial_render_progress_to_new_clients(tmp_path:
 
         try:
             async with connect(f"ws://127.0.0.1:{server.port}/ws") as client:
-                first_message = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
-                second_message = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+                first_message = json.loads(
+                    await asyncio.wait_for(client.recv(), timeout=1.0)
+                )
+                second_message = json.loads(
+                    await asyncio.wait_for(client.recv(), timeout=1.0)
+                )
 
                 messages = [first_message, second_message]
                 assert any(message.get("type") == "rendering" for message in messages)
-                rendering = next(message for message in messages if message.get("type") == "rendering")
+                rendering = next(
+                    message
+                    for message in messages
+                    if message.get("type") == "rendering"
+                )
                 assert rendering == {
                     "type": "rendering",
                     "path": str(deck_path),
@@ -705,6 +771,7 @@ def test_preview_server_reports_initial_render_progress_to_new_clients(tmp_path:
             renderer.release_render.set()
             await start_task
             await server.stop()
+
     asyncio.run(scenario())
 
 
@@ -724,7 +791,9 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
         await server.start()
 
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             assert payload["status"] == "waiting"
             assert payload["message"] == "Waiting for deck..."
@@ -744,9 +813,13 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
                 write_deck(deck_path, arrived_deck)
                 write_computed_deck(str(deck_path), arrived_deck)
 
-                rendering = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
+                rendering = json.loads(
+                    await asyncio.wait_for(client.recv(), timeout=1.0)
+                )
                 updated = json.loads(await asyncio.wait_for(client.recv(), timeout=1.0))
-                hydrated = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+                hydrated = json.loads(
+                    await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+                )
 
                 assert rendering == {
                     "type": "rendering",
@@ -761,7 +834,10 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
                 ]
                 assert hydrated["revision"] == 1
                 assert hydrated["preview_backend"] == "png"
-                assert hydrated["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"] == "Deck arrived"
+                assert (
+                    hydrated["slides"][0]["nodes"][0]["content"]["blocks"][0]["text"]
+                    == "Deck arrived"
+                )
                 assert hydrated["slide_previews"] == [
                     {"index": 0, "url": "/slides/0.png?rev=1", "revision": 1}
                 ]
@@ -770,6 +846,7 @@ def test_preview_server_waits_for_missing_deck_and_recovers_when_file_appears(
             await server.stop()
 
     asyncio.run(scenario())
+
 
 def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     async def scenario() -> None:
@@ -780,8 +857,12 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
-            image_bytes = await asyncio.to_thread(_fetch_bytes, f"{server.origin}/api/images/photo.png")
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
+            image_bytes = await asyncio.to_thread(
+                _fetch_bytes, f"{server.origin}/api/images/photo.png"
+            )
 
             assert payload["slides"][0]["nodes"][0]["type"] == "image"
             assert payload["slides"][0]["computed"]["n-1"]["image_fit"] == "contain"
@@ -792,7 +873,9 @@ def test_preview_server_serves_image_assets(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_preview_server_serves_cli_normalized_absolute_image_assets(tmp_path: Path) -> None:
+def test_preview_server_serves_cli_normalized_absolute_image_assets(
+    tmp_path: Path,
+) -> None:
     async def scenario() -> None:
         runner = CliRunner()
         deck_path = tmp_path / "deck.json"
@@ -803,12 +886,24 @@ def test_preview_server_serves_cli_normalized_absolute_image_assets(tmp_path: Pa
         result = runner.invoke(cli, ["init", str(deck_path), "--theme", "default"])
         assert result.exit_code == 0
 
-        result = runner.invoke(cli, ["slide", "add", str(deck_path), "--layout", "image_right"])
+        result = runner.invoke(
+            cli, ["slide", "add", str(deck_path), "--layout", "image_right"]
+        )
         assert result.exit_code == 0
 
         result = runner.invoke(
             cli,
-            ["slot", "set", str(deck_path), "--slide", "0", "--slot", "image", "--image", str(image_path)],
+            [
+                "slot",
+                "set",
+                str(deck_path),
+                "--slide",
+                "0",
+                "--slot",
+                "image",
+                "--image",
+                str(image_path),
+            ],
         )
         assert result.exit_code == 0
 
@@ -819,12 +914,18 @@ def test_preview_server_serves_cli_normalized_absolute_image_assets(tmp_path: Pa
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            hydrated = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            hydrated = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
             image_bytes = await asyncio.to_thread(
                 _fetch_bytes,
                 f"{server.origin}/api/images/{quote(image_ref, safe='')}",
             )
-            image_node = next(node for node in hydrated["slides"][0]["nodes"] if node["type"] == "image")
+            image_node = next(
+                node
+                for node in hydrated["slides"][0]["nodes"]
+                if node["type"] == "image"
+            )
 
             assert image_node["image_path"] == image_ref
             assert image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
@@ -854,10 +955,14 @@ def test_preview_server_rejects_image_path_traversal(tmp_path: Path) -> None:
 
             for encoded_path in encoded_requests:
                 with pytest.raises(urllib.error.HTTPError) as exc_info:
-                    await asyncio.to_thread(_fetch_bytes, f"{server.origin}/api/images/{encoded_path}")
+                    await asyncio.to_thread(
+                        _fetch_bytes, f"{server.origin}/api/images/{encoded_path}"
+                    )
 
                 assert exc_info.value.code == 404
-                assert "Path traversal not allowed" in exc_info.value.read().decode("utf-8")
+                assert "Path traversal not allowed" in exc_info.value.read().decode(
+                    "utf-8"
+                )
         finally:
             await server.stop()
 
@@ -881,10 +986,15 @@ def test_preview_server_falls_back_to_svg_when_renderer_unavailable(
         )
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             assert payload["preview_backend"] == "svg"
-            assert payload["preview_notice"] == "Approximate preview (LibreOffice unavailable)"
+            assert (
+                payload["preview_notice"]
+                == "Approximate preview (LibreOffice unavailable)"
+            )
             with pytest.raises(urllib.error.HTTPError) as exc_info:
                 await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png")
             assert exc_info.value.code == 404
@@ -895,7 +1005,10 @@ def test_preview_server_falls_back_to_svg_when_renderer_unavailable(
     asyncio.run(scenario())
 
     messages = [record.message for record in caplog.records]
-    assert any("LibreOffice not found. Using approximate SVG preview." in message for message in messages)
+    assert any(
+        "LibreOffice not found. Using approximate SVG preview." in message
+        for message in messages
+    )
 
 
 def test_preview_server_falls_back_to_svg_when_renderer_silently_misses_png_cache(
@@ -915,10 +1028,15 @@ def test_preview_server_falls_back_to_svg_when_renderer_silently_misses_png_cach
         )
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             assert payload["preview_backend"] == "svg"
-            assert payload["preview_notice"] == "Approximate preview (LibreOffice unavailable)"
+            assert (
+                payload["preview_notice"]
+                == "Approximate preview (LibreOffice unavailable)"
+            )
             assert "slide_previews" not in payload
             with pytest.raises(urllib.error.HTTPError) as exc_info:
                 await asyncio.to_thread(_fetch_bytes, f"{server.origin}/slides/0.png")
@@ -953,7 +1071,9 @@ def test_preview_server_rejects_chat_routes(tmp_path: Path) -> None:
             assert http_exc.value.code == 404
 
             with pytest.raises(urllib.error.HTTPError) as http_exc:
-                await asyncio.to_thread(_fetch_bytes, f"{server.origin}/download/../outside.pptx")
+                await asyncio.to_thread(
+                    _fetch_bytes, f"{server.origin}/download/../outside.pptx"
+                )
 
             assert http_exc.value.code == 404
         finally:
@@ -1009,7 +1129,10 @@ def test_client_html_probes_png_preview_before_showing_image() -> None:
     assert "const probe = new Image();" in payload
     assert 'showSurface("svg");' in payload
     assert 'showSurface("png");' in payload
-    assert 'setPreviewBanner(currentDeck?.preview_notice || APPROXIMATE_PREVIEW_NOTICE);' in payload
+    assert (
+        "setPreviewBanner(currentDeck?.preview_notice || APPROXIMATE_PREVIEW_NOTICE);"
+        in payload
+    )
 
 
 def test_client_html_wraps_text_and_renders_structured_content() -> None:
@@ -1023,7 +1146,7 @@ def test_client_html_wraps_text_and_renders_structured_content() -> None:
     assert "nodeLines" in payload
     assert "resolvedBlockRuns" in payload
     assert "applyConditionalRuleToRuns" in payload
-    assert 'split(/\\r?\\n/)' in payload
+    assert "split(/\\r?\\n/)" in payload
     assert 'block?.type === "bullet"' in payload
     assert '"text-decoration"' in payload
     assert "createElementNS" in payload
@@ -1087,7 +1210,9 @@ def test_preview_server_serves_shape_deck_payload(tmp_path: Path) -> None:
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             shape_node = payload["slides"][0]["nodes"][0]
             assert shape_node["type"] == "shape"
@@ -1109,7 +1234,9 @@ def test_preview_server_serves_pattern_deck_payload(tmp_path: Path) -> None:
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             pattern_node = payload["slides"][0]["nodes"][0]
             assert pattern_node["type"] == "pattern"
@@ -1132,7 +1259,9 @@ def test_client_html_contains_table_preview_helpers() -> None:
     assert 'node.type === "table" || computed.content_type === "table"' in payload
 
 
-def test_load_deck_payload_includes_conditional_formatting_rules(tmp_path: Path) -> None:
+def test_load_deck_payload_includes_conditional_formatting_rules(
+    tmp_path: Path,
+) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(deck_path, make_deck(revision=1, content="Revenue +23% is urgent"))
 
@@ -1140,7 +1269,10 @@ def test_load_deck_payload_includes_conditional_formatting_rules(tmp_path: Path)
 
     assert revision == 1
     assert payload["conditional_formatting"]["color_aliases"]["green"] == "#1B8A2D"
-    assert any(rule["pattern"] == "keyword" for rule in payload["conditional_formatting"]["text_rules"])
+    assert any(
+        rule["pattern"] == "keyword"
+        for rule in payload["conditional_formatting"]["text_rules"]
+    )
 
 
 def test_preview_server_serves_chart_deck_payload(tmp_path: Path) -> None:
@@ -1151,7 +1283,9 @@ def test_preview_server_serves_chart_deck_payload(tmp_path: Path) -> None:
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             chart_node = payload["slides"][0]["nodes"][0]
             assert chart_node["type"] == "chart"
@@ -1174,7 +1308,9 @@ def test_preview_server_serves_table_deck_payload(tmp_path: Path) -> None:
         server = PreviewServer(deck_path, host="127.0.0.1", port=0, debounce_ms=20)
         await server.start()
         try:
-            payload = json.loads(await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck"))
+            payload = json.loads(
+                await asyncio.to_thread(_fetch_text, f"{server.origin}/api/deck")
+            )
 
             table_node = payload["slides"][0]["nodes"][0]
             assert table_node["type"] == "table"

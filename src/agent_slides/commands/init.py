@@ -17,7 +17,9 @@ from agent_slides.model.themes import load_theme
 @click.command("init")
 @click.argument("path", type=click.Path(dir_okay=False, path_type=str))
 @click.option("--theme", "theme_name")
-@click.option("--template", "template_manifest", type=click.Path(dir_okay=False, path_type=Path))
+@click.option(
+    "--template", "template_manifest", type=click.Path(dir_okay=False, path_type=Path)
+)
 @click.option("--rules", "rules_name", default="default", show_default=True)
 @click.option("--force", is_flag=True, default=False)
 def init_command(
@@ -30,7 +32,9 @@ def init_command(
     """Create a new deck JSON file."""
 
     if theme_name is not None and template_manifest is not None:
-        raise AgentSlidesError(SCHEMA_ERROR, "`--theme` and `--template` are mutually exclusive.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "`--theme` and `--template` are mutually exclusive."
+        )
 
     load_design_rules(rules_name)
     response_template: Path | None = None

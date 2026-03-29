@@ -35,18 +35,20 @@ REVIEW_REGRESSION_THRESHOLD = 0.05
 
 # Deterministic score weights
 WEIGHTS = {
-    "validate_clean": 20,       # no validation warnings
-    "no_overflow": 15,          # no text overflow in computed nodes
-    "no_unbound": 15,           # no unbound slot warnings
-    "placeholder_fill": 20,     # % of expected slots actually filled
-    "layout_coverage": 10,      # required layouts present / expected set, or generic variety fallback
-    "slide_count_match": 10,    # actual vs expected slide count
-    "build_success": 10,        # PPTX builds without error
-    "review_quality": 20,       # visual review passed/total ratio when available
+    "validate_clean": 20,  # no validation warnings
+    "no_overflow": 15,  # no text overflow in computed nodes
+    "no_unbound": 15,  # no unbound slot warnings
+    "placeholder_fill": 20,  # % of expected slots actually filled
+    "layout_coverage": 10,  # required layouts present / expected set, or generic variety fallback
+    "slide_count_match": 10,  # actual vs expected slide count
+    "build_success": 10,  # PPTX builds without error
+    "review_quality": 20,  # visual review passed/total ratio when available
 }
 
 BOLD_SLUG_PATTERN = re.compile(r"\*\*([a-z0-9_]+)\*\*")
-SOURCE_LINE_PATTERN = re.compile(r"at least\s+(\d+)\s+slides?\s+should\s+include\s+a\s+source line", re.IGNORECASE)
+SOURCE_LINE_PATTERN = re.compile(
+    r"at least\s+(\d+)\s+slides?\s+should\s+include\s+a\s+source line", re.IGNORECASE
+)
 WORD_PATTERN = re.compile(r"\b[\w'-]+\b")
 
 
@@ -63,7 +65,9 @@ def _node_text(node: dict) -> str:
     blocks = content.get("blocks", [])
     if not isinstance(blocks, list):
         return ""
-    texts = [block.get("text", "").strip() for block in blocks if isinstance(block, dict)]
+    texts = [
+        block.get("text", "").strip() for block in blocks if isinstance(block, dict)
+    ]
     return "\n".join(text for text in texts if text)
 
 
@@ -72,7 +76,10 @@ def _word_count(text: str) -> int:
 
 
 def _has_source_line(slide: dict) -> bool:
-    return any(_node_text(node).casefold().startswith(("source:", "sources:")) for node in slide.get("nodes", []))
+    return any(
+        _node_text(node).casefold().startswith(("source:", "sources:"))
+        for node in slide.get("nodes", [])
+    )
 
 
 def _is_valid_image_path(image_path: str | None, deck_cwd: Path) -> bool:
@@ -84,12 +91,18 @@ def _is_valid_image_path(image_path: str | None, deck_cwd: Path) -> bool:
     return path.exists()
 
 
-def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path) -> dict:
+def _brief_compliance_for_slides(
+    slides: list[dict], brief: dict, deck_cwd: Path
+) -> dict:
     layouts_used = {slide.get("layout", "unknown") for slide in slides}
 
     required_layouts = brief.get("required_layouts", [])
-    required_layouts_present = [slug for slug in required_layouts if slug in layouts_used]
-    required_layouts_missing = [slug for slug in required_layouts if slug not in layouts_used]
+    required_layouts_present = [
+        slug for slug in required_layouts if slug in layouts_used
+    ]
+    required_layouts_missing = [
+        slug for slug in required_layouts if slug not in layouts_used
+    ]
 
     slides_by_layout: dict[str, list[dict]] = {}
     for slide in slides:
@@ -113,8 +126,11 @@ def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path
 
         if layout in narrow_layouts:
             heading_nodes = [
-                node for node in nodes
-                if node.get("type") == "text" and node.get("slot_binding") == "heading" and _node_text(node)
+                node
+                for node in nodes
+                if node.get("type") == "text"
+                and node.get("slot_binding") == "heading"
+                and _node_text(node)
             ]
             if any(_word_count(_node_text(node)) > 5 for node in heading_nodes):
                 narrow_headings_ok = False
@@ -122,7 +138,8 @@ def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path
     for layout in image_required_layouts:
         slide_group = slides_by_layout.get(layout, [])
         valid_image_found = any(
-            node.get("type") == "image" and _is_valid_image_path(node.get("image_path"), deck_cwd)
+            node.get("type") == "image"
+            and _is_valid_image_path(node.get("image_path"), deck_cwd)
             for slide in slide_group
             for node in slide.get("nodes", [])
         )
@@ -152,7 +169,9 @@ def _parse_json(text: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def invoke_cli(*args: str, cwd: Path | None = None) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None]:
+def invoke_cli(
+    *args: str, cwd: Path | None = None
+) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None]:
     """Run an agent-slides CLI command and return the exit code plus parsed stdout/stderr JSON."""
     cmd = ["uv", "run", "--project", str(ROOT), "agent-slides", *args]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or ROOT)
@@ -255,7 +274,9 @@ def coverage_path_for_run(run_id: str) -> Path:
     return RUNS_DIR / run_id / "coverage.json"
 
 
-def load_coverage_diff(*, current_run_id: str, baseline_summary: dict[str, Any] | None) -> dict[str, Any] | None:
+def load_coverage_diff(
+    *, current_run_id: str, baseline_summary: dict[str, Any] | None
+) -> dict[str, Any] | None:
     if baseline_summary is None:
         return None
 
@@ -304,7 +325,9 @@ def evaluate_reject_reasons(
         baseline_benchmark_scores = baseline_scores.get(benchmark_name)
         if not isinstance(baseline_benchmark_scores, dict):
             continue
-        if not current_scores.get("review_available") or not baseline_benchmark_scores.get("review_available"):
+        if not current_scores.get(
+            "review_available"
+        ) or not baseline_benchmark_scores.get("review_available"):
             continue
 
         current_quality = float(current_scores.get("review_quality", 0.0))
@@ -314,13 +337,16 @@ def evaluate_reject_reasons(
                 f"{benchmark_name}: review_quality regressed from {baseline_quality:.3f} to {current_quality:.3f}"
             )
 
-    regressions = coverage_diff.get("regressions", []) if isinstance(coverage_diff, dict) else []
+    regressions = (
+        coverage_diff.get("regressions", []) if isinstance(coverage_diff, dict) else []
+    )
     if regressions:
         regressed_slugs = ", ".join(
             sorted(
                 str(regression["slug"])
                 for regression in regressions
-                if isinstance(regression, dict) and isinstance(regression.get("slug"), str)
+                if isinstance(regression, dict)
+                and isinstance(regression.get("slug"), str)
             )
         )
         if regressed_slugs:
@@ -330,10 +356,14 @@ def evaluate_reject_reasons(
 
 
 def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, Any]:
-    composites = [r["scores"]["composite"] for r in results if "composite" in r["scores"]]
+    composites = [
+        r["scores"]["composite"] for r in results if "composite" in r["scores"]
+    ]
     mean_composite = round(sum(composites) / len(composites), 1) if composites else 0.0
     baseline_summary = previous_best_summary(current_run_id=run_id)
-    coverage_diff = load_coverage_diff(current_run_id=run_id, baseline_summary=baseline_summary)
+    coverage_diff = load_coverage_diff(
+        current_run_id=run_id, baseline_summary=baseline_summary
+    )
     reject_reasons = evaluate_reject_reasons(
         results,
         current_mean_composite=mean_composite,
@@ -378,7 +408,9 @@ def parse_brief(brief_path: Path) -> dict:
         line_stripped = line.strip()
         if line_stripped.startswith("## Template"):
             continue
-        if line_stripped.startswith("examples/") or line_stripped.startswith("../examples/"):
+        if line_stripped.startswith("examples/") or line_stripped.startswith(
+            "../examples/"
+        ):
             fields["template"] = line_stripped
         if line_stripped.startswith("## Expected slide count"):
             continue
@@ -392,9 +424,20 @@ def parse_brief(brief_path: Path) -> dict:
         if slugs:
             fields["required_layouts"].extend(slugs)
             line_lower = line_stripped.casefold()
-            if "image" in line_lower and any(keyword in line_lower for keyword in ("fill", "filled", "real image")):
+            if "image" in line_lower and any(
+                keyword in line_lower for keyword in ("fill", "filled", "real image")
+            ):
                 fields["image_required_layouts"].extend(slugs)
-            if any(keyword in line_lower for keyword in ("narrow", "short heading", "headings short", "keep headings short", "short because")):
+            if any(
+                keyword in line_lower
+                for keyword in (
+                    "narrow",
+                    "short heading",
+                    "headings short",
+                    "keep headings short",
+                    "short because",
+                )
+            ):
                 fields["narrow_layouts"].extend(slugs)
 
         source_line_match = SOURCE_LINE_PATTERN.search(line_stripped)
@@ -449,7 +492,9 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
     validate_result = run_cli("validate", str(deck_path), cwd=deck_cwd)
     if validate_result and validate_result.get("ok"):
         warnings = validate_result["data"].get("warnings", [])
-        scores["validate_clean"] = 1.0 if not warnings else max(0, 1.0 - len(warnings) * 0.2)
+        scores["validate_clean"] = (
+            1.0 if not warnings else max(0, 1.0 - len(warnings) * 0.2)
+        )
         scores["validate_warnings"] = len(warnings)
         scores["validate_details"] = [
             {"code": w["code"], "severity": w["severity"], "message": w["message"]}
@@ -484,7 +529,9 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
 
         required_layouts = brief.get("required_layouts", [])
         if required_layouts:
-            scores["layout_coverage"] = len(brief_compliance["required_layouts_present"]) / len(required_layouts)
+            scores["layout_coverage"] = len(
+                brief_compliance["required_layouts_present"]
+            ) / len(required_layouts)
         else:
             min_layouts = brief.get("min_layouts", 2)
             scores["layout_coverage"] = min(1.0, len(layouts_used) / min_layouts)
@@ -508,8 +555,8 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
                     # Exclude image slots without image_path from scoring:
                     # these can't be filled without real image assets and
                     # should not penalize text-only deck builds.
-                    is_unfillable_image = (
-                        node.get("type") == "image" and not node.get("image_path")
+                    is_unfillable_image = node.get("type") == "image" and not node.get(
+                        "image_path"
                     )
                     if is_unfillable_image:
                         continue
@@ -525,9 +572,13 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
                     unbound_count += 1
 
         scores["overflow_count"] = overflow_count
-        scores["no_overflow"] = 1.0 if overflow_count == 0 else max(0, 1.0 - overflow_count * 0.25)
+        scores["no_overflow"] = (
+            1.0 if overflow_count == 0 else max(0, 1.0 - overflow_count * 0.25)
+        )
         scores["unbound_count"] = unbound_count
-        scores["no_unbound"] = 1.0 if unbound_count == 0 else max(0, 1.0 - unbound_count * 0.25)
+        scores["no_unbound"] = (
+            1.0 if unbound_count == 0 else max(0, 1.0 - unbound_count * 0.25)
+        )
         generic_fill = (filled_slots / total_slots) if total_slots > 0 else 0.0
         image_layouts_expected = brief_compliance["image_layouts_expected"]
         image_fill_ratio = (
@@ -548,13 +599,21 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
             "narrow_headings_ok": True,
             "source_lines_found": 0,
         }
-        for key in ["slide_count_match", "layout_coverage", "no_overflow", "no_unbound", "placeholder_fill"]:
+        for key in [
+            "slide_count_match",
+            "layout_coverage",
+            "no_overflow",
+            "no_unbound",
+            "placeholder_fill",
+        ]:
             scores[key] = 0.0
         scores["layout_variety"] = 0.0
 
     # 4. Review (render PNGs)
     review_dir = run_dir / "review"
-    review_exit_code, review_result, review_error = invoke_cli("review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd)
+    review_exit_code, review_result, review_error = invoke_cli(
+        "review", str(deck_path), "-o", str(review_dir), cwd=deck_cwd
+    )
     if review_exit_code == 0 and review_result and review_result.get("ok"):
         review_data = review_result.get("data", {})
         scores["review_slides"] = review_data.get("slides", 0)
@@ -563,7 +622,9 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         if isinstance(report_json_path, str):
             scores.update(load_review_metrics(Path(report_json_path)))
     elif review_error:
-        scores["review_error"] = review_error.get("error", {}).get("message", "review failed")
+        scores["review_error"] = review_error.get("error", {}).get(
+            "message", "review failed"
+        )
 
     composite_score = compute_composite(scores)
     brief_compliance = scores.get("brief_compliance", {})
@@ -602,7 +663,9 @@ def ensure_symlinks(bench_dir: Path) -> None:
         artifacts_link.symlink_to(ROOT / ".artifacts")
 
 
-def run_benchmark(brief_path: Path, run_dir: Path, manifest_path: Path | None = None) -> dict:
+def run_benchmark(
+    brief_path: Path, run_dir: Path, manifest_path: Path | None = None
+) -> dict:
     """Run a single benchmark: init deck, build, score."""
     brief = parse_brief(brief_path)
     bench_dir = run_dir / brief["name"]

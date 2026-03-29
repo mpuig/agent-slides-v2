@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from agent_slides.model.layouts import get_layout, get_slot_names, get_text_fitting, list_layouts
+from agent_slides.model.layouts import (
+    get_layout,
+    get_slot_names,
+    get_text_fitting,
+    list_layouts,
+)
 from agent_slides.model.template_layouts import TemplateLayoutRegistry
 from agent_slides.model.types import LayoutDef, TextFitting
 

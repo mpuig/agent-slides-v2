@@ -19,7 +19,17 @@ from agent_slides.errors import (
     SCHEMA_ERROR,
 )
 from agent_slides.icons import normalize_hex_color, require_icon
-from agent_slides.model import ChartSpec, Deck, Node, NodeContent, PatternSpec, ShapeSpec, Slide, TableSpec, load_design_rules
+from agent_slides.model import (
+    ChartSpec,
+    Deck,
+    Node,
+    NodeContent,
+    PatternSpec,
+    ShapeSpec,
+    Slide,
+    TableSpec,
+    load_design_rules,
+)
 from agent_slides.model.layout_provider import LayoutProvider
 from agent_slides.model.types import (
     CHART_TYPE_VALUES,
@@ -68,7 +78,9 @@ def _normalize_slide_ref(ref: Any) -> str | int:
 def _require_string(args: dict[str, Any], key: str) -> str:
     value = args.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-empty string")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{key}' must be a non-empty string"
+        )
     return value.strip()
 
 
@@ -79,14 +91,20 @@ def _require_bool(args: dict[str, Any], key: str, *, default: bool = False) -> b
     return value
 
 
-def _require_non_negative_int(args: dict[str, Any], key: str, *, default: int = 0) -> int:
+def _require_non_negative_int(
+    args: dict[str, Any], key: str, *, default: int = 0
+) -> int:
     value = args.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative integer")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{key}' must be a non-negative integer"
+        )
     return value
 
 
-def _require_int(args: dict[str, Any], key: str, *, default: int | object = _UNSET) -> int:
+def _require_int(
+    args: dict[str, Any], key: str, *, default: int | object = _UNSET
+) -> int:
     value = args.get(key, default)
     if value is _UNSET:
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be an integer")
@@ -107,24 +125,36 @@ def _require_number(args: dict[str, Any], key: str) -> float:
         try:
             return float(value.strip())
         except ValueError as exc:
-            raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a number") from exc
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Argument '{key}' must be a number"
+            ) from exc
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a number")
     return float(value)
 
 
-def _require_non_negative_number(args: dict[str, Any], key: str, *, default: float | object = _UNSET) -> float:
+def _require_non_negative_number(
+    args: dict[str, Any], key: str, *, default: float | object = _UNSET
+) -> float:
     value = args.get(key, default)
     if value is _UNSET:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number"
+        )
     if isinstance(value, str):
         try:
             value = float(value.strip())
         except ValueError as exc:
-            raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number") from exc
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number"
+            ) from exc
     if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{key}' must be a non-negative number"
+        )
     return float(value)
+
+
 def _require_object(args: dict[str, Any], key: str) -> dict[str, Any]:
     value = args.get(key)
     if not isinstance(value, dict):
@@ -143,7 +173,9 @@ def _create_slot_nodes(deck: Deck, layout_name: str, provider: LayoutProvider) -
                 node_id=deck.next_node_id(),
                 slot_binding=slot_name,
                 type="image" if layout.slots[slot_name].role == "image" else "text",
-                style_overrides={"placeholder": True} if layout.slots[slot_name].role == "image" else {},
+                style_overrides={"placeholder": True}
+                if layout.slots[slot_name].role == "image"
+                else {},
             )
             for slot_name in layout.slots
         ],
@@ -183,12 +215,16 @@ def _find_node(deck: Deck, node_id: str) -> tuple[Slide, Node]:
     raise AgentSlidesError(SCHEMA_ERROR, f"Node {node_id!r} does not exist")
 
 
-def _coerce_content(args: dict[str, Any], *, color_aliases: dict[str, str] | None = None) -> NodeContent:
+def _coerce_content(
+    args: dict[str, Any], *, color_aliases: dict[str, str] | None = None
+) -> NodeContent:
     if "content" in args:
         try:
             return NodeContent.model_validate(args["content"])
         except Exception as exc:
-            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must be valid structured text") from exc
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Argument 'content' must be valid structured text"
+            ) from exc
 
     text = args.get("text")
     if not isinstance(text, str):
@@ -196,7 +232,9 @@ def _coerce_content(args: dict[str, Any], *, color_aliases: dict[str, str] | Non
     runs = parse_inline_markdown_runs(text)
     if runs is not None:
         resolved_runs = apply_inline_color_suffixes(runs, color_aliases=color_aliases)
-        return NodeContent(blocks=[TextBlock(type="paragraph", text=text, runs=resolved_runs)])
+        return NodeContent(
+            blocks=[TextBlock(type="paragraph", text=text, runs=resolved_runs)]
+        )
     return NodeContent.from_text(text)
 
 
@@ -237,7 +275,12 @@ def _coerce_slot_set_payload(
     if has_image:
         return "image", NodeContent(), image_path.strip(), _coerce_image_fit(args)
 
-    return "text", _coerce_content(args, color_aliases=color_aliases), None, _coerce_image_fit(args)
+    return (
+        "text",
+        _coerce_content(args, color_aliases=color_aliases),
+        None,
+        _coerce_image_fit(args),
+    )
 
 
 def _validate_chart_type(chart_type: str) -> str:
@@ -290,10 +333,14 @@ def _build_shape_spec(args: dict[str, Any]) -> ShapeSpec:
     raw_color = args.get("color")
     raw_line_color = args.get("line_color")
     if raw_color is not None and raw_line_color is not None:
-        raise AgentSlidesError(SCHEMA_ERROR, "Arguments 'color' and 'line_color' are mutually exclusive")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Arguments 'color' and 'line_color' are mutually exclusive"
+        )
 
     dash = args.get("dash")
-    if dash is not None and (not isinstance(dash, str) or dash not in SHAPE_DASH_VALUES):
+    if dash is not None and (
+        not isinstance(dash, str) or dash not in SHAPE_DASH_VALUES
+    ):
         raise AgentSlidesError(
             SCHEMA_ERROR,
             f"Argument 'dash' must be one of: {', '.join(SHAPE_DASH_VALUES)}",
@@ -304,9 +351,14 @@ def _build_shape_spec(args: dict[str, Any]) -> ShapeSpec:
             {
                 "shape_type": _validate_shape_type(_require_string(args, "type")),
                 "fill_color": _optional_string(args, "fill"),
-                "line_color": _optional_string(args, "line_color") or _optional_string(args, "color"),
-                "line_width": _require_non_negative_number(args, "line_width", default=1.0),
-                "corner_radius": _require_non_negative_number(args, "corner_radius", default=0.0),
+                "line_color": _optional_string(args, "line_color")
+                or _optional_string(args, "color"),
+                "line_width": _require_non_negative_number(
+                    args, "line_width", default=1.0
+                ),
+                "corner_radius": _require_non_negative_number(
+                    args, "corner_radius", default=0.0
+                ),
                 "shadow": _require_bool(args, "shadow", default=False),
                 "dash": dash,
                 "opacity": args.get("opacity", 1.0),
@@ -371,7 +423,10 @@ def _build_pattern_spec(args: dict[str, Any]) -> PatternSpec:
         raise AgentSlidesError(
             SCHEMA_ERROR,
             f"Unknown pattern type {raw_type!r}",
-            details={"pattern_type": raw_type, "valid_types": list(PATTERN_TYPE_VALUES)},
+            details={
+                "pattern_type": raw_type,
+                "valid_types": list(PATTERN_TYPE_VALUES),
+            },
         )
 
     payload = {
@@ -403,7 +458,14 @@ def _default_pattern_slot_name(slide: Slide, provider: LayoutProvider) -> str:
     layout = provider.get_layout(slide.layout)
 
     def first_slot(predicate) -> str | None:
-        return next((slot_name for slot_name, slot in layout.slots.items() if predicate(slot_name, slot)), None)
+        return next(
+            (
+                slot_name
+                for slot_name, slot in layout.slots.items()
+                if predicate(slot_name, slot)
+            ),
+            None,
+        )
 
     return (
         first_slot(lambda _name, slot: slot.role == "body")
@@ -413,7 +475,9 @@ def _default_pattern_slot_name(slide: Slide, provider: LayoutProvider) -> str:
     )
 
 
-def _set_slot_content(deck: Deck, slide: Slide, slot_name: str, content: NodeContent) -> None:
+def _set_slot_content(
+    deck: Deck, slide: Slide, slot_name: str, content: NodeContent
+) -> None:
     slot_nodes = _find_slot_nodes(slide, slot_name)
     if slot_nodes:
         node = slot_nodes[0]
@@ -464,22 +528,32 @@ def _populate_auto_layout_slide(
         return
 
     heading_slot = next(
-        (slot_name for slot_name, slot in layout.slots.items() if slot.role == "heading"),
+        (
+            slot_name
+            for slot_name, slot in layout.slots.items()
+            if slot.role == "heading"
+        ),
         None,
     )
-    heading_index = next((index for index, block in enumerate(blocks) if block.type == "heading"), None)
+    heading_index = next(
+        (index for index, block in enumerate(blocks) if block.type == "heading"), None
+    )
     if heading_slot is not None:
         if heading_index is None:
             heading_index = 0
         heading_block = blocks.pop(heading_index)
-        _set_slot_content(deck, slide, heading_slot, NodeContent(blocks=[heading_block]))
+        _set_slot_content(
+            deck, slide, heading_slot, NodeContent(blocks=[heading_block])
+        )
 
     target_slots = [
         slot_name
         for slot_name, slot in layout.slots.items()
         if slot.role != "image" and slot_name != heading_slot
     ]
-    for slot_name, block_group in zip(target_slots, _chunk_blocks(blocks, len(target_slots)), strict=False):
+    for slot_name, block_group in zip(
+        target_slots, _chunk_blocks(blocks, len(target_slots)), strict=False
+    ):
         _set_slot_content(deck, slide, slot_name, NodeContent(blocks=block_group))
 
 
@@ -505,7 +579,9 @@ def apply_mutation(
 ) -> dict[str, Any]:
     """Apply one supported mutation and return its structured result."""
 
-    color_aliases = load_design_rules(deck.design_rules).conditional_formatting.color_aliases
+    color_aliases = load_design_rules(
+        deck.design_rules
+    ).conditional_formatting.color_aliases
 
     if command == "slide_add":
         auto_layout = _require_bool(args, "auto_layout", default=False)
@@ -518,12 +594,17 @@ def apply_mutation(
 
             content = _coerce_content(args, color_aliases=color_aliases)
             if content.is_empty():
-                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' must include at least one text block")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR,
+                    "Argument 'content' must include at least one text block",
+                )
 
             image_count = _require_non_negative_int(args, "image_count", default=0)
             suggestions = suggest_layouts(content, image_count=image_count, limit=1)
             if not suggestions:
-                raise AgentSlidesError(SCHEMA_ERROR, "No suitable layout found for the provided content")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, "No suitable layout found for the provided content"
+                )
 
             suggestion = suggestions[0]
             slide = _create_slot_nodes(deck, suggestion.layout, provider)
@@ -538,9 +619,13 @@ def apply_mutation(
             }
 
         if "content" in args:
-            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'content' requires 'auto_layout' to be true")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Argument 'content' requires 'auto_layout' to be true"
+            )
         if "image_count" in args:
-            raise AgentSlidesError(SCHEMA_ERROR, "Argument 'image_count' requires 'auto_layout' to be true")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Argument 'image_count' requires 'auto_layout' to be true"
+            )
 
         slide = _create_slot_nodes(deck, _require_string(args, "layout"), provider)
         deck.slides.append(slide)
@@ -572,7 +657,9 @@ def apply_mutation(
 
     if command == "slot_set":
         slide = deck.get_slide(_normalize_slide_ref(args.get("slide")))
-        node_type, content, image_path, image_fit = _coerce_slot_set_payload(args, color_aliases=color_aliases)
+        node_type, content, image_path, image_fit = _coerce_slot_set_payload(
+            args, color_aliases=color_aliases
+        )
         slot_name = _resolve_slot_name(slide, _require_string(args, "slot"), provider)
 
         slot_nodes = _find_slot_nodes(slide, slot_name)
@@ -611,7 +698,9 @@ def apply_mutation(
             if font_size is None:
                 node.style_overrides.pop("font_size", None)
             elif isinstance(font_size, bool) or not isinstance(font_size, int | float):
-                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'font_size' must be a number")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, "Argument 'font_size' must be a number"
+                )
             else:
                 node.style_overrides["font_size"] = float(font_size)
 
@@ -665,7 +754,9 @@ def apply_mutation(
             if raw_title is None:
                 title = None
             elif not isinstance(raw_title, str) or not raw_title.strip():
-                raise AgentSlidesError(SCHEMA_ERROR, "Argument 'title' must be a non-empty string")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, "Argument 'title' must be a non-empty string"
+                )
             else:
                 title = raw_title.strip()
 
@@ -725,7 +816,9 @@ def apply_mutation(
                 },
             )
         if node.chart_spec is None:
-            raise AgentSlidesError(SCHEMA_ERROR, f"Chart node {node_id!r} is missing chart_spec")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Chart node {node_id!r} is missing chart_spec"
+            )
 
         chart_spec = _build_chart_spec(
             _require_object(args, "data"),
@@ -825,7 +918,9 @@ def apply_mutation(
             else _default_pattern_slot_name(slide, provider)
         )
         if not slot_name:
-            raise AgentSlidesError(SCHEMA_ERROR, f"Slide {slide.slide_id!r} does not define any slots")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Slide {slide.slide_id!r} does not define any slots"
+            )
 
         pattern_spec = _build_pattern_spec(args)
         slot_nodes = _find_slot_nodes(slide, slot_name)

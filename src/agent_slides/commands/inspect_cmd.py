@@ -15,12 +15,16 @@ def _read_manifest(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Manifest file not found: {path}") from exc
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Manifest file not found: {path}"
+        ) from exc
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest file is not valid JSON: {path}") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest file is not valid JSON: {path}"
+        ) from exc
 
     if not isinstance(payload, dict):
         raise AgentSlidesError(SCHEMA_ERROR, "Manifest root must be a JSON object.")
@@ -31,21 +35,27 @@ def _read_manifest(path: Path) -> dict[str, Any]:
 def _require_string(payload: dict[str, Any], field: str) -> str:
     value = payload.get(field)
     if not isinstance(value, str) or not value:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be a non-empty string.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be a non-empty string."
+        )
     return value
 
 
 def _require_list(payload: dict[str, Any], field: str) -> list[Any]:
     value = payload.get(field)
     if not isinstance(value, list):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be an array.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be an array."
+        )
     return value
 
 
 def _require_dict(payload: dict[str, Any], field: str) -> dict[str, Any]:
     value = payload.get(field)
     if not isinstance(value, dict):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be an object.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be an object."
+        )
     return value
 
 
@@ -60,7 +70,9 @@ def _summarize_layout(layout: dict[str, Any]) -> dict[str, Any]:
     name = _require_string(layout, "name")
     slug = _require_string(layout, "slug")
     slot_mapping = _require_dict(layout, "slot_mapping")
-    slots = [slot_name for slot_name, _ in sorted(slot_mapping.items(), key=_slot_sort_key)]
+    slots = [
+        slot_name for slot_name, _ in sorted(slot_mapping.items(), key=_slot_sort_key)
+    ]
     usable = bool(slots) or name.casefold() == "blank"
 
     summary: dict[str, Any] = {
@@ -81,7 +93,9 @@ def summarize_manifest(payload: dict[str, Any]) -> dict[str, Any]:
     layouts: list[dict[str, Any]] = []
     for index, master in enumerate(slide_masters):
         if not isinstance(master, dict):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest slide_masters[{index}] must be an object.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Manifest slide_masters[{index}] must be an object."
+            )
         for layout_index, layout in enumerate(_require_list(master, "layouts")):
             if not isinstance(layout, dict):
                 raise AgentSlidesError(

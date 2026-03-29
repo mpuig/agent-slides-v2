@@ -73,10 +73,16 @@ def _is_title_layout(layout: str) -> bool:
 
 
 _CLOSING_LAYOUT_SLUGS = {
-    "closing", "closing_slide", "statement", "statement_slide",
-    "end", "d_end",
-    "big_statement_green", "d_big_statement_green",
-    "big_statement_icon", "d_big_statement_icon",
+    "closing",
+    "closing_slide",
+    "statement",
+    "statement_slide",
+    "end",
+    "d_end",
+    "big_statement_green",
+    "d_big_statement_green",
+    "big_statement_icon",
+    "d_big_statement_icon",
 }
 
 
@@ -90,7 +96,9 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
 
     constraints: list[Constraint] = []
     layout_used, fallback_reason, overflow_reason = _fallback_metadata(slide)
-    unbound_node_ids = [node.node_id for node in slide.nodes if node.slot_binding is None]
+    unbound_node_ids = [
+        node.node_id for node in slide.nodes if node.slot_binding is None
+    ]
     if unbound_node_ids:
         constraints.append(
             Constraint(
@@ -105,7 +113,11 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
     total_bullets = 0
     for node in slide.nodes:
         if node.type == "text":
-            content = node.content if isinstance(node.content, NodeContent) else NodeContent.model_validate(node.content)
+            content = (
+                node.content
+                if isinstance(node.content, NodeContent)
+                else NodeContent.model_validate(node.content)
+            )
             total_bullets += _count_bullets(content)
 
             if node.slot_binding is not None:
@@ -170,7 +182,11 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
             )
 
         allowed_range = _font_range_for_node(node, rules)
-        if not allowed_range.min_size <= computed.font_size_pt <= allowed_range.max_size:
+        if (
+            not allowed_range.min_size
+            <= computed.font_size_pt
+            <= allowed_range.max_size
+        ):
             # Template placeholders with constrained dimensions (e.g. arrow
             # title bars at ~37pt tall, divider headings at ~26pt, narrow
             # arrow columns at ~195pt wide) force the text-fit engine to

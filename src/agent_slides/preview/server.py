@@ -26,8 +26,10 @@ from agent_slides.preview.renderer import SlideRenderError, SlideRenderer
 from agent_slides.preview.watcher import SidecarWatcher, load_deck_payload
 
 LOGGER = logging.getLogger(__name__)
-CLIENT_HTML = resources.files("agent_slides.preview").joinpath("client.html").read_text(
-    encoding="utf-8"
+CLIENT_HTML = (
+    resources.files("agent_slides.preview")
+    .joinpath("client.html")
+    .read_text(encoding="utf-8")
 )
 APPROXIMATE_PREVIEW_NOTICE = "Approximate preview (LibreOffice unavailable)"
 
@@ -164,7 +166,9 @@ class PreviewServer:
 
         slides = payload.get("slides", [])
         deck_revision = int(payload["revision"])
-        indices = slide_indices if slide_indices is not None else list(range(len(slides)))
+        indices = (
+            slide_indices if slide_indices is not None else list(range(len(slides)))
+        )
         missing: list[int] = []
         for index in indices:
             if index < 0 or index >= len(slides):
@@ -215,7 +219,9 @@ class PreviewServer:
         try:
             await self._render_all_slides(payload)
         except SlideRenderError as exc:
-            self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
+            self._logger.warning(
+                "PNG preview render failed; falling back to SVG preview: %s", exc
+            )
             self._set_svg_preview()
             return
 
@@ -285,13 +291,17 @@ class PreviewServer:
                     first_progress = False
                     return
             loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._set_rendering_progress(slide_index, total_slides))
+                lambda: asyncio.create_task(
+                    self._set_rendering_progress(slide_index, total_slides)
+                )
             )
 
         await self._renderer.render_all(progress_callback=progress_callback)
         self._rendering_payload = None
 
-    async def _render_indices(self, payload: dict[str, Any], slide_indices: list[int]) -> None:
+    async def _render_indices(
+        self, payload: dict[str, Any], slide_indices: list[int]
+    ) -> None:
         if self._renderer is None or not slide_indices:
             return
 
@@ -310,10 +320,14 @@ class PreviewServer:
                     first_progress = False
                     return
             loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._set_rendering_progress(slide_index, total_slides))
+                lambda: asyncio.create_task(
+                    self._set_rendering_progress(slide_index, total_slides)
+                )
             )
 
-        await self._renderer.render_indices(slide_indices, progress_callback=progress_callback)
+        await self._renderer.render_indices(
+            slide_indices, progress_callback=progress_callback
+        )
         self._rendering_payload = None
 
     def _slide_revision(self, slide_payload: dict[str, Any], deck_revision: int) -> int:
@@ -345,14 +359,17 @@ class PreviewServer:
             return list(range(len(slides)))
         if any(
             previous_id != current_id
-            for (previous_id, _, _), (current_id, _, _) in zip(previous_signature, current_signature)
+            for (previous_id, _, _), (current_id, _, _) in zip(
+                previous_signature, current_signature
+            )
         ):
             return list(range(len(slides)))
         return [
             index
-            for index, ((_, previous_revision, previous_slide), (_, current_revision, current_slide)) in enumerate(
-                zip(previous_signature, current_signature)
-            )
+            for index, (
+                (_, previous_revision, previous_slide),
+                (_, current_revision, current_slide),
+            ) in enumerate(zip(previous_signature, current_signature))
             if previous_revision != current_revision or previous_slide != current_slide
         ]
 
@@ -388,12 +405,16 @@ class PreviewServer:
                 await self._render_changed_slides(payload, changed_indices)
             self._slide_previews = self._build_slide_previews(payload)
         except SlideRenderError as exc:
-            self._logger.warning("PNG preview render failed; falling back to SVG preview: %s", exc)
+            self._logger.warning(
+                "PNG preview render failed; falling back to SVG preview: %s", exc
+            )
             self._set_svg_preview()
             await self.broadcast_payload(self._build_update_message(payload))
             return
 
-        await self.broadcast_payload(self._build_update_message(payload, changed_indices=changed_indices))
+        await self.broadcast_payload(
+            self._build_update_message(payload, changed_indices=changed_indices)
+        )
 
     async def _handle_websocket(self, websocket: ServerConnection) -> None:
         if websocket.request.path == "/ws":
@@ -414,7 +435,9 @@ class PreviewServer:
             await websocket.wait_closed()
         finally:
             self._preview_clients.discard(websocket)
-            self._logger.info("Preview client disconnected: %s", websocket.remote_address)
+            self._logger.info(
+                "Preview client disconnected: %s", websocket.remote_address
+            )
 
     def _process_request(self, connection: ServerConnection, request: Any) -> Any:
         request_path = request.path.partition("?")[0]
@@ -442,7 +465,11 @@ class PreviewServer:
             try:
                 payload = self._read_deck_json()
             except AgentSlidesError as exc:
-                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                status = (
+                    HTTPStatus.NOT_FOUND
+                    if exc.code == FILE_NOT_FOUND
+                    else HTTPStatus.INTERNAL_SERVER_ERROR
+                )
                 response = connection.respond(status, f"{exc.message}\n")
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
@@ -457,7 +484,11 @@ class PreviewServer:
             try:
                 payload, content_type = self._read_slide_png_bytes(index_text)
             except AgentSlidesError as exc:
-                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                status = (
+                    HTTPStatus.NOT_FOUND
+                    if exc.code == FILE_NOT_FOUND
+                    else HTTPStatus.INTERNAL_SERVER_ERROR
+                )
                 response = connection.respond(status, f"{exc.message}\n")
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
@@ -480,7 +511,11 @@ class PreviewServer:
             try:
                 payload, content_type = self._read_image_bytes(relative_path)
             except AgentSlidesError as exc:
-                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                status = (
+                    HTTPStatus.NOT_FOUND
+                    if exc.code == FILE_NOT_FOUND
+                    else HTTPStatus.INTERNAL_SERVER_ERROR
+                )
                 response = connection.respond(status, f"{exc.message}\n")
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
@@ -501,9 +536,15 @@ class PreviewServer:
             filename = unquote(request_path.removeprefix("/download/"))
 
             try:
-                payload, content_type, download_name = self._read_download_bytes(filename)
+                payload, content_type, download_name = self._read_download_bytes(
+                    filename
+                )
             except AgentSlidesError as exc:
-                status = HTTPStatus.NOT_FOUND if exc.code == FILE_NOT_FOUND else HTTPStatus.INTERNAL_SERVER_ERROR
+                status = (
+                    HTTPStatus.NOT_FOUND
+                    if exc.code == FILE_NOT_FOUND
+                    else HTTPStatus.INTERNAL_SERVER_ERROR
+                )
                 response = connection.respond(status, f"{exc.message}\n")
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
@@ -562,26 +603,40 @@ class PreviewServer:
         return resolved.read_bytes(), content_type or "application/octet-stream"
 
     def _read_slide_png_bytes(self, slide_index_text: str) -> tuple[bytes, str]:
-        if self._preview_backend != "png" or self._renderer is None or self._preview_payload is None:
-            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+        if (
+            self._preview_backend != "png"
+            or self._renderer is None
+            or self._preview_payload is None
+        ):
+            raise AgentSlidesError(
+                FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}"
+            )
 
         try:
             slide_index = int(slide_index_text)
         except ValueError as exc:
-            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}") from exc
+            raise AgentSlidesError(
+                FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}"
+            ) from exc
 
         slides = self._preview_payload.get("slides", [])
         if slide_index < 0 or slide_index >= len(slides):
-            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+            raise AgentSlidesError(
+                FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}"
+            )
 
         slide = slides[slide_index]
         slide_id = str(slide["slide_id"])
-        slide_revision = self._slide_revision(slide, int(self._preview_payload["revision"]))
+        slide_revision = self._slide_revision(
+            slide, int(self._preview_payload["revision"])
+        )
         rendered = self._renderer.get_cached(slide_id, slide_revision)
         if rendered is None:
             self._set_svg_preview()
             self._log_missing_png_cache_warning([slide_index])
-            raise AgentSlidesError(FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}")
+            raise AgentSlidesError(
+                FILE_NOT_FOUND, f"Slide preview not found: {slide_index_text}"
+            )
 
         return rendered.read_bytes(), "image/png"
 
@@ -596,12 +651,15 @@ class PreviewServer:
             or resolved.suffix.lower() != ".pptx"
             or not resolved.is_file()
         ):
-            raise AgentSlidesError(FILE_NOT_FOUND, f"Download file not found: {filename}")
+            raise AgentSlidesError(
+                FILE_NOT_FOUND, f"Download file not found: {filename}"
+            )
 
         content_type, _ = mimetypes.guess_type(resolved.name)
         return (
             resolved.read_bytes(),
-            content_type or "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            content_type
+            or "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             resolved.name,
         )
 
@@ -656,14 +714,18 @@ async def run_preview_server(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the agent-slides live preview server.")
+    parser = argparse.ArgumentParser(
+        description="Run the agent-slides live preview server."
+    )
     parser.add_argument("path", help="Path to the sidecar deck JSON file.")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--debounce-ms", type=int, default=50)
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     asyncio.run(
         run_preview_server(
             args.path,

@@ -25,7 +25,15 @@ from agent_slides.io.sidecar import (
     write_computed_deck,
     write_deck,
 )
-from agent_slides.model import BuiltinLayoutProvider, ComputedDeck, ComputedNode, Counters, Deck, Node, Slide
+from agent_slides.model import (
+    BuiltinLayoutProvider,
+    ComputedDeck,
+    ComputedNode,
+    Counters,
+    Deck,
+    Node,
+    Slide,
+)
 
 
 def build_deck(*, revision: int = 2, template_manifest: str | None = None) -> Deck:
@@ -99,9 +107,13 @@ def test_read_deck_invalid_json_raises_schema_error(tmp_path: Path) -> None:
     assert "Invalid JSON" in exc_info.value.message
 
 
-def test_read_deck_wrong_structure_raises_schema_error_with_details(tmp_path: Path) -> None:
+def test_read_deck_wrong_structure_raises_schema_error_with_details(
+    tmp_path: Path,
+) -> None:
     deck_path = tmp_path / "deck.json"
-    deck_path.write_text(json.dumps({"deck_id": "deck-1", "slides": "nope"}), encoding="utf-8")
+    deck_path.write_text(
+        json.dumps({"deck_id": "deck-1", "slides": "nope"}), encoding="utf-8"
+    )
 
     with pytest.raises(AgentSlidesError) as exc_info:
         read_deck(str(deck_path))
@@ -110,7 +122,9 @@ def test_read_deck_wrong_structure_raises_schema_error_with_details(tmp_path: Pa
     assert "slides" in exc_info.value.message
 
 
-def test_read_deck_upgrades_legacy_string_content_and_version_one(tmp_path: Path) -> None:
+def test_read_deck_upgrades_legacy_string_content_and_version_one(
+    tmp_path: Path,
+) -> None:
     deck_path = tmp_path / "deck.json"
     deck_path.write_text(
         json.dumps(
@@ -151,7 +165,9 @@ def test_read_deck_upgrades_legacy_string_content_and_version_one(tmp_path: Path
 
 def test_read_deck_loads_v2_template_manifest(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
-    write_raw_deck(deck_path, build_deck(template_manifest="templates/demo/manifest.json"))
+    write_raw_deck(
+        deck_path, build_deck(template_manifest="templates/demo/manifest.json")
+    )
 
     deck = read_deck(str(deck_path))
 
@@ -215,7 +231,9 @@ def test_write_deck_surfaces_os_errors_clearly(
     assert "disk full" in exc_info.value.message
 
 
-def test_mutate_deck_runs_full_pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mutate_deck_runs_full_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     deck_path = tmp_path / "deck.json"
     write_raw_deck(deck_path, build_deck(revision=2))
 
@@ -265,11 +283,15 @@ def test_mutate_deck_preserves_unchanged_slide_revisions(tmp_path: Path) -> None
     init_deck(str(deck_path), theme="default", design_rules="default", force=False)
     mutate_deck(
         str(deck_path),
-        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
+        lambda deck, provider: apply_mutation(
+            deck, "slide_add", {"layout": "title"}, provider
+        ),
     )
     mutate_deck(
         str(deck_path),
-        lambda deck, provider: apply_mutation(deck, "slide_add", {"layout": "title"}, provider),
+        lambda deck, provider: apply_mutation(
+            deck, "slide_add", {"layout": "title"}, provider
+        ),
     )
     mutate_deck(
         str(deck_path),
@@ -313,7 +335,9 @@ def test_init_deck_creates_new_file_with_defaults(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     computed_path = computed_sidecar_path(deck_path)
 
-    deck = init_deck(str(deck_path), theme="modern", design_rules="default", force=False)
+    deck = init_deck(
+        str(deck_path), theme="modern", design_rules="default", force=False
+    )
 
     assert deck_path.exists()
     assert computed_path.exists()
@@ -340,7 +364,9 @@ def test_init_deck_force_overwrites_existing_file(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     write_raw_deck(deck_path, build_deck())
 
-    deck = init_deck(str(deck_path), theme="new-theme", design_rules="new-rules", force=True)
+    deck = init_deck(
+        str(deck_path), theme="new-theme", design_rules="new-rules", force=True
+    )
     loaded = read_deck(str(deck_path))
 
     assert deck.theme == "new-theme"
@@ -350,7 +376,9 @@ def test_init_deck_force_overwrites_existing_file(tmp_path: Path) -> None:
     assert computed_sidecar_path(deck_path).exists()
 
 
-def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(tmp_path: Path) -> None:
+def test_sidecar_round_trip_preserves_all_fields_and_counters_alias(
+    tmp_path: Path,
+) -> None:
     deck_path = tmp_path / "deck.json"
     original = build_deck(revision=7, template_manifest="templates/demo/manifest.json")
     write_raw_deck(deck_path, original)
@@ -377,7 +405,9 @@ def test_resolve_manifest_path_returns_absolute_path(tmp_path: Path) -> None:
     assert resolved == str(deck_path.parent / "templates" / "demo" / "manifest.json")
 
 
-def test_resolve_manifest_path_returns_none_when_manifest_missing(tmp_path: Path) -> None:
+def test_resolve_manifest_path_returns_none_when_manifest_missing(
+    tmp_path: Path,
+) -> None:
     deck = build_deck()
 
     assert resolve_manifest_path(str(tmp_path / "deck.json"), deck) is None
@@ -394,7 +424,9 @@ def test_read_deck_prefers_computed_sidecar_when_present(tmp_path: Path) -> None
     loaded = read_deck(str(deck_path))
 
     assert loaded.slides[0].computed["n-1"].font_size_pt == 16.0
-    assert "computed" not in json.loads(deck_path.read_text(encoding="utf-8"))["slides"][0]
+    assert (
+        "computed" not in json.loads(deck_path.read_text(encoding="utf-8"))["slides"][0]
+    )
 
 
 def test_read_deck_ignores_stale_computed_sidecar(tmp_path: Path) -> None:

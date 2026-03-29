@@ -41,4 +41,6 @@ def apply_theme_command(path: str, theme_name: str) -> None:
         }
 
     deck, result = mutate_deck(path, mutate)
-    click.echo(json.dumps(attach_layout_fallback_warning({"ok": True, "data": result}, deck)))
+    click.echo(
+        json.dumps(attach_layout_fallback_warning({"ok": True, "data": result}, deck))
+    )
