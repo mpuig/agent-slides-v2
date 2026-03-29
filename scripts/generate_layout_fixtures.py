@@ -264,6 +264,9 @@ def build_fixture_payloads(inventory: dict[str, Any]) -> dict[str, dict[str, dic
     structures = _collect_slot_structures(inventory)
     payloads: dict[str, dict[str, dict[str, Any]]] = {}
     for slot_structure, slots in structures.items():
+        if slot_structure == "blank":
+            payloads[slot_structure] = {"blank": {}}
+            continue
         variants = {
             "nominal": _build_variant(slots, "nominal"),
             "narrow_safe": _build_variant(slots, "narrow_safe"),
