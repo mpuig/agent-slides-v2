@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -136,13 +137,17 @@ def _relative_path(target: Path, start: Path) -> str:
     return os.path.relpath(target.resolve(strict=False), start.resolve(strict=False))
 
 
-def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
+def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path, asset_root: Path) -> str:
     image_source = Path(raw_path)
     if not image_source.is_absolute():
         image_source = (ROOT / image_source).resolve(strict=False)
     if not image_source.is_file():
         raise ValueError(f"Image fixture asset not found: {raw_path}")
-    return _relative_path(image_source, deck_dir)
+    asset_root.mkdir(parents=True, exist_ok=True)
+    local_asset_path = asset_root / image_source.name
+    if not local_asset_path.exists():
+        shutil.copy2(image_source, local_asset_path)
+    return _relative_path(local_asset_path, deck_dir)
 
 
 def _build_nodes(
@@ -150,6 +155,7 @@ def _build_nodes(
     *,
     fillable_slots: list[str],
     deck_dir: Path,
+    asset_root: Path,
 ) -> list[Node]:
     nodes: list[Node] = []
     for slot_name in fillable_slots:
@@ -168,7 +174,11 @@ def _build_nodes(
                     "type": "image",
                     "content": {"blocks": []},
                     "image_fit": raw_payload.get("image_fit", "contain"),
-                    "image_path": _resolve_fixture_image_path(str(raw_payload["image_path"]), deck_dir=deck_dir),
+                    "image_path": _resolve_fixture_image_path(
+                        str(raw_payload["image_path"]),
+                        deck_dir=deck_dir,
+                        asset_root=asset_root,
+                    ),
                 }
             )
         else:
@@ -222,7 +232,13 @@ def build_cert_suite(
 
         for variant_name, raw_slot_payloads in sorted(variants.items()):
             deck_dir = output_dir / template_slug / layout_slug / variant_name
-            nodes = _build_nodes(raw_slot_payloads, fillable_slots=fillable_slots, deck_dir=deck_dir)
+            template_asset_root = output_dir / template_slug / "_assets"
+            nodes = _build_nodes(
+                raw_slot_payloads,
+                fillable_slots=fillable_slots,
+                deck_dir=deck_dir,
+                asset_root=template_asset_root,
+            )
             deck = Deck(
                 deck_id=f"cert-{template_slug}-{layout_slug}-{variant_name}",
                 revision=0,
