@@ -18,6 +18,7 @@ from agent_slides.io import mutate_deck, read_deck, resolve_manifest_path, write
 from agent_slides.model import Deck, Node, NodeContent, Slide
 from agent_slides.model.layout_provider import LayoutProvider, resolve_layout_provider
 from agent_slides.model.types import STANDARD_SLIDE_HEIGHT_PT, STANDARD_SLIDE_WIDTH_PT, TextBlock
+from agent_slides.render_oracle import generate_render_signals
 
 CHECKLIST: dict[str, list[dict[str, str]]] = {
     "Visual Hierarchy": [
@@ -1088,6 +1089,7 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
 
     before_pptx = before_dir / f"{deck_path.stem}.pptx"
     before_deck, before_provider = _build_deck_artifact(deck_path, before_pptx)
+    before_signals = generate_render_signals(before_deck, before_provider)
     _, before_pngs = render_pptx_to_pngs(before_pptx, before_dir, dpi=dpi)
     before_report = generate_review_report(before_deck, before_provider, before_pngs, artifacts_dir=output_dir)
 
@@ -1103,6 +1105,7 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
         after_dir.mkdir(parents=True, exist_ok=True)
         after_pptx = after_dir / f"{deck_path.stem}.pptx"
         after_deck, after_provider = _build_deck_artifact(deck_path, after_pptx)
+        active_signals = generate_render_signals(after_deck, after_provider)
         _, after_pngs = render_pptx_to_pngs(after_pptx, after_dir, dpi=dpi)
         after_report = generate_review_report(after_deck, after_provider, after_pngs, artifacts_dir=output_dir)
         report["after"] = after_report
@@ -1113,6 +1116,7 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
         report["active"] = after_report
     else:
         report["active"] = before_report
+        active_signals = before_signals
 
     active_markdown = report_to_markdown(report["active"], deck_name=deck_path.name)
     if fix and report["fixes_applied"]:
@@ -1127,8 +1131,10 @@ def review_deck(deck_path: Path, output_dir: Path, *, dpi: int = 200, fix: bool 
 
     report_md_path = output_dir / "report.md"
     report_json_path = output_dir / "report.json"
+    signals_json_path = output_dir / "signals.json"
     report_md_path.write_text(active_markdown, encoding="utf-8")
     report_json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    signals_json_path.write_text(json.dumps(active_signals, indent=2), encoding="utf-8")
     report["report_path"] = str(report_md_path)
     report["report_json_path"] = str(report_json_path)
     return report
