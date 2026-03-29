@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from agent_slides.model.design_rules import DesignRules, load_design_rules
-from agent_slides.model.layouts import list_layouts
-from agent_slides.model.types import NodeContent, TextBlock
+from agent_slides.model.layouts import get_layout, list_layouts
+from agent_slides.model.types import LayoutDef, NodeContent, TextBlock
 
 AUTO_SUGGEST_EXCLUDED_LAYOUTS = frozenset({"closing", "quote"})
 
@@ -81,6 +81,7 @@ def suggest_layouts(
     image_count: int = 0,
     available_layouts: list[str] | None = None,
     rules: DesignRules | None = None,
+    layout_getter: Callable[[str], LayoutDef] | None = None,
 ) -> list[LayoutSuggestion]:
     """Return ranked layout suggestions for the given structured content."""
 
@@ -97,6 +98,8 @@ def suggest_layouts(
         if rule.layout not in allowed_layouts or rule.layout in suggestions:
             continue
         if not rule.matches(profile, image_count, design_rules):
+            continue
+        if image_count == 0 and _layout_requires_image(rule.layout, layout_getter):
             continue
         suggestions[rule.layout] = LayoutSuggestion(
             layout=rule.layout,
@@ -269,3 +272,15 @@ def _are_word_counts_balanced(word_counts: list[int], threshold: float) -> bool:
 
 def _block_word_count(block: TextBlock) -> int:
     return len(block.text.split())
+
+
+def _layout_requires_image(layout_name: str, layout_getter: Callable[[str], LayoutDef] | None) -> bool:
+    getter = layout_getter or get_layout
+    try:
+        layout = getter(layout_name)
+    except Exception:
+        return False
+    return any(
+        slot.role == "image" or ("image" in {c.casefold() for c in slot.allowed_content} and "text" not in {c.casefold() for c in slot.allowed_content})
+        for slot in layout.slots.values()
+    )

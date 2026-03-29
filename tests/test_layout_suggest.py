@@ -255,3 +255,19 @@ def test_analyze_content_tracks_heading_and_group_metadata() -> None:
     assert profile.word_count == 17
     assert profile.heading_count == 3
     assert len(profile.remaining_groups) == 2
+
+
+def test_suggest_layouts_excludes_image_layouts_when_no_images() -> None:
+    content = make_content(
+        ("heading", "Product launch"),
+        ("paragraph", "A concise overview of the launch story and results."),
+    )
+    suggestions_with_images = suggest_layouts(content, image_count=1)
+    suggestions_no_images = suggest_layouts(content, image_count=0)
+
+    image_layouts = {"gallery", "image_left", "image_right", "hero_image"}
+    with_image_names = {s.layout for s in suggestions_with_images}
+    no_image_names = {s.layout for s in suggestions_no_images}
+
+    assert with_image_names & image_layouts, "image layouts should appear when images are available"
+    assert not (no_image_names & image_layouts), "image layouts should not appear when image_count=0"

@@ -334,6 +334,66 @@ def test_layout_providers_expose_get_variants_consistently(tmp_path: Path) -> No
     assert [variant.name for variant in template.get_variants("peer_bodies")] == ["title_content", "two_col"]
 
 
+def _build_mixed_text_image_manifest(base_dir: Path) -> Path:
+    template_path = base_dir / "templates" / "mixed" / "mixed-template.pptx"
+    manifest_path = base_dir / "templates" / "mixed" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "mixed-template",
+                "source": "mixed-template.pptx",
+                "source_hash": "mixed123",
+                "theme": {
+                    "name": "mixed-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                    },
+                    "fonts": {"heading": "Aptos Display", "body": "Aptos"},
+                    "spacing": {"base_unit": 12, "margin": 48, "gutter": 18},
+                },
+                "layouts": [
+                    {
+                        "slug": "intro_with_image",
+                        "usable": True,
+                        "placeholders": [
+                            {"idx": 0, "type": "TITLE", "name": "Title", "bounds": {"x": 72, "y": 48, "w": 576, "h": 72}},
+                            {"idx": 1, "type": "BODY", "name": "Body", "bounds": {"x": 72, "y": 156, "w": 270, "h": 300}},
+                            {"idx": 2, "type": "PICTURE", "name": "Image", "bounds": {"x": 360, "y": 156, "w": 288, "h": 300}},
+                        ],
+                        "slot_mapping": {"heading": 0, "body": 1, "image": 2},
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def test_template_layout_registry_generates_image_free_variant(tmp_path: Path) -> None:
+    manifest_path = _build_mixed_text_image_manifest(tmp_path)
+    registry = TemplateLayoutRegistry(str(manifest_path))
+
+    variants = registry.get_variants("intro_with_image")
+
+    variant_names = [variant.name for variant in variants]
+    assert "title_content" in variant_names
+
+    title_content = next(v for v in variants if v.name == "title_content")
+    assert list(title_content.slots) == ["heading", "body"]
+    body_slot = title_content.slots["body"]
+    assert body_slot.width is not None
+    assert body_slot.width > 270, "body should expand to cover the image slot's width"
+
+
 def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
