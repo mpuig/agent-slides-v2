@@ -137,12 +137,24 @@ def _relative_path(target: Path, start: Path) -> str:
 
 
 def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
+    """Copy image into deck_dir/_assets/ and return a relative path.
+
+    Images must live inside the deck directory tree so the build command's
+    path traversal guard accepts them.
+    """
+    import shutil
+
     image_source = Path(raw_path)
     if not image_source.is_absolute():
         image_source = (ROOT / image_source).resolve(strict=False)
     if not image_source.is_file():
         raise ValueError(f"Image fixture asset not found: {raw_path}")
-    return _relative_path(image_source, deck_dir)
+    asset_dir = deck_dir / "_assets"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    local_copy = asset_dir / image_source.name
+    if not local_copy.exists():
+        shutil.copy2(image_source, local_copy)
+    return _relative_path(local_copy, deck_dir)
 
 
 def _build_nodes(
