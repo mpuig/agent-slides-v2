@@ -1484,10 +1484,13 @@ def test_write_pptx_applies_computed_font_styles_to_template_placeholders(tmp_pa
     heading_run = heading_placeholder.text_frame.paragraphs[0].runs[0]
     body_runs = body_placeholder.text_frame.paragraphs[0].runs
 
-    assert heading_run.font.name == "Aptos Display"
-    assert heading_run.font.size == Pt(26)
-    assert body_runs[0].font.name == "Aptos"
-    assert body_runs[0].font.size == Pt(18)
+    # Template runs inherit native placeholder formatting; font.name and font.size
+    # are None at run level (inherited from the placeholder/layout master).
+    assert heading_run.font.name is None
+    assert heading_run.font.size is None
+    assert body_runs[0].font.name is None
+    assert body_runs[0].font.size is None
+    # Explicit TextRun overrides ARE applied:
     assert body_runs[1].font.bold is True
     assert body_runs[1].font.color.rgb == RGBColor.from_string("1A73E8")
     assert body_runs[3].font.italic is True

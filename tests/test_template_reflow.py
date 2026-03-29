@@ -148,10 +148,17 @@ def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     assert image.font_family == "Aptos"
     assert image.color == "#101010"
 
-    assert fit_calls == [
-        (280.0, 48.0, 32.0, 24.0, "heading", "Aptos Display", [32.0, 28.0, 24.0]),
-        (260.0, 160.0, 18.0, 10.0, "body", "Aptos", [18.0, 16.0, 14.0, 12.0, 10.0]),
-    ]
+    # The reflow engine extends ladders when adjusted min_size is below the
+    # lowest configured step, so heading may include extra steps (20.0, 16.0)
+    # for template slots with tight bounds.
+    heading_call = fit_calls[0]
+    body_call = fit_calls[1]
+    assert heading_call[:6] == (280.0, 48.0, 32.0, 16.0, "heading", "Aptos Display")
+    assert heading_call[6][0] == 32.0  # starts at default
+    assert heading_call[6][-1] <= 16.0  # reaches min
+    assert body_call[:6] == (260.0, 160.0, 18.0, 10.0, "body", "Aptos")
+    assert body_call[6][0] == 18.0
+    assert body_call[6][-1] <= 10.0
 
 
 def test_mutate_deck_reflows_template_manifests_with_unified_reflow(

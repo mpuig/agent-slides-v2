@@ -28,18 +28,23 @@ def _count_bullets(content: NodeContent) -> int:
 
 def _node_role(node: Node) -> str:
     override_role = node.style_overrides.get("role")
-    if override_role in {"heading", "body"}:
+    if override_role in {"heading", "body", "subheading"}:
         return str(override_role)
 
     slot_binding = (node.slot_binding or "").lower()
+    if slot_binding == "subheading":
+        return "subheading"
     if "heading" in slot_binding or "title" in slot_binding:
         return "heading"
     return "body"
 
 
 def _font_range_for_node(node: Node, rules: DesignRules) -> FontSizeRange:
-    if _node_role(node) == "heading":
+    role = _node_role(node)
+    if role == "heading":
         return rules.hierarchy.heading
+    # Subheadings sit between heading and body; use the body range which
+    # covers typical subheading sizes (10-18pt) without false positives.
     return rules.hierarchy.body
 
 
@@ -53,6 +58,27 @@ def _fallback_metadata(slide: Slide) -> tuple[str | None, str | None, str | None
             computed.layout_overflow_reason,
         )
     return (None, None, None)
+
+
+_TITLE_LAYOUT_SLUGS = {"title", "title_slide"}
+
+
+def _is_title_layout(layout: str) -> bool:
+    """Return True if *layout* looks like a title slide (built-in or template)."""
+    return layout.lower() in _TITLE_LAYOUT_SLUGS
+
+
+_CLOSING_LAYOUT_SLUGS = {
+    "closing", "closing_slide", "statement", "statement_slide",
+    "end", "d_end",
+    "big_statement_green", "d_big_statement_green",
+    "big_statement_icon", "d_big_statement_icon",
+}
+
+
+def _is_closing_layout(layout: str) -> bool:
+    """Return True if *layout* looks like a closing slide (built-in or template)."""
+    return layout.lower() in _CLOSING_LAYOUT_SLUGS
 
 
 def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
@@ -193,7 +219,7 @@ def validate_deck(deck: Deck, rules: DesignRules) -> list[Constraint]:
         constraints.extend(validate_slide(slide, rules))
 
     if rules.deck_structure.recommend_title_slide and (
-        not deck.slides or deck.slides[0].layout != "title"
+        not deck.slides or not _is_title_layout(deck.slides[0].layout)
     ):
         constraints.append(
             Constraint(
@@ -205,7 +231,7 @@ def validate_deck(deck: Deck, rules: DesignRules) -> list[Constraint]:
         )
 
     if rules.deck_structure.recommend_closing_slide and (
-        not deck.slides or deck.slides[-1].layout != "closing"
+        not deck.slides or not _is_closing_layout(deck.slides[-1].layout)
     ):
         constraints.append(
             Constraint(

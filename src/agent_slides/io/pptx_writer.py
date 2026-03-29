@@ -181,19 +181,9 @@ def _apply_template_run_styles(
     block: TextBlock | None = None,
     default_font_size: float | None = None,
 ) -> None:
-    if computed is not None:
-        if computed.font_family:
-            run.font.name = computed.font_family
-        if block is not None:
-            run.font.size = Pt(
-                _run_font_size(
-                    computed,
-                    block,
-                    run_spec,
-                    default_font_size=default_font_size,
-                )
-            )
-    elif run_spec.font_size is not None:
+    # In template mode, preserve the placeholder's native formatting.
+    # Only override font properties when the TextRun explicitly requests them.
+    if run_spec.font_size is not None:
         run.font.size = Pt(run_spec.font_size)
     if run_spec.bold is not None:
         run.font.bold = run_spec.bold
@@ -701,6 +691,20 @@ def _fill_placeholder(
 
     placeholder = slide.placeholders[placeholder_idx]
     text_frame = placeholder.text_frame
+
+    # Capture paragraph-level formatting from the template before clearing.
+    # text_frame.clear() removes all paragraphs and their native formatting
+    # (alignment, spacing, margins, indent) which degrades visual quality.
+    _saved_pPr = None
+    if text_frame.paragraphs:
+        first_p = text_frame.paragraphs[0]._p
+        existing_pPr = first_p.find(
+            "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr"
+        )
+        if existing_pPr is not None:
+            from copy import deepcopy
+            _saved_pPr = deepcopy(existing_pPr)
+
     text_frame.clear()
 
     paragraphs = _node_paragraphs(node, conditional_formatting=conditional_formatting)
@@ -712,6 +716,20 @@ def _fill_placeholder(
 
     for paragraph_index, (block_index, block, line_runs) in enumerate(paragraphs):
         paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+
+        # Restore captured template paragraph formatting before bullet config
+        # overwrites only the bullet-related attributes it needs.
+        if _saved_pPr is not None:
+            from copy import deepcopy
+            restored = deepcopy(_saved_pPr)
+            p_elem = paragraph._p
+            old_pPr = p_elem.find(
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr"
+            )
+            if old_pPr is not None:
+                p_elem.remove(old_pPr)
+            p_elem.insert(0, restored)
+
         _configure_paragraph_bullets(paragraph, block, computed=computed)
         position = positions_by_index.get(block_index)
         for run_spec in line_runs:

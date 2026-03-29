@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from math import isclose
 
@@ -18,8 +18,79 @@ from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme, resolve_style
-from agent_slides.model.types import ComputedNode, Node, NodeContent, TextBlock, TextFitting, Theme
+from agent_slides.model.types import ComputedNode, Node, NodeContent, SlotDef, TextBlock, TextFitting, Theme
 from agent_slides.patterns import generate_pattern_elements
+
+
+def _adjust_text_fitting_for_slot(fitting: TextFitting, slot: SlotDef) -> TextFitting:
+    """Narrow the text fitting range when the slot carries font-size hints from a template."""
+    default_size = fitting.default_size
+    min_size = fitting.min_size
+    ladder = fitting.ladder
+
+    if slot.preferred_font is not None:
+        default_size = min(default_size, slot.preferred_font)
+    if slot.min_font is not None:
+        min_size = slot.min_font
+    elif slot.preferred_font is not None and slot.preferred_font < min_size:
+        # Allow shrinking below the generic minimum when the template's
+        # preferred font is already smaller than the default min.
+        min_size = max(slot.preferred_font * 0.6, 8.0)
+
+    # For template slots with explicit bounds (all four coordinates set),
+    # derive a height-aware min_size so text can actually fit in the
+    # available space.  Built-in grid slots leave these as None.
+    has_explicit_bounds = (
+        slot.x is not None
+        and slot.y is not None
+        and slot.width is not None
+        and slot.height is not None
+    )
+    if has_explicit_bounds and slot.height is not None and float(slot.height) > 0:
+        padding = slot.padding
+        available = max(float(slot.height) - 2 * padding, 0.0)
+        # A single line of text at font_size S occupies roughly S * line_height_factor.
+        # For headings the effective size is S * heading_size_factor * heading_lh_factor.
+        # Use a conservative 1.5 multiplier to cover heading scaling.
+        height_limit = available / 1.5
+        if height_limit < min_size:
+            min_size = max(height_limit, 8.0)
+        # Text may wrap to multiple lines in narrow template placeholders,
+        # requiring a smaller font than the single-line estimate suggests.
+        # Allow shrinking to half the height limit to accommodate 2-line wrap.
+        multi_line_limit = max(height_limit * 0.5, 8.0)
+        if multi_line_limit < min_size:
+            min_size = multi_line_limit
+
+    if default_size == fitting.default_size and min_size == fitting.min_size:
+        return fitting
+    return TextFitting(default_size=default_size, min_size=min_size, ladder=ladder)
+
+
+def _extend_type_ladders_for_slot(
+    base_ladders: Mapping[str, list[float]],
+    adjusted_fitting: Mapping[str, TextFitting],
+    slot_role: str,
+) -> Mapping[str, list[float]]:
+    """Extend type ladders with intermediate steps when adjusted min_size is
+    below the lowest configured ladder value, so fit_blocks can shrink further."""
+    extended = dict(base_ladders)
+    for role_key, fitting in adjusted_fitting.items():
+        ladder = list(base_ladders.get(role_key, []))
+        if not ladder:
+            continue
+        lowest = min(ladder)
+        if fitting.min_size < lowest:
+            # Add steps between the lowest ladder value and the adjusted min
+            step = 4.0 if role_key == "heading" else 2.0
+            size = lowest - step
+            while size >= fitting.min_size:
+                ladder.append(size)
+                size -= step
+            if fitting.min_size not in ladder:
+                ladder.append(fitting.min_size)
+            extended[role_key] = sorted(set(ladder), reverse=True)
+    return extended
 
 
 def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None) -> TextFitting:
@@ -27,14 +98,15 @@ def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider 
     slot = layout_def.slots[slot_name]
     if provider is not None:
         try:
-            return provider.get_text_fitting(layout_def.name, slot.role)
+            fitting = provider.get_text_fitting(layout_def.name, slot.role)
+            return _adjust_text_fitting_for_slot(fitting, slot)
         except AgentSlidesError:
             pass
     if slot.role in layout_def.text_fitting:
-        return layout_def.text_fitting[slot.role]
+        return _adjust_text_fitting_for_slot(layout_def.text_fitting[slot.role], slot)
     if slot.role == "heading":
-        return DEFAULT_TEXT_FITTING["heading"]
-    return DEFAULT_TEXT_FITTING["body"]
+        return _adjust_text_fitting_for_slot(DEFAULT_TEXT_FITTING["heading"], slot)
+    return _adjust_text_fitting_for_slot(DEFAULT_TEXT_FITTING["body"], slot)
 
 
 def _resolve_theme(deck: Deck, provider: LayoutProvider) -> Theme:
@@ -745,6 +817,17 @@ def _reflow_slide(
 
         style = resolve_style(theme, slot.role)
         text_fitting = _block_text_fitting(layout_def, active_provider, slot.role)
+        # Apply slot-level font hints from template placeholders
+        text_fitting = {
+            role_key: _adjust_text_fitting_for_slot(tf, slot)
+            for role_key, tf in text_fitting.items()
+        }
+        # Extend type ladders when the adjusted min_size is below the lowest
+        # configured ladder step, so that fit_blocks can actually shrink to
+        # the sizes the adjusted fitting permits.
+        effective_type_ladders = _extend_type_ladders_for_slot(
+            active_design_rules.type_ladders, text_fitting, slot.role,
+        )
         block_fits, text_overflow = fit_blocks(
             node.content.blocks,
             max(width - (2 * slot.padding), 0.0),
@@ -752,7 +835,7 @@ def _reflow_slide(
             role=slot.role,
             text_fitting=text_fitting,
             spacing_rules=active_design_rules.block_spacing,
-            type_ladders=active_design_rules.type_ladders,
+            type_ladders=effective_type_ladders,
             font_family=str(style["font_family"]),
             use_precise=False,
             fit_text_fn=fit_text,
