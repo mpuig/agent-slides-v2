@@ -301,3 +301,44 @@ def test_validate_deck_adds_structure_suggestions() -> None:
 
     assert title_constraint.severity == "suggestion"
     assert closing_constraint.severity == "suggestion"
+
+
+def test_validate_deck_recognizes_template_title_slug() -> None:
+    """Template slug 'title_slide' should satisfy the title-slide check."""
+    rules = load_design_rules("default")
+    deck = make_deck(
+        [
+            make_slide(
+                "s-1",
+                "title_slide",
+                nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Title")],
+                computed={"n-1": make_computed_node(36.0)},
+            ),
+            make_slide(
+                "s-2",
+                "end",
+                nodes=[Node(node_id="n-2", slot_binding="body", type="text", content="End")],
+                computed={"n-2": make_computed_node(14.0)},
+            ),
+        ]
+    )
+
+    constraints = validate_deck(deck, rules)
+    assert all(c.code != MISSING_TITLE_SLIDE for c in constraints)
+    assert all(c.code != MISSING_CLOSING_SLIDE for c in constraints)
+
+
+def test_validate_slide_subheading_uses_body_range() -> None:
+    """Subheading-bound nodes should not be flagged at body-range font sizes."""
+    rules = load_design_rules("default")
+    slide = make_slide(
+        "s-1",
+        "title_slide",
+        nodes=[
+            Node(node_id="n-1", slot_binding="subheading", type="text", content="Sub")
+        ],
+        computed={"n-1": make_computed_node(16.0)},
+    )
+
+    constraints = validate_slide(slide, rules)
+    assert all(c.code != FONT_SIZE_OUT_OF_RANGE for c in constraints)

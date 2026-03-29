@@ -12,3 +12,6 @@ __pycache__/
 !/.claude/
 !/.claude/skills/
 !/.claude/skills/learn-template
+/.artifacts/
+/examples/
+/.claude/skills/
