@@ -1,0 +1,10 @@
+[
+  {
+    "slug": "agenda_table",
+    "reason": "Agenda layout uses unsupported table structure"
+  },
+  {
+    "slug": "back_matter",
+    "reason": "Known broken extraction in source template"
+  }
+]

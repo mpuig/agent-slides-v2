@@ -127,14 +127,22 @@ def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
 
 def test_export_layout_inventory_cli_outputs_expected_inventory(tmp_path: Path) -> None:
     manifest_path = tmp_path / "template.manifest.json"
-    policy_path = tmp_path / "exclude-policy.json"
+    policy_dir = tmp_path / "excluded-layouts"
     _write_manifest(manifest_path)
-    policy_path.write_text(
-        json.dumps({"layouts": {"three_up": "manual review only"}}) + "\n",
+    policy_dir.mkdir()
+    (policy_dir / "demo-template.json").write_text(
+        json.dumps(
+            [
+                {"slug": "three_up", "reason": "manual review only"},
+                {"slug": "blankish", "reason": "intentionally blank layout"},
+                {"slug": "d_body_text", "reason": "duplicate disclaimer layout"},
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
 
-    result = _run_script(str(manifest_path), "--exclude-policy", str(policy_path))
+    result = _run_script(str(manifest_path), "--exclude-policy", str(policy_dir))
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -157,12 +165,40 @@ def test_export_layout_inventory_cli_outputs_expected_inventory(tmp_path: Path) 
     assert layouts["d_body_text"]["is_disclaimer_duplicate"] is True
     assert layouts["three_up"]["exclude_reason"] == "manual review only"
     assert layouts["three_up"]["testable"] is False
+    assert layouts["d_body_text"]["exclude_reason"] == "duplicate disclaimer layout"
+    assert layouts["d_body_text"]["testable"] is False
+    assert layouts["blankish"]["exclude_reason"] == "intentionally blank layout"
     assert layouts["blankish"]["testable"] is False
     assert layouts["dict_bounds_layout"]["placeholder_bounds"] == {
         "heading": {"x": 60.0, "y": 40.0, "w": 520.0, "h": 72.0},
         "body": {"x": 60.0, "y": 140.0, "w": 520.0, "h": 240.0},
     }
     assert layouts["mixed_story"]["fillable_slots"] == ["heading", "body", "image"]
+
+
+def test_export_layout_inventory_treats_all_usable_layouts_as_testable_without_matching_policy(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "template.manifest.json"
+    policy_dir = tmp_path / "excluded-layouts"
+    _write_manifest(manifest_path)
+    policy_dir.mkdir()
+    (policy_dir / "other-template.json").write_text(
+        json.dumps([{"slug": "three_up", "reason": "manual review only"}]) + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_script(str(manifest_path), "--exclude-policy", str(policy_dir))
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["testable_count"] == 8
+
+    layouts = {layout["slug"]: layout for layout in payload["layouts"]}
+    assert layouts["three_up"]["testable"] is True
+    assert layouts["three_up"]["exclude_reason"] is None
+    assert layouts["blankish"]["testable"] is True
+    assert layouts["blankish"]["exclude_reason"] is None
+    assert layouts["d_body_text"]["testable"] is True
+    assert layouts["d_body_text"]["exclude_reason"] is None
 
 
 def test_export_layout_inventory_output_is_deterministic(tmp_path: Path) -> None:
@@ -222,3 +258,15 @@ def test_export_layout_inventory_rejects_missing_placeholder_references(tmp_path
 
     assert result.returncode == 1
     assert "references missing placeholder idx 99" in result.stderr
+
+
+def test_export_layout_inventory_rejects_invalid_policy_entries(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "template.manifest.json"
+    policy_path = tmp_path / "exclude-policy.json"
+    _write_manifest(manifest_path)
+    policy_path.write_text(json.dumps([{"slug": "three_up"}]) + "\n", encoding="utf-8")
+
+    result = _run_script(str(manifest_path), "--exclude-policy", str(policy_path))
+
+    assert result.returncode == 1
+    assert "must include a non-empty 'reason'" in result.stderr

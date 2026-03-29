@@ -162,3 +162,21 @@ def test_build_fixture_payloads_rejects_inventory_without_testable_layouts(tmp_p
 
     with pytest.raises(ValueError, match="does not contain any testable layouts"):
         module.build_fixture_payloads(json.loads(inventory_path.read_text(encoding="utf-8")))
+
+
+def test_build_fixture_payloads_supports_blank_slot_structures() -> None:
+    module = _load_script_module()
+    inventory = {
+        "layouts": [
+            {
+                "slug": "blank",
+                "testable": True,
+                "slot_structure": "blank",
+                "fillable_slots": [],
+            }
+        ]
+    }
+
+    payloads = module.build_fixture_payloads(inventory)
+
+    assert payloads == {"blank": {"blank": {}}}

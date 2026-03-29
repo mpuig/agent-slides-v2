@@ -48,6 +48,14 @@ def _load_script_module(path: Path, name: str) -> Any:
     return module
 
 
+def _coerce_success_flag(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return value > 0
+    return None
+
+
 def _load_inventory(suite_dir: Path) -> dict[str, Any]:
     for filename in _INVENTORY_FILENAMES:
         candidate = suite_dir / filename
@@ -78,6 +86,104 @@ def _load_inventory(suite_dir: Path) -> dict[str, Any]:
     return inventory_module.build_inventory(manifest, exclude_policy=exclude_policy)
 
 
+def _inventory_by_slug(inventory: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    raw_layouts = inventory.get("layouts")
+    if not isinstance(raw_layouts, list):
+        raise ValueError("Inventory field 'layouts' must be a list")
+
+    layouts: list[dict[str, Any]] = []
+    by_slug: dict[str, dict[str, Any]] = {}
+    for raw_layout in raw_layouts:
+        if not isinstance(raw_layout, dict):
+            raise ValueError("Inventory layouts must be objects")
+        slug = raw_layout.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            raise ValueError("Inventory layouts must include a non-empty slug")
+        layouts.append(raw_layout)
+        by_slug[slug] = raw_layout
+    return layouts, by_slug
+
+
+def _variant_name_from_payload(raw_variant: dict[str, Any], *, path: Path) -> str:
+    variant_name = raw_variant.get("variant_name", path.stem)
+    if not isinstance(variant_name, str) or not variant_name.strip():
+        raise ValueError(f"Variant name must be a non-empty string: {path}")
+    return variant_name.strip()
+
+
+def _bool_variant_field(
+    raw_variant: dict[str, Any],
+    *,
+    path: Path,
+    name: str,
+    signals: dict[str, Any],
+    fallback: str | None = None,
+) -> bool:
+    raw_value = raw_variant.get(name, signals.get(name))
+    if raw_value is None and fallback is not None:
+        raw_value = raw_variant.get(fallback, signals.get(fallback))
+    if raw_value is None:
+        return False
+    if isinstance(raw_value, bool):
+        return raw_value
+    if name == "build_success":
+        coerced = _coerce_success_flag(raw_value)
+        if coerced is not None:
+            return coerced
+    raise ValueError(f"Variant field '{name}' must be a boolean-like value: {path}")
+
+
+def _normalize_variant_result(raw_variant: dict[str, Any], *, path: Path, requires_image: bool) -> dict[str, Any]:
+    signals = raw_variant.get("signals", {})
+    if not isinstance(signals, dict):
+        raise ValueError(f"Variant signals must be an object: {path}")
+
+    normalized = {
+        "variant_name": _variant_name_from_payload(raw_variant, path=path),
+        "build_success": _bool_variant_field(raw_variant, path=path, name="build_success", signals=signals),
+        "overflow": _bool_variant_field(raw_variant, path=path, name="overflow", signals=signals, fallback="text_clipped"),
+        "placeholder_empty": _bool_variant_field(raw_variant, path=path, name="placeholder_empty", signals=signals),
+        "image_missing": _bool_variant_field(raw_variant, path=path, name="image_missing", signals=signals),
+        "font_too_small": _bool_variant_field(raw_variant, path=path, name="font_too_small", signals=signals),
+    }
+    normalized["pass"] = bool(
+        normalized["build_success"]
+        and not normalized["overflow"]
+        and not normalized["placeholder_empty"]
+        and (not normalized["image_missing"] or not requires_image)
+    )
+    return normalized
+
+
+def _load_result_variants(suite_dir: Path, *, inventory_by_slug: dict[str, dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+    results_root = suite_dir / "results"
+    if not results_root.is_dir():
+        return {}
+
+    variants_by_layout: dict[str, dict[str, dict[str, Any]]] = {}
+    for path in sorted(results_root.rglob("*.json")):
+        raw_variant = _load_json(path, label="Variant result")
+        raw_layout_slug = raw_variant.get("layout_slug", path.parent.name)
+        if not isinstance(raw_layout_slug, str) or not raw_layout_slug.strip():
+            raise ValueError(f"Variant result missing non-empty layout_slug: {path}")
+        layout_slug = raw_layout_slug.strip()
+        layout = inventory_by_slug.get(layout_slug)
+        if layout is None:
+            raise ValueError(f"Variant result references unknown layout '{layout_slug}': {path}")
+        variant = _normalize_variant_result(raw_variant, path=path, requires_image=bool(layout.get("requires_image", False)))
+        variants_by_layout.setdefault(layout_slug, {})[variant["variant_name"]] = variant
+    return variants_by_layout
+
+
+def _suite_deck_paths(suite_dir: Path) -> dict[str, dict[str, Path]]:
+    suite_variants: dict[str, dict[str, Path]] = {}
+    for deck_path in sorted(suite_dir.glob("*/*/deck.json")):
+        variant_name = deck_path.parent.name
+        layout_slug = deck_path.parent.parent.name
+        suite_variants.setdefault(layout_slug, {})[variant_name] = deck_path
+    return suite_variants
+
+
 def _artifact_dirs(*, suite_dir: Path, output_path: Path, layout_slug: str, variant_name: str, deck_dir: Path) -> list[Path]:
     run_dir = output_path.parent
     candidates = [
@@ -102,14 +208,6 @@ def _find_first_file(candidates: list[Path], relatives: list[str]) -> Path | Non
             candidate = base_dir / relative
             if candidate.is_file():
                 return candidate
-    return None
-
-
-def _coerce_success_flag(value: object) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return value > 0
     return None
 
 
@@ -206,11 +304,43 @@ def _fallback_signals(deck_path: Path, *, layout_slug: str) -> dict[str, bool]:
     }
 
 
-def _variant_signals(deck_path: Path, *, layout_slug: str, candidates: list[Path]) -> dict[str, bool]:
+def _artifact_variant_result(
+    deck_path: Path,
+    *,
+    suite_dir: Path,
+    output_path: Path,
+    layout_slug: str,
+    variant_name: str,
+    image_required: bool,
+) -> dict[str, Any]:
+    candidates = _artifact_dirs(
+        suite_dir=suite_dir,
+        output_path=output_path,
+        layout_slug=layout_slug,
+        variant_name=variant_name,
+        deck_dir=deck_path.parent,
+    )
     signals_path = _find_first_file(candidates, ["signals.json", "review/signals.json"])
     if signals_path is not None:
-        return _signal_payload_from_file(signals_path, layout_slug=layout_slug)
-    return _fallback_signals(deck_path, layout_slug=layout_slug)
+        signals = _signal_payload_from_file(signals_path, layout_slug=layout_slug)
+    else:
+        signals = _fallback_signals(deck_path, layout_slug=layout_slug)
+
+    variant = {
+        "variant_name": variant_name,
+        "build_success": _build_success(candidates),
+        "overflow": signals["overflow"],
+        "placeholder_empty": signals["placeholder_empty"],
+        "image_missing": signals["image_missing"],
+        "font_too_small": signals["font_too_small"],
+    }
+    variant["pass"] = bool(
+        variant["build_success"]
+        and not variant["overflow"]
+        and not variant["placeholder_empty"]
+        and (not variant["image_missing"] or not image_required)
+    )
+    return variant
 
 
 def _exclude_reason(layout: dict[str, Any]) -> str | None:
@@ -218,14 +348,14 @@ def _exclude_reason(layout: dict[str, Any]) -> str | None:
     if isinstance(reason, str) and reason.strip():
         return reason.strip()
     if not bool(layout.get("usable", False)):
-        return "layout marked unusable"
+        return "layout_marked_unusable"
     if bool(layout.get("is_disclaimer_duplicate", False)):
-        return "disclaimer duplicate"
+        return "disclaimer_duplicate"
     fillable_slots = layout.get("fillable_slots")
     if isinstance(fillable_slots, list) and not fillable_slots:
-        return "no fillable slots"
+        return "no_fillable_slots"
     if not bool(layout.get("testable", False)):
-        return "not testable"
+        return "not_testable"
     return None
 
 
@@ -244,20 +374,19 @@ def _failure_reasons(variant: dict[str, Any], *, image_required: bool) -> list[s
     return reasons
 
 
-def build_coverage_matrix(*, suite_dir: Path, output_path: Path) -> dict[str, Any]:
+def build_coverage_matrix(
+    *,
+    suite_dir: Path,
+    output_path: Path,
+    timestamp: datetime | None = None,
+) -> dict[str, Any]:
     if not suite_dir.is_dir():
         raise ValueError(f"Suite directory not found: {suite_dir}")
 
     inventory = _load_inventory(suite_dir)
-    raw_layouts = inventory.get("layouts")
-    if not isinstance(raw_layouts, list):
-        raise ValueError("Inventory field 'layouts' must be a list")
-
-    suite_variants: dict[str, dict[str, Path]] = {}
-    for deck_path in sorted(suite_dir.glob("*/*/deck.json")):
-        variant_name = deck_path.parent.name
-        layout_slug = deck_path.parent.parent.name
-        suite_variants.setdefault(layout_slug, {})[variant_name] = deck_path
+    layouts, inventory_by_slug = _inventory_by_slug(inventory)
+    result_variants = _load_result_variants(suite_dir, inventory_by_slug=inventory_by_slug)
+    deck_variants = _suite_deck_paths(suite_dir)
 
     layouts_payload: list[dict[str, Any]] = []
     excluded_payload: list[dict[str, str]] = []
@@ -266,21 +395,17 @@ def build_coverage_matrix(*, suite_dir: Path, output_path: Path) -> dict[str, An
     usable = 0
     testable = 0
 
-    for raw_layout in raw_layouts:
-        if not isinstance(raw_layout, dict):
-            raise ValueError("Inventory layouts must be objects")
-        slug = raw_layout.get("slug")
-        slot_structure = raw_layout.get("slot_structure")
-        if not isinstance(slug, str) or not slug.strip():
-            raise ValueError("Inventory layouts must include a non-empty slug")
+    for layout in sorted(layouts, key=lambda item: str(item["slug"])):
+        slug = str(layout["slug"])
+        slot_structure = layout.get("slot_structure")
         if not isinstance(slot_structure, str) or not slot_structure.strip():
             raise ValueError(f"Inventory layout '{slug}' must include a non-empty slot_structure")
 
-        if bool(raw_layout.get("usable", False)):
+        if bool(layout.get("usable", False)):
             usable += 1
 
-        if not bool(raw_layout.get("testable", False)):
-            reason = _exclude_reason(raw_layout)
+        if not bool(layout.get("testable", False)):
+            reason = _exclude_reason(layout)
             if reason is not None:
                 excluded_payload.append({"slug": slug, "reason": reason})
             layouts_payload.append(
@@ -298,65 +423,55 @@ def build_coverage_matrix(*, suite_dir: Path, output_path: Path) -> dict[str, An
             continue
 
         testable += 1
-        image_required = bool(raw_layout.get("requires_image", False))
-        variants_payload: list[dict[str, Any]] = []
-        layout_failure_reasons: set[str] = set()
-        variant_paths = suite_variants.get(slug, {})
-        for variant_name, deck_path in sorted(variant_paths.items()):
-            candidates = _artifact_dirs(
+        image_required = bool(layout.get("requires_image", False))
+        variants_by_name = dict(result_variants.get(slug, {}))
+        for variant_name, deck_path in deck_variants.get(slug, {}).items():
+            if variant_name in variants_by_name:
+                continue
+            variants_by_name[variant_name] = _artifact_variant_result(
+                deck_path,
                 suite_dir=suite_dir,
                 output_path=output_path,
                 layout_slug=slug,
                 variant_name=variant_name,
-                deck_dir=deck_path.parent,
+                image_required=image_required,
             )
-            build_success = _build_success(candidates)
-            signals = _variant_signals(deck_path, layout_slug=slug, candidates=candidates)
-            variant_payload = {
-                "variant_name": variant_name,
-                "build_success": build_success,
-                "overflow": signals["overflow"],
-                "placeholder_empty": signals["placeholder_empty"],
-                "image_missing": signals["image_missing"],
-                "font_too_small": signals["font_too_small"],
-            }
-            variant_payload["pass"] = bool(
-                build_success
-                and not variant_payload["overflow"]
-                and not variant_payload["placeholder_empty"]
-                and (not variant_payload["image_missing"] or not image_required)
-            )
-            variants_payload.append(variant_payload)
-            if not variant_payload["pass"]:
-                layout_failure_reasons.update(_failure_reasons(variant_payload, image_required=image_required))
 
-        variants_passed = sum(1 for variant in variants_payload if variant["pass"])
-        variants_failed = len(variants_payload) - variants_passed
+        variants = [variants_by_name[name] for name in sorted(variants_by_name)]
+        variants_passed = sum(1 for variant in variants if variant["pass"])
+        variants_failed = len(variants) - variants_passed
         status = "pass" if variants_passed > 0 else "fail"
+
+        layout_failure_reasons: set[str] = set()
+        for variant in variants:
+            if not variant["pass"]:
+                layout_failure_reasons.update(_failure_reasons(variant, image_required=image_required))
+        if not variants:
+            layout_failure_reasons.add("no_variants_found")
+
         if status == "pass":
             passed += 1
         else:
             failed += 1
-            if not variants_payload:
-                layout_failure_reasons.add("no_variants_found")
 
         layouts_payload.append(
             {
                 "slug": slug,
                 "slot_structure": slot_structure,
-                "variants_tested": len(variants_payload),
+                "variants_tested": len(variants),
                 "variants_passed": variants_passed,
                 "variants_failed": variants_failed,
                 "status": status,
                 "failure_reasons": sorted(layout_failure_reasons),
-                "variants": variants_payload,
+                "variants": variants,
             }
         )
 
+    evaluated_at = timestamp or datetime.now(timezone.utc)
     coverage_pct = 100.0 if testable == 0 else round((passed / testable) * 100, 1)
     return {
         "template": suite_dir.name,
-        "total_layouts": len(raw_layouts),
+        "total_layouts": len(layouts),
         "usable": usable,
         "testable": testable,
         "excluded": excluded_payload,
@@ -364,7 +479,7 @@ def build_coverage_matrix(*, suite_dir: Path, output_path: Path) -> dict[str, An
         "failed": failed,
         "coverage_pct": coverage_pct,
         "run_id": output_path.parent.name,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": evaluated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "layouts": layouts_payload,
     }
 
@@ -379,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    json.dump(coverage, sys.stdout, indent=2, sort_keys=True)
+    sys.stdout.write("\n")
     return 0 if coverage["coverage_pct"] == 100.0 else 1
 
 
