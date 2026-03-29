@@ -9,3 +9,6 @@ __pycache__/
 *.egg-info/
 .idea
 /.claude/skills/
+!/.claude/
+!/.claude/skills/
+!/.claude/skills/learn-template

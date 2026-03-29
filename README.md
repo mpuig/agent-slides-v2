@@ -130,12 +130,13 @@ agent-slides build deck.json -o deck.pptx
 
 ## Skills
 
-Three skills ship with the project in `skills/`:
+Four skills ship with the project in `skills/`:
 
 | Skill | Purpose |
 | --- | --- |
 | `create-deck` | Build a deck from a brief: pre-flight questions, Pyramid Principle storyline, build, QA. |
 | `edit-slide` | Modify an existing deck: inspect, smallest mutation, validate. |
+| `learn-template` | Learn a PPTX template, review the manifest, smoke-test it, then hand off to template-backed deck creation. |
 | `review-deck` | Visual QA: LibreOffice-rendered screenshots scored against a checklist. |
 
 These skills are the LLM interface. Agents drive the conversation; `agent-slides` stays model-agnostic and exposes deterministic CLI commands plus the preview viewer.
@@ -145,6 +146,7 @@ Symlink to `.claude/skills/` for Claude Code integration:
 ```bash
 ln -sf $(pwd)/skills/create-deck .claude/skills/create-deck
 ln -sf $(pwd)/skills/edit-slide .claude/skills/edit-slide
+ln -sf $(pwd)/skills/learn-template .claude/skills/learn-template
 ln -sf $(pwd)/skills/review-deck .claude/skills/review-deck
 ```
 
