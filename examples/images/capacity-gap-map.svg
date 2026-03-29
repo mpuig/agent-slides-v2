@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Capacity gap map</title>
+  <desc id="desc">A stylized consulting map showing regional service pressure.</desc>
+  <rect width="1280" height="720" fill="#F4F0E8"/>
+  <rect x="72" y="72" width="1136" height="576" rx="36" fill="#FFFDF9" stroke="#D5C6B0" stroke-width="4"/>
+  <text x="108" y="140" fill="#3C352C" font-family="Georgia, serif" font-size="40" font-weight="700">
+    Regional demand is clustered in the Southeast and Mountain corridors
+  </text>
+  <g fill="#D96B2B">
+    <circle cx="360" cy="410" r="56"/>
+    <circle cx="592" cy="456" r="44"/>
+    <circle cx="824" cy="368" r="64"/>
+    <circle cx="1008" cy="262" r="48"/>
+  </g>
+  <g fill="#184E77">
+    <circle cx="470" cy="278" r="26"/>
+    <circle cx="702" cy="224" r="20"/>
+    <circle cx="904" cy="486" r="24"/>
+  </g>
+  <g stroke="#3C352C" stroke-width="8" stroke-linecap="round">
+    <line x1="360" y1="410" x2="592" y2="456"/>
+    <line x1="592" y1="456" x2="824" y2="368"/>
+    <line x1="824" y1="368" x2="1008" y2="262"/>
+  </g>
+  <text x="108" y="612" fill="#5C5348" font-family="Arial, sans-serif" font-size="28">
+    Orange circles mark backlog hot spots. Blue circles mark stable districts.
+  </text>
+</svg>
