@@ -1410,6 +1410,91 @@ def test_write_pptx_clones_template_and_fills_native_placeholders(tmp_path: Path
     assert slide_parts == ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]
 
 
+def test_write_pptx_applies_computed_font_styles_to_template_placeholders(tmp_path: Path) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-font-styles.pptx"
+    body_layout = find_layout(manifest, {"heading", "body"})
+
+    deck = Deck(
+        deck_id="template-font-styles",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout=body_layout["slug"],
+                nodes=[
+                    Node(node_id="n-1", slot_binding="heading", type="text", content="A longer template heading"),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content=NodeContent(
+                            blocks=[
+                                TextBlock(
+                                    type="paragraph",
+                                    runs=[
+                                        TextRun(text="Revenue grew "),
+                                        TextRun(text="23%", bold=True, color="#1A73E8"),
+                                        TextRun(text=" driven by "),
+                                        TextRun(text="premium segment", italic=True, font_size=24, underline=True),
+                                    ],
+                                )
+                            ]
+                        ),
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=54.0,
+                        width=576.0,
+                        height=72.0,
+                        font_size_pt=26.0,
+                        font_family="Aptos Display",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=True,
+                        revision=1,
+                    ),
+                    "n-2": ComputedNode(
+                        x=72.0,
+                        y=144.0,
+                        width=576.0,
+                        height=180.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    heading_placeholder = slide.placeholders[body_layout["slot_mapping"]["heading"]]
+    body_placeholder = slide.placeholders[body_layout["slot_mapping"]["body"]]
+
+    heading_run = heading_placeholder.text_frame.paragraphs[0].runs[0]
+    body_runs = body_placeholder.text_frame.paragraphs[0].runs
+
+    assert heading_run.font.name == "Aptos Display"
+    assert heading_run.font.size == Pt(26)
+    assert body_runs[0].font.name == "Aptos"
+    assert body_runs[0].font.size == Pt(18)
+    assert body_runs[1].font.bold is True
+    assert body_runs[1].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert body_runs[3].font.italic is True
+    assert body_runs[3].font.size == Pt(24)
+    assert body_runs[3].font.underline is True
+
+
 def test_write_pptx_warns_when_template_hash_changes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _, manifest_path, manifest = create_template_manifest(tmp_path)
     output_path = tmp_path / "hash-mismatch.pptx"
