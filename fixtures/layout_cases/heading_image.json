@@ -22,7 +22,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/network-coverage.svg"
+      "image_path": "examples/images/img_corporate_glass_facade_sun.jpg"
     }
   },
   "long_heading": {
@@ -37,7 +37,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/capacity-gap-map.svg"
+      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
     }
   },
   "narrow_safe": {
@@ -52,7 +52,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/capacity-gap-map.svg"
+      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
     }
   },
   "nominal": {
@@ -67,7 +67,7 @@
     },
     "image": {
       "image_fit": "cover",
-      "image_path": "examples/images/capacity-gap-map.svg"
+      "image_path": "examples/images/img_strategy_road_fork_aerial.jpg"
     }
   }
 }
