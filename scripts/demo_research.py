@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -31,10 +32,106 @@ WEIGHTS = {
     "no_overflow": 15,          # no text overflow in computed nodes
     "no_unbound": 15,           # no unbound slot warnings
     "placeholder_fill": 20,     # % of expected slots actually filled
-    "layout_variety": 10,       # distinct layouts used / expected minimum
+    "layout_coverage": 10,      # required layouts present / expected set, or generic variety fallback
     "slide_count_match": 10,    # actual vs expected slide count
     "build_success": 10,        # PPTX builds without error
 }
+
+BOLD_SLUG_PATTERN = re.compile(r"\*\*([a-z0-9_]+)\*\*")
+SOURCE_LINE_PATTERN = re.compile(r"at least\s+(\d+)\s+slides?\s+should\s+include\s+a\s+source line", re.IGNORECASE)
+WORD_PATTERN = re.compile(r"\b[\w'-]+\b")
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def _node_text(node: dict) -> str:
+    content = node.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, dict):
+        return ""
+    blocks = content.get("blocks", [])
+    if not isinstance(blocks, list):
+        return ""
+    texts = [block.get("text", "").strip() for block in blocks if isinstance(block, dict)]
+    return "\n".join(text for text in texts if text)
+
+
+def _word_count(text: str) -> int:
+    return len(WORD_PATTERN.findall(text))
+
+
+def _has_source_line(slide: dict) -> bool:
+    return any(_node_text(node).casefold().startswith(("source:", "sources:")) for node in slide.get("nodes", []))
+
+
+def _is_valid_image_path(image_path: str | None, deck_cwd: Path) -> bool:
+    if not image_path:
+        return False
+    path = Path(image_path)
+    if not path.is_absolute():
+        path = deck_cwd / path
+    return path.exists()
+
+
+def _brief_compliance_for_slides(slides: list[dict], brief: dict, deck_cwd: Path) -> dict:
+    layouts_used = {slide.get("layout", "unknown") for slide in slides}
+
+    required_layouts = brief.get("required_layouts", [])
+    required_layouts_present = [slug for slug in required_layouts if slug in layouts_used]
+    required_layouts_missing = [slug for slug in required_layouts if slug not in layouts_used]
+
+    slides_by_layout: dict[str, list[dict]] = {}
+    for slide in slides:
+        slides_by_layout.setdefault(slide.get("layout", "unknown"), []).append(slide)
+
+    image_required_layouts = brief.get("image_required_layouts", [])
+    image_layouts_expected = len(image_required_layouts)
+    image_layouts_filled = 0
+    image_files_valid = True
+
+    narrow_layouts = set(brief.get("narrow_layouts", []))
+    narrow_headings_ok = True
+    source_lines_found = 0
+
+    for slide in slides:
+        layout = slide.get("layout", "unknown")
+        nodes = slide.get("nodes", [])
+
+        if _has_source_line(slide):
+            source_lines_found += 1
+
+        if layout in narrow_layouts:
+            heading_nodes = [
+                node for node in nodes
+                if node.get("type") == "text" and node.get("slot_binding") == "heading" and _node_text(node)
+            ]
+            if any(_word_count(_node_text(node)) > 5 for node in heading_nodes):
+                narrow_headings_ok = False
+
+    for layout in image_required_layouts:
+        slide_group = slides_by_layout.get(layout, [])
+        valid_image_found = any(
+            node.get("type") == "image" and _is_valid_image_path(node.get("image_path"), deck_cwd)
+            for slide in slide_group
+            for node in slide.get("nodes", [])
+        )
+        if valid_image_found:
+            image_layouts_filled += 1
+        else:
+            image_files_valid = False
+
+    return {
+        "required_layouts_present": required_layouts_present,
+        "required_layouts_missing": required_layouts_missing,
+        "image_layouts_filled": image_layouts_filled,
+        "image_layouts_expected": image_layouts_expected,
+        "image_files_valid": image_files_valid,
+        "narrow_headings_ok": narrow_headings_ok,
+        "source_lines_found": source_lines_found,
+    }
 
 
 def run_cli(*args: str, cwd: Path | None = None) -> dict | None:
@@ -53,8 +150,15 @@ def run_cli(*args: str, cwd: Path | None = None) -> dict | None:
 
 def parse_brief(brief_path: Path) -> dict:
     """Extract structured fields from a benchmark brief markdown file."""
-    text = brief_path.read_text()
-    fields: dict = {"name": brief_path.stem, "path": str(brief_path)}
+    text = brief_path.read_text(encoding="utf-8")
+    fields: dict = {
+        "name": brief_path.stem,
+        "path": str(brief_path),
+        "required_layouts": [],
+        "image_required_layouts": [],
+        "narrow_layouts": [],
+        "min_source_lines": 0,
+    }
 
     for line in text.splitlines():
         line_stripped = line.strip()
@@ -70,6 +174,19 @@ def parse_brief(brief_path: Path) -> dict:
     in_layout_variety = False
     for line in text.splitlines():
         line_stripped = line.strip()
+        slugs = BOLD_SLUG_PATTERN.findall(line_stripped)
+        if slugs:
+            fields["required_layouts"].extend(slugs)
+            line_lower = line_stripped.casefold()
+            if "image" in line_lower and any(keyword in line_lower for keyword in ("fill", "filled", "real image")):
+                fields["image_required_layouts"].extend(slugs)
+            if any(keyword in line_lower for keyword in ("narrow", "short heading", "headings short", "keep headings short", "short because")):
+                fields["narrow_layouts"].extend(slugs)
+
+        source_line_match = SOURCE_LINE_PATTERN.search(line_stripped)
+        if source_line_match:
+            fields["min_source_lines"] = int(source_line_match.group(1))
+
         if "Expected slide count" in line_stripped:
             in_slide_count = True
             continue
@@ -94,6 +211,10 @@ def parse_brief(brief_path: Path) -> dict:
                 except ValueError:
                     continue
             in_layout_variety = False
+
+    fields["required_layouts"] = _dedupe(fields["required_layouts"])
+    fields["image_required_layouts"] = _dedupe(fields["image_required_layouts"])
+    fields["narrow_layouts"] = _dedupe(fields["narrow_layouts"])
 
     return fields
 
@@ -144,13 +265,20 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         for slide in slides:
             layouts_used.add(slide.get("layout", "unknown"))
         scores["layouts_used"] = sorted(layouts_used)
-        min_layouts = brief.get("min_layouts", 2)
-        scores["layout_variety"] = min(1.0, len(layouts_used) / min_layouts)
+        brief_compliance = _brief_compliance_for_slides(slides, brief, deck_cwd)
+        scores["brief_compliance"] = brief_compliance
+
+        required_layouts = brief.get("required_layouts", [])
+        if required_layouts:
+            scores["layout_coverage"] = len(brief_compliance["required_layouts_present"]) / len(required_layouts)
+        else:
+            min_layouts = brief.get("min_layouts", 2)
+            scores["layout_coverage"] = min(1.0, len(layouts_used) / min_layouts)
+        scores["layout_variety"] = scores["layout_coverage"]
 
         # Overflow and unbound analysis
         overflow_count = 0
         unbound_count = 0
-        total_text_nodes = 0
         filled_slots = 0
         total_slots = 0
         for slide in slides:
@@ -160,7 +288,6 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
                 node_id = node.get("node_id", "")
                 comp = computed.get(node_id, {})
                 if node.get("type") == "text":
-                    total_text_nodes += 1
                     if comp.get("text_overflow"):
                         overflow_count += 1
                 if node.get("slot_binding"):
@@ -187,12 +314,29 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         scores["no_overflow"] = 1.0 if overflow_count == 0 else max(0, 1.0 - overflow_count * 0.25)
         scores["unbound_count"] = unbound_count
         scores["no_unbound"] = 1.0 if unbound_count == 0 else max(0, 1.0 - unbound_count * 0.25)
-        scores["placeholder_fill"] = (filled_slots / total_slots) if total_slots > 0 else 0.0
+        generic_fill = (filled_slots / total_slots) if total_slots > 0 else 0.0
+        image_layouts_expected = brief_compliance["image_layouts_expected"]
+        image_fill_ratio = (
+            brief_compliance["image_layouts_filled"] / image_layouts_expected
+            if image_layouts_expected > 0
+            else 1.0
+        )
+        scores["placeholder_fill"] = min(generic_fill, image_fill_ratio)
         scores["filled_slots"] = filled_slots
         scores["total_slots"] = total_slots
     else:
-        for key in ["slide_count_match", "layout_variety", "no_overflow", "no_unbound", "placeholder_fill"]:
+        scores["brief_compliance"] = {
+            "required_layouts_present": [],
+            "required_layouts_missing": list(brief.get("required_layouts", [])),
+            "image_layouts_filled": 0,
+            "image_layouts_expected": 0,
+            "image_files_valid": True,
+            "narrow_headings_ok": True,
+            "source_lines_found": 0,
+        }
+        for key in ["slide_count_match", "layout_coverage", "no_overflow", "no_unbound", "placeholder_fill"]:
             scores[key] = 0.0
+        scores["layout_variety"] = 0.0
 
     # 4. Review (render PNGs)
     review_dir = run_dir / "review"
@@ -211,7 +355,21 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
         if isinstance(value, (int, float)):
             composite += value * weight
             total_weight += weight
-    scores["composite"] = round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
+    composite_score = round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
+
+    brief_compliance = scores.get("brief_compliance", {})
+    compliance_cap = 1.0
+    required_layouts = brief.get("required_layouts", [])
+    if required_layouts:
+        compliance_cap = min(compliance_cap, scores.get("layout_coverage", 0.0))
+    image_layouts_expected = brief_compliance.get("image_layouts_expected", 0)
+    if image_layouts_expected:
+        compliance_cap = min(
+            compliance_cap,
+            brief_compliance.get("image_layouts_filled", 0) / image_layouts_expected,
+        )
+
+    scores["composite"] = round(min(composite_score, compliance_cap * 100), 1)
 
     return scores
 
