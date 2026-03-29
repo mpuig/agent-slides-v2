@@ -232,7 +232,7 @@ def build_cert_suite(
 
         for variant_name, raw_slot_payloads in sorted(variants.items()):
             deck_dir = output_dir / template_slug / layout_slug / variant_name
-            template_asset_root = output_dir / template_slug / "_assets"
+            template_asset_root = deck_dir / "_assets"
             nodes = _build_nodes(
                 raw_slot_payloads,
                 fillable_slots=fillable_slots,
