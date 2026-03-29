@@ -41,6 +41,7 @@ from agent_slides.model.types import (
 )
 from agent_slides.model.design_rules import ConditionalFormatting, load_design_rules
 from agent_slides.model.themes import load_theme
+from agent_slides.template_slots import normalize_template_slot_mapping
 
 BLANK_LAYOUT_INDEX = 6
 BULLET_MARGIN_STEP_PT = 18.0
@@ -336,6 +337,10 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
 
             slug = _require_string(layout, "slug")
             slot_mapping = _require_dict(layout, "slot_mapping")
+            slot_mapping = normalize_template_slot_mapping(
+                slot_mapping,
+                placeholders_by_idx=_index_layout_placeholders(layout.get("placeholders")),
+            )
             binding = TemplateLayoutBinding(
                 master_index=layout.get("master_index", master_position),
                 layout_index=layout.get("index", layout_position),
@@ -346,6 +351,20 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
             bindings[slug] = binding
 
     return bindings
+
+
+def _index_layout_placeholders(raw_placeholders: Any) -> dict[int, dict[str, Any]]:
+    if not isinstance(raw_placeholders, list):
+        return {}
+
+    placeholders_by_idx: dict[int, dict[str, Any]] = {}
+    for placeholder in raw_placeholders:
+        if not isinstance(placeholder, dict):
+            continue
+        idx = placeholder.get("idx")
+        if isinstance(idx, int) and not isinstance(idx, bool):
+            placeholders_by_idx[idx] = placeholder
+    return placeholders_by_idx
 
 
 def _node_paragraphs(

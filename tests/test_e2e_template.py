@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -320,7 +321,6 @@ def test_multi_layout_template(tmp_path: Path) -> None:
         "Blank",
     ]
 
-
 def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path: Path) -> None:
     template_path = tmp_path / "brand-template.pptx"
     create_test_template(template_path)
@@ -392,3 +392,106 @@ def test_template_build_applies_computed_font_sizes_to_placeholder_text(tmp_path
     assert body_run.font.size == Pt(body_font_size)
     assert title_run.font.size.pt == pytest.approx(title_font_size)
     assert body_run.font.size.pt == pytest.approx(body_font_size)
+
+
+def test_template_build_swaps_inverted_quote_and_attribution_placeholders(tmp_path: Path) -> None:
+    template_path = tmp_path / "quote-template.pptx"
+    create_test_template(template_path)
+
+    manifest_path = tmp_path / "quote-template.manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source": "quote-template.pptx",
+                "source_hash": hashlib.sha256(template_path.read_bytes()).hexdigest(),
+                "theme": {
+                    "colors": {
+                        "primary": "#112233",
+                        "secondary": "#445566",
+                        "accent": "#778899",
+                        "text": "#101010",
+                        "heading_text": "#202020",
+                        "subtle_text": "#E5E7EB",
+                        "background": "#FAFAFA",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 10.0,
+                        "margin": 60.0,
+                        "gutter": 20.0,
+                    },
+                },
+                "slide_masters": [
+                    {
+                        "index": 0,
+                        "name": "Slide Master 1",
+                        "layouts": [
+                            {
+                                "index": 0,
+                                "master_index": 0,
+                                "name": "Title Slide",
+                                "slug": "quote_layout",
+                                "usable": True,
+                                "placeholders": [
+                                    {
+                                        "idx": 0,
+                                        "type": "BODY",
+                                        "name": "Large Quote",
+                                        "bounds": {"x": 72, "y": 96, "w": 576, "h": 240},
+                                    },
+                                    {
+                                        "idx": 1,
+                                        "type": "BODY",
+                                        "name": "Small Attribution",
+                                        "bounds": {"x": 72, "y": 360, "w": 576, "h": 48},
+                                    },
+                                ],
+                                "slot_mapping": {
+                                    "quote": 1,
+                                    "attribution": 0,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    deck_path = tmp_path / "deck.json"
+    init_result = invoke(["init", str(deck_path), "--template", str(manifest_path)])
+    assert init_result.exit_code == 0
+
+    slide_add_result = invoke(["slide", "add", str(deck_path), "--layout", "quote_layout"])
+    assert slide_add_result.exit_code == 0
+
+    for slot_name, text in [("quote", "Stay hungry, stay foolish."), ("attribution", "Steve Jobs")]:
+        slot_result = invoke(
+            [
+                "slot",
+                "set",
+                str(deck_path),
+                "--slide",
+                "0",
+                "--slot",
+                slot_name,
+                "--text",
+                text,
+            ]
+        )
+        assert slot_result.exit_code == 0
+
+    output_path = tmp_path / "quote-deck.pptx"
+    build_result = invoke(["build", str(deck_path), "-o", str(output_path)])
+    assert build_result.exit_code == 0
+    assert build_result.stderr == ""
+
+    presentation = Presentation(str(output_path))
+    slide = presentation.slides[0]
+    assert slide.placeholders[0].text_frame.text == "Stay hungry, stay foolish."
+    assert slide.placeholders[1].text_frame.text == "Steve Jobs"
