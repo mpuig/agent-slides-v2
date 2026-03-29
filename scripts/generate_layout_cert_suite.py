@@ -152,9 +152,13 @@ def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
         image_source = (ROOT / image_source).resolve(strict=False)
     if not image_source.is_file():
         raise ValueError(f"Image fixture asset not found: {raw_path}")
+    import hashlib
+
     asset_dir = deck_dir / "_assets"
     asset_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{image_source.parent.name}_{image_source.name}"
+    # Key by a hash of the full resolved path to guarantee uniqueness
+    path_hash = hashlib.sha256(str(image_source).encode()).hexdigest()[:12]
+    safe_name = f"{path_hash}_{image_source.name}"
     local_copy = asset_dir / safe_name
     shutil.copy2(image_source, local_copy)
     return _relative_path(local_copy, deck_dir)
