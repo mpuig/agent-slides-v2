@@ -10,6 +10,7 @@ from pptx import Presentation
 
 from agent_slides.cli import cli
 from agent_slides.errors import UNBOUND_NODES
+from tests.image_helpers import write_png
 
 DRAWING_NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
@@ -152,6 +153,35 @@ def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_pat
     assert paragraphs[0].find("./a:pPr/a:buChar", DRAWING_NS) is None
     assert paragraphs[1].find("./a:pPr/a:buChar", DRAWING_NS) is not None
     assert paragraphs[2].find("./a:pPr/a:buChar", DRAWING_NS) is not None
+
+
+def test_build_succeeds_after_slot_set_normalizes_absolute_image_paths(tmp_path: Path) -> None:
+    runner = CliRunner()
+    deck_path = tmp_path / "deck.json"
+    pptx_path = tmp_path / "output.pptx"
+    image_dir = tmp_path / "assets"
+    image_dir.mkdir()
+    image_path = write_png(image_dir / "photo.png", width=30, height=20)
+
+    exit_code, payload, _ = invoke(runner, ["init", str(deck_path), "--theme", "default"])
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "image_right"])
+    assert exit_code == 0
+    assert payload["ok"] is True
+
+    exit_code, payload, _ = invoke(
+        runner,
+        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "image", "--image", str(image_path)],
+    )
+    assert exit_code == 0
+    assert payload["data"]["image_path"] == "assets/photo.png"
+
+    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert pptx_path.is_file()
 
 
 def test_layout_switch_content_migration(tmp_path: Path) -> None:
