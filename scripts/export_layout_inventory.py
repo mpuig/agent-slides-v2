@@ -50,16 +50,22 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _load_exclude_policy(path: Path | None) -> dict[str, str]:
-    if path is None:
+def _load_exclude_policy(
+    path: Path | None,
+    *,
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> dict[str, str]:
+    resolved_path = _resolve_exclude_policy_path(path, manifest=manifest, manifest_path=manifest_path)
+    if resolved_path is None:
         return {}
 
     try:
-        raw_text = path.read_text(encoding="utf-8")
+        raw_text = resolved_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise ValueError(f"Exclude policy file not found: {path}") from exc
+        raise ValueError(f"Exclude policy file not found: {resolved_path}") from exc
 
-    if path.suffix.casefold() in {".yaml", ".yml"}:
+    if resolved_path.suffix.casefold() in {".yaml", ".yml"}:
         if yaml is None:  # pragma: no cover
             raise ValueError("PyYAML is required to read YAML exclude policies")
         loaded = yaml.safe_load(raw_text)
@@ -67,20 +73,25 @@ def _load_exclude_policy(path: Path | None) -> dict[str, str]:
         try:
             loaded = json.loads(raw_text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Exclude policy file is not valid JSON: {path}") from exc
+            raise ValueError(f"Exclude policy file is not valid JSON: {resolved_path}") from exc
 
     if loaded is None:
         return {}
+
+    if isinstance(loaded, list):
+        return _load_policy_entries(loaded)
     if not isinstance(loaded, dict):
-        raise ValueError("Exclude policy root must be an object")
+        raise ValueError("Exclude policy root must be an array or object")
 
     candidate = loaded.get("layouts")
     if candidate is None:
         candidate = loaded.get("exclude_layouts")
     if candidate is None:
         candidate = loaded
+    if isinstance(candidate, list):
+        return _load_policy_entries(candidate)
     if not isinstance(candidate, dict):
-        raise ValueError("Exclude policy layout entries must be an object")
+        raise ValueError("Exclude policy layout entries must be an array or object")
 
     policy: dict[str, str] = {}
     for slug, raw_reason in candidate.items():
@@ -89,6 +100,51 @@ def _load_exclude_policy(path: Path | None) -> dict[str, str]:
         reason = _normalize_exclude_reason(raw_reason, slug=slug)
         if reason is not None:
             policy[slug.strip()] = reason
+    return policy
+
+
+def _resolve_exclude_policy_path(
+    path: Path | None,
+    *,
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> Path | None:
+    if path is None:
+        return None
+    if path.is_dir():
+        template_name = _template_name_for_policy(manifest, manifest_path)
+        candidate = path / f"{template_name}.json"
+        return candidate if candidate.exists() else None
+    if path.exists():
+        return path
+    raise ValueError(f"Exclude policy path not found: {path}")
+
+
+def _template_name_for_policy(manifest: dict[str, Any], manifest_path: Path) -> str:
+    raw_source = manifest.get("source")
+    if isinstance(raw_source, str) and raw_source.strip():
+        return Path(raw_source).stem
+
+    name = manifest_path.name
+    if name.endswith(".manifest.json"):
+        return name[: -len(".manifest.json")]
+    if manifest_path.suffix:
+        return manifest_path.stem
+    return name
+
+
+def _load_policy_entries(entries: list[object]) -> dict[str, str]:
+    policy: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Exclude policy entry {index} must be an object")
+        slug = entry.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            raise ValueError(f"Exclude policy entry {index} must include a non-empty 'slug'")
+        reason = _normalize_exclude_reason(entry, slug=slug)
+        if reason is None:
+            raise ValueError(f"Exclude policy entry '{slug}' must include a non-empty 'reason'")
+        policy[slug.strip()] = reason
     return policy
 
 
@@ -220,13 +276,11 @@ def _classify_slot_structure(fillable_slots: list[str]) -> str:
 def _is_testable(
     *,
     usable: bool,
-    fillable_slots: list[str],
-    is_disclaimer_duplicate: bool,
     exclude_reason: str | None,
 ) -> bool:
-    if not usable or not fillable_slots:
+    if not usable:
         return False
-    if is_disclaimer_duplicate or exclude_reason is not None:
+    if exclude_reason is not None:
         return False
     return True
 
@@ -264,8 +318,6 @@ def build_inventory(manifest: dict[str, Any], *, exclude_policy: dict[str, str] 
             "placeholder_bounds": placeholder_bounds,
             "testable": _is_testable(
                 usable=usable,
-                fillable_slots=fillable_slots,
-                is_disclaimer_duplicate=is_disclaimer_duplicate,
                 exclude_reason=exclude_reason,
             ),
             "exclude_reason": exclude_reason,
@@ -288,7 +340,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         manifest = _load_json(args.manifest_path)
-        exclude_policy = _load_exclude_policy(args.exclude_policy)
+        exclude_policy = _load_exclude_policy(
+            args.exclude_policy,
+            manifest=manifest,
+            manifest_path=args.manifest_path,
+        )
         inventory = build_inventory(manifest, exclude_policy=exclude_policy)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
