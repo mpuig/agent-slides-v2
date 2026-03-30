@@ -11,6 +11,7 @@ import pytest
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.dml import MSO_FILL
 from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
@@ -1725,7 +1726,7 @@ def test_write_pptx_applies_computed_font_styles_to_template_placeholders(
                         height=72.0,
                         font_size_pt=26.0,
                         font_family="Aptos Display",
-                        color="#112233",
+                        color="#F4F8FC",
                         bg_color=None,
                         font_bold=True,
                         revision=1,
@@ -1737,7 +1738,7 @@ def test_write_pptx_applies_computed_font_styles_to_template_placeholders(
                         height=180.0,
                         font_size_pt=18.0,
                         font_family="Aptos",
-                        color="#112233",
+                        color="#E8F0FE",
                         bg_color=None,
                         font_bold=False,
                         revision=1,
@@ -1764,11 +1765,15 @@ def test_write_pptx_applies_computed_font_styles_to_template_placeholders(
     assert heading_run.font.size is None
     assert body_runs[0].font.name is None
     assert body_runs[0].font.size is None
+    assert heading_run.font.color.rgb == RGBColor.from_string("F4F8FC")
+    assert body_runs[0].font.color.rgb == RGBColor.from_string("E8F0FE")
     # Explicit TextRun overrides ARE applied:
     assert body_runs[1].font.bold is True
     assert body_runs[1].font.color.rgb == RGBColor.from_string("1A73E8")
+    assert body_runs[2].font.color.rgb == RGBColor.from_string("E8F0FE")
     assert body_runs[3].font.italic is True
     assert body_runs[3].font.size == Pt(24)
+    assert body_runs[3].font.color.rgb == RGBColor.from_string("E8F0FE")
     assert body_runs[3].font.underline is True
 
 
@@ -1900,8 +1905,8 @@ def test_write_pptx_renders_virtual_body_slots_as_positioned_text_boxes(
                         height=220.0,
                         font_size_pt=18.0,
                         font_family="Aptos",
-                        color="#445566",
-                        bg_color=None,
+                        color="#F9F9F9",
+                        bg_color="#00A651",
                         font_bold=False,
                         revision=1,
                     ),
@@ -1927,6 +1932,11 @@ def test_write_pptx_renders_virtual_body_slots_as_positioned_text_boxes(
     assert body_shape.top == int(154.0 * EMU_PER_POINT)
     assert body_shape.width == int(576.0 * EMU_PER_POINT)
     assert body_shape.height == int(220.0 * EMU_PER_POINT)
+    assert body_shape.fill.type == MSO_FILL.BACKGROUND
+    assert (
+        body_shape.text_frame.paragraphs[0].runs[0].font.color.rgb
+        == RGBColor.from_string("F9F9F9")
+    )
 
 
 def test_write_pptx_warns_when_template_hash_changes(
