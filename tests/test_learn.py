@@ -231,6 +231,16 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(
             "text_color": "333333",
         }
     ]
+    assert layouts["blank"]["editable_regions"] == [
+        {
+            "name": "content_area",
+            "left": 0.0,
+            "top": 0.0,
+            "width": 960.0,
+            "height": 540.0,
+            "source": "visual_inference_no_placeholders",
+        }
+    ]
     assert layouts["agenda"]["placeholders"][1]["idx"] == 1
     assert layouts["agenda"]["placeholders"][1]["type"] == "BODY"
     assert layouts["agenda"]["placeholders"][1]["name"] == "Content Placeholder 2"
@@ -242,6 +252,47 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(
     }
     assert layouts["agenda"]["placeholders"][1]["shape_kind"] == "placeholder"
     assert layouts["agenda"]["placeholders"][1]["suggested_slot"] == "body"
+    assert layouts["agenda"]["editable_regions"] == [
+        {
+            "name": "content_box",
+            "left": 36.0,
+            "top": 126.0,
+            "width": 648.0,
+            "height": 356.375,
+            "source": "placeholder_union",
+        }
+    ]
+    agenda_2_body_placeholders = [
+        placeholder
+        for placeholder in layouts["agenda_2"]["placeholders"]
+        if placeholder["type"] == "BODY"
+    ]
+    assert layouts["agenda_2"]["editable_regions"] == [
+        {
+            "name": "content_box",
+            "left": min(
+                placeholder["bounds"]["x"] for placeholder in agenda_2_body_placeholders
+            ),
+            "top": min(
+                placeholder["bounds"]["y"] for placeholder in agenda_2_body_placeholders
+            ),
+            "width": max(
+                placeholder["bounds"]["x"] + placeholder["bounds"]["w"]
+                for placeholder in agenda_2_body_placeholders
+            )
+            - min(
+                placeholder["bounds"]["x"] for placeholder in agenda_2_body_placeholders
+            ),
+            "height": max(
+                placeholder["bounds"]["y"] + placeholder["bounds"]["h"]
+                for placeholder in agenda_2_body_placeholders
+            )
+            - min(
+                placeholder["bounds"]["y"] for placeholder in agenda_2_body_placeholders
+            ),
+            "source": "placeholder_union",
+        }
+    ]
 
     assert (
         "Warning: layout 'Comparison Lab': skipped unsupported media_clip placeholder 'Content Placeholder 5'"
@@ -702,6 +753,188 @@ def test_read_template_manifest_extracts_color_zones_from_large_filled_shapes(
             "bg_color": "00A651",
             "text_color": "FFFFFF",
         },
+    ]
+
+
+def test_read_template_manifest_extracts_editable_regions_from_visual_inference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = tmp_path / "template.pptx"
+    template_path.write_bytes(b"placeholder")
+
+    class FakePlaceholderFormat:
+        idx = 0
+        type = PP_PLACEHOLDER.TITLE
+
+    class FakeTitlePlaceholder:
+        name = "Title Placeholder 1"
+        left = 560 * 12700
+        top = 40 * 12700
+        width = 300 * 12700
+        height = 50 * 12700
+        shape_id = 1
+        placeholder_format = FakePlaceholderFormat()
+
+    class FakeForeColor:
+        def __init__(self, rgb: str) -> None:
+            self.rgb = rgb
+
+    class FakeFill:
+        def __init__(self, rgb: str) -> None:
+            self.type = MSO_FILL.SOLID
+            self.fore_color = FakeForeColor(rgb)
+
+    class FakePanelShape:
+        is_placeholder = False
+        has_text_frame = False
+        has_table = False
+        has_chart = False
+        shape_type = MSO_SHAPE_TYPE.AUTO_SHAPE
+
+        def __init__(
+            self, *, shape_id: int, name: str, left_pt: float, width_pt: float, rgb: str
+        ) -> None:
+            self.shape_id = shape_id
+            self.name = name
+            self.left = int(left_pt * 12700)
+            self.top = 0
+            self.width = int(width_pt * 12700)
+            self.height = int(template_reader.SLIDE_HEIGHT_PT * 12700)
+            self.fill = FakeFill(rgb)
+
+    class FakeTextFrame:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class FakeFooterShape:
+        is_placeholder = False
+        has_text_frame = True
+        has_table = False
+        has_chart = False
+        shape_type = MSO_SHAPE_TYPE.TEXT_BOX
+        shape_id = 4
+        name = "Footer Text"
+        left = 620 * 12700
+        top = 500 * 12700
+        width = 220 * 12700
+        height = 16 * 12700
+        text_frame = FakeTextFrame("Copyright 2026")
+
+    class FakeDecorativeShape:
+        is_placeholder = False
+        has_text_frame = False
+        has_table = False
+        has_chart = False
+        shape_type = MSO_SHAPE_TYPE.AUTO_SHAPE
+        shape_id = 5
+        name = "Accent Block"
+        left = 820 * 12700
+        top = 110 * 12700
+        width = 140 * 12700
+        height = 60 * 12700
+        fill = FakeFill("0A7A3B")
+
+    layout_root = ET.fromstring(
+        f"""
+        <p:sldLayout xmlns:p="{PML_NS}" xmlns:a="{DML_NS}">
+          <p:cSld name="Green Highlight">
+            <p:bg>
+              <p:bgPr>
+                <a:solidFill>
+                  <a:srgbClr val="FFFFFF" />
+                </a:solidFill>
+              </p:bgPr>
+            </p:bg>
+          </p:cSld>
+        </p:sldLayout>
+        """
+    )
+    master_root = ET.fromstring(
+        f"""
+        <p:sldMaster xmlns:p="{PML_NS}" xmlns:a="{DML_NS}">
+          <p:cSld>
+            <p:bg>
+              <p:bgPr>
+                <a:solidFill>
+                  <a:srgbClr val="F1F5F9" />
+                </a:solidFill>
+              </p:bgPr>
+            </p:bg>
+          </p:cSld>
+        </p:sldMaster>
+        """
+    )
+
+    class FakeSlideMaster:
+        def __init__(self) -> None:
+            self._element = master_root
+            self.slide_layouts = [FakeLayout(self)]
+
+    class FakeLayout:
+        def __init__(self, slide_master: FakeSlideMaster) -> None:
+            self.name = "Green Highlight"
+            self.slide_master = slide_master
+            self.placeholders = [FakeTitlePlaceholder()]
+            self.shapes = [
+                FakePanelShape(
+                    shape_id=2,
+                    name="Left Panel",
+                    left_pt=0.0,
+                    width_pt=420.0,
+                    rgb="FFFFFF",
+                ),
+                FakePanelShape(
+                    shape_id=3,
+                    name="Right Panel",
+                    left_pt=540.0,
+                    width_pt=420.0,
+                    rgb="00A651",
+                ),
+                FakeDecorativeShape(),
+                FakeFooterShape(),
+            ]
+            self._element = layout_root
+
+    class FakePresentation:
+        slide_masters = [FakeSlideMaster()]
+
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
+    monkeypatch.setattr(
+        template_reader,
+        "_extract_theme",
+        lambda _: {
+            "colors": {
+                "primary": "#112233",
+                "secondary": "#445566",
+                "accent": "#778899",
+                "text": "#111111",
+                "heading_text": "#222222",
+                "subtle_text": "#E5E7EB",
+                "background": "#FAFAFA",
+            },
+            "fonts": {},
+            "spacing": {},
+        },
+    )
+
+    result = read_template_manifest(template_path)
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "slide_masters"
+    ][0]["layouts"][0]
+
+    assert result.usable_layouts == 1
+    assert layout["slug"] == "green_highlight"
+    assert layout["editable_regions"] == [
+        {
+            "name": "content_area",
+            "left": 540.0,
+            "top": 170.0,
+            "width": 420.0,
+            "height": 320.0,
+            "source": "visual_inference_no_placeholders",
+        }
     ]
 
 

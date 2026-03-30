@@ -74,6 +74,26 @@ class LearnResult:
         return str(self.manifest["source"])
 
 
+@dataclass(frozen=True)
+class _Rect:
+    left: float
+    top: float
+    width: float
+    height: float
+
+    @property
+    def right(self) -> float:
+        return self.left + self.width
+
+    @property
+    def bottom(self) -> float:
+        return self.top + self.height
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+
 def read_template_manifest(
     template_path: str | Path,
     output_path: str | Path | None = None,
@@ -147,6 +167,7 @@ def _build_manifest(
                 placeholders,
                 slot_mapping,
                 color_zones,
+                editable_regions,
                 layout_warnings,
             ) = _extract_layout(
                 slide_layout,
@@ -170,6 +191,7 @@ def _build_manifest(
                     "placeholders": placeholders,
                     "slot_mapping": slot_mapping,
                     "color_zones": color_zones,
+                    "editable_regions": editable_regions,
                 }
             )
 
@@ -214,6 +236,7 @@ def _extract_layout(
     list[dict[str, object]],
     dict[str, int],
     list[dict[str, object]],
+    list[dict[str, object]],
     list[str],
 ]:
     placeholders: list[dict[str, object]] = []
@@ -252,16 +275,368 @@ def _extract_layout(
             placeholders.append(extracted)
 
     placeholders.sort(key=lambda item: int(item["idx"]))
+    slot_mapping = _build_slot_mapping(placeholders)
+    color_zones = _extract_color_zones(
+        slide_layout,
+        placeholders,
+        scheme_colors=scheme_colors,
+    )
     return (
         placeholders,
-        _build_slot_mapping(placeholders),
-        _extract_color_zones(
+        slot_mapping,
+        color_zones,
+        _extract_editable_regions(
             slide_layout,
             placeholders,
-            scheme_colors=scheme_colors,
+            color_zones=color_zones,
         ),
         warnings,
     )
+
+
+def _extract_editable_regions(
+    slide_layout: object,
+    placeholders: list[dict[str, object]],
+    *,
+    color_zones: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    placeholder_union = _placeholder_union_region(placeholders)
+    if placeholder_union is not None:
+        return [_region_record("content_box", placeholder_union, "placeholder_union")]
+
+    inferred = _infer_editable_region(
+        slide_layout,
+        placeholders,
+        color_zones=color_zones,
+    )
+    if inferred is None:
+        return []
+    return [
+        _region_record(
+            "content_area",
+            inferred,
+            "visual_inference_no_placeholders",
+        )
+    ]
+
+
+def _placeholder_union_region(
+    placeholders: list[dict[str, object]],
+) -> _Rect | None:
+    content_placeholders = [
+        placeholder
+        for placeholder in placeholders
+        if placeholder.get("shape_kind") == "placeholder"
+        and placeholder["type"] in {"BODY", "TABLE", "CHART"}
+    ]
+    return _union_rect(content_placeholders)
+
+
+_MIN_EDITABLE_REGION_WIDTH_PT = 40.0
+_MIN_EDITABLE_REGION_HEIGHT_PT = 40.0
+_MIN_EDITABLE_REGION_AREA_PT = 4_000.0
+_FIXED_LABEL_MAX_HEIGHT_PT = 24.0
+_FIXED_LABEL_BOTTOM_BAND_PT = 72.0
+
+
+def _infer_editable_region(
+    slide_layout: object,
+    placeholders: list[dict[str, object]],
+    *,
+    color_zones: list[dict[str, object]],
+) -> _Rect | None:
+    base_region = _select_visual_inference_region(
+        color_zones,
+        title_placeholder=_title_placeholder(placeholders),
+    )
+    if base_region is None:
+        return None
+
+    candidates = [base_region]
+    for obstacle in _visual_obstacle_rects(slide_layout, placeholders, base_region):
+        next_candidates: list[_Rect] = []
+        for candidate in candidates:
+            next_candidates.extend(_subtract_rect(candidate, obstacle))
+        candidates = _filter_candidate_rects(next_candidates)
+        if not candidates:
+            return None
+
+    return max(candidates, key=lambda candidate: candidate.area)
+
+
+def _select_visual_inference_region(
+    color_zones: list[dict[str, object]],
+    *,
+    title_placeholder: dict[str, object] | None,
+) -> _Rect | None:
+    title_zone = _zone_containing_title(color_zones, title_placeholder)
+    if title_zone is not None:
+        zone_rect = _zone_rect(title_zone)
+        top = zone_rect.top
+        if title_placeholder is not None:
+            title_rect = _rect_from_placeholder(title_placeholder)
+            if title_rect is not None:
+                top = max(top, min(SLIDE_HEIGHT_PT, title_rect.bottom + DEFAULT_GUTTER_PT))
+        return _rect_from_edges(zone_rect.left, top, zone_rect.right, SLIDE_HEIGHT_PT)
+
+    zones = [
+        _zone_rect(zone)
+        for zone in color_zones
+        if float(zone.get("width", 0)) > 0
+        and (
+            str(zone.get("region", "")).startswith("gap_")
+            or zone.get("region") == "full_slide"
+        )
+    ]
+    if not zones:
+        zones = [
+            _zone_rect(zone)
+            for zone in color_zones
+            if float(zone.get("width", 0)) > 0
+        ]
+    if not zones:
+        return _Rect(left=0.0, top=0.0, width=SLIDE_WIDTH_PT, height=SLIDE_HEIGHT_PT)
+
+    widest_zone = max(zones, key=lambda zone: (zone.width, zone.area))
+    title_rect = _rect_from_placeholder(title_placeholder)
+    top = widest_zone.top
+    if title_rect is not None and _ranges_overlap(
+        widest_zone.left, widest_zone.right, title_rect.left, title_rect.right
+    ):
+        top = max(top, min(SLIDE_HEIGHT_PT, title_rect.bottom + DEFAULT_GUTTER_PT))
+    return _rect_from_edges(
+        widest_zone.left,
+        top,
+        widest_zone.right,
+        SLIDE_HEIGHT_PT,
+    )
+
+
+def _zone_containing_title(
+    color_zones: list[dict[str, object]],
+    title_placeholder: dict[str, object] | None,
+) -> dict[str, object] | None:
+    title_rect = _rect_from_placeholder(title_placeholder)
+    if title_rect is None:
+        return None
+    midpoint = title_rect.left + (title_rect.width / 2)
+    for zone in color_zones:
+        left = float(zone.get("left", 0))
+        right = left + float(zone.get("width", 0))
+        if left <= midpoint <= right:
+            return zone
+    return None
+
+
+def _visual_obstacle_rects(
+    slide_layout: object,
+    placeholders: list[dict[str, object]],
+    base_region: _Rect,
+) -> list[_Rect]:
+    obstacles: list[_Rect] = []
+    title_placeholder = _title_placeholder(placeholders)
+    if title_placeholder is not None:
+        title_rect = _rect_from_placeholder(title_placeholder)
+        if title_rect is not None:
+            obstacles.append(
+                _expand_rect(
+                    title_rect,
+                    bottom=DEFAULT_GUTTER_PT,
+                )
+            )
+
+    for shape in getattr(slide_layout, "shapes", []):
+        if getattr(shape, "is_placeholder", False):
+            continue
+        if _is_panel_shape(shape):
+            continue
+
+        obstacle = _obstacle_rect_for_shape(shape)
+        if obstacle is None:
+            continue
+        if not _rectangles_overlap(base_region, obstacle):
+            continue
+        obstacles.append(obstacle)
+
+    obstacles.sort(key=lambda obstacle: (obstacle.top, obstacle.left))
+    return obstacles
+
+
+def _obstacle_rect_for_shape(shape: object) -> _Rect | None:
+    rect = _rect_from_shape(shape)
+    if rect is None:
+        return None
+    if getattr(shape, "has_text_frame", False) and _shape_text(shape).strip():
+        if _is_fixed_label_shape(shape, rect):
+            return _expand_rect(rect, top=DEFAULT_GUTTER_PT / 2, bottom=DEFAULT_GUTTER_PT / 2)
+        return None
+    if getattr(shape, "has_table", False) or getattr(shape, "has_chart", False):
+        return None
+    return rect
+
+
+def _is_fixed_label_shape(shape: object, rect: _Rect) -> bool:
+    text = _shape_text(shape).strip().casefold()
+    name = str(getattr(shape, "name", "")).casefold()
+    if "copyright" in text or "copyright" in name:
+        return True
+    if "footer" in name or "confidential" in text or "page " in text:
+        return True
+    if rect.height <= _FIXED_LABEL_MAX_HEIGHT_PT:
+        return True
+    return rect.top >= SLIDE_HEIGHT_PT - _FIXED_LABEL_BOTTOM_BAND_PT
+
+
+def _is_panel_shape(shape: object) -> bool:
+    fill = getattr(shape, "fill", None)
+    if fill is None or getattr(fill, "type", None) != MSO_FILL.SOLID:
+        return False
+    width = _emu_to_points(getattr(shape, "width", 0))
+    height = _emu_to_points(getattr(shape, "height", 0))
+    return width > 0 and height > 0 and (width * height) >= PANEL_AREA_THRESHOLD_PT
+
+
+def _filter_candidate_rects(candidates: list[_Rect]) -> list[_Rect]:
+    return [
+        candidate
+        for candidate in candidates
+        if candidate.width >= _MIN_EDITABLE_REGION_WIDTH_PT
+        and candidate.height >= _MIN_EDITABLE_REGION_HEIGHT_PT
+        and candidate.area >= _MIN_EDITABLE_REGION_AREA_PT
+    ]
+
+
+def _subtract_rect(candidate: _Rect, obstacle: _Rect) -> list[_Rect]:
+    left = max(candidate.left, obstacle.left)
+    top = max(candidate.top, obstacle.top)
+    right = min(candidate.right, obstacle.right)
+    bottom = min(candidate.bottom, obstacle.bottom)
+
+    if left >= right or top >= bottom:
+        return [candidate]
+
+    remainder: list[_Rect] = []
+    remainder.append(_rect_from_edges(candidate.left, candidate.top, candidate.right, top))
+    remainder.append(_rect_from_edges(candidate.left, bottom, candidate.right, candidate.bottom))
+    remainder.append(_rect_from_edges(candidate.left, top, left, bottom))
+    remainder.append(_rect_from_edges(right, top, candidate.right, bottom))
+    return [rect for rect in remainder if rect is not None]
+
+
+def _union_rect(items: list[dict[str, object]]) -> _Rect | None:
+    rects = [
+        rect
+        for rect in (_rect_from_placeholder(item) for item in items)
+        if rect is not None
+    ]
+    if not rects:
+        return None
+    return _Rect(
+        left=min(rect.left for rect in rects),
+        top=min(rect.top for rect in rects),
+        width=max(rect.right for rect in rects) - min(rect.left for rect in rects),
+        height=max(rect.bottom for rect in rects) - min(rect.top for rect in rects),
+    )
+
+
+def _rect_from_placeholder(placeholder: dict[str, object] | None) -> _Rect | None:
+    if placeholder is None:
+        return None
+    bounds = placeholder.get("bounds")
+    if not isinstance(bounds, Mapping):
+        return None
+    left = float(bounds.get("x", 0))
+    top = float(bounds.get("y", 0))
+    width = float(bounds.get("w", bounds.get("width", 0)))
+    height = float(bounds.get("h", bounds.get("height", 0)))
+    return _rect_from_edges(left, top, left + width, top + height)
+
+
+def _rect_from_shape(shape: object) -> _Rect | None:
+    left = _emu_to_points(getattr(shape, "left", 0))
+    top = _emu_to_points(getattr(shape, "top", 0))
+    width = _emu_to_points(getattr(shape, "width", 0))
+    height = _emu_to_points(getattr(shape, "height", 0))
+    return _rect_from_edges(left, top, left + width, top + height)
+
+
+def _zone_rect(zone: Mapping[str, object]) -> _Rect:
+    left = float(zone.get("left", 0))
+    width = float(zone.get("width", 0))
+    return _Rect(
+        left=left,
+        top=0.0,
+        width=width,
+        height=SLIDE_HEIGHT_PT,
+    )
+
+
+def _expand_rect(
+    rect: _Rect,
+    *,
+    left: float = 0.0,
+    top: float = 0.0,
+    right: float = 0.0,
+    bottom: float = 0.0,
+) -> _Rect:
+    return _Rect(
+        left=max(0.0, rect.left - left),
+        top=max(0.0, rect.top - top),
+        width=max(
+            0.0,
+            min(SLIDE_WIDTH_PT, rect.right + right) - max(0.0, rect.left - left),
+        ),
+        height=max(
+            0.0,
+            min(SLIDE_HEIGHT_PT, rect.bottom + bottom) - max(0.0, rect.top - top),
+        ),
+    )
+
+
+def _rect_from_edges(
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+) -> _Rect | None:
+    clamped_left = max(0.0, min(SLIDE_WIDTH_PT, left))
+    clamped_top = max(0.0, min(SLIDE_HEIGHT_PT, top))
+    clamped_right = max(0.0, min(SLIDE_WIDTH_PT, right))
+    clamped_bottom = max(0.0, min(SLIDE_HEIGHT_PT, bottom))
+    if clamped_right <= clamped_left or clamped_bottom <= clamped_top:
+        return None
+    return _Rect(
+        left=clamped_left,
+        top=clamped_top,
+        width=clamped_right - clamped_left,
+        height=clamped_bottom - clamped_top,
+    )
+
+
+def _rectangles_overlap(first: _Rect, second: _Rect) -> bool:
+    return _ranges_overlap(first.left, first.right, second.left, second.right) and _ranges_overlap(
+        first.top, first.bottom, second.top, second.bottom
+    )
+
+
+def _ranges_overlap(
+    first_start: float,
+    first_end: float,
+    second_start: float,
+    second_end: float,
+) -> bool:
+    return max(first_start, second_start) < min(first_end, second_end)
+
+
+def _region_record(name: str, rect: _Rect, source: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "left": round(rect.left, 3),
+        "top": round(rect.top, 3),
+        "width": round(rect.width, 3),
+        "height": round(rect.height, 3),
+        "source": source,
+    }
 
 
 def _extract_color_zones(
