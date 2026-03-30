@@ -1,0 +1,804 @@
+{
+  "source": "example2.pptx",
+  "source_hash": "27d8e8c3861ec84b85ec735dee8bca19557bff467753637900ea7457d1fec13b",
+  "slide_masters": [
+    {
+      "index": 0,
+      "name": "Slide Master 1",
+      "layouts": [
+        {
+          "index": 0,
+          "master_index": 0,
+          "name": "Title",
+          "slug": "title",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 3",
+              "bounds": {
+                "x": 76.875,
+                "y": 130.421,
+                "w": 614.625,
+                "h": 166.415
+              }
+            },
+            {
+              "idx": 11,
+              "type": "BODY",
+              "name": "Content Placeholder 10",
+              "bounds": {
+                "x": 81.351,
+                "y": 372.294,
+                "w": 614.649,
+                "h": 22.139
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 11
+          }
+        },
+        {
+          "index": 1,
+          "master_index": 0,
+          "name": "Agenda",
+          "slug": "agenda",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 10,
+              "type": "BODY",
+              "name": "Text Placeholder 2",
+              "bounds": {
+                "x": 81.0,
+                "y": 180.0,
+                "w": 615.0,
+                "h": 228.703
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 10
+          }
+        },
+        {
+          "index": 2,
+          "master_index": 0,
+          "name": "Intro",
+          "slug": "intro",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 384.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 1,
+              "type": "BODY",
+              "name": "Content Placeholder 2",
+              "bounds": {
+                "x": 81.0,
+                "y": 180.0,
+                "w": 384.0,
+                "h": 281.0
+              }
+            },
+            {
+              "idx": 10,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 3",
+              "bounds": {
+                "x": 579.12,
+                "y": 78.0,
+                "w": 380.88,
+                "h": 380.88
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 1,
+            "image": 10
+          }
+        },
+        {
+          "index": 3,
+          "master_index": 0,
+          "name": "Section Break",
+          "slug": "section_break",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 10,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 2",
+              "bounds": {
+                "x": 0.0,
+                "y": 0.0,
+                "w": 960.0,
+                "h": 540.0
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "image": 10
+          }
+        },
+        {
+          "index": 4,
+          "master_index": 0,
+          "name": "Chart",
+          "slug": "chart",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0
+          }
+        },
+        {
+          "index": 5,
+          "master_index": 0,
+          "name": "Table",
+          "slug": "table",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 795.0,
+                "h": 50.81
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0
+          }
+        },
+        {
+          "index": 6,
+          "master_index": 0,
+          "name": "Quote",
+          "slug": "quote",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 60.75,
+                "y": 77.069,
+                "w": 125.147,
+                "h": 104.375
+              }
+            },
+            {
+              "idx": 10,
+              "type": "BODY",
+              "name": "Text Placeholder 2",
+              "bounds": {
+                "x": 81.0,
+                "y": 181.444,
+                "w": 615.0,
+                "h": 235.375
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 10
+          }
+        },
+        {
+          "index": 7,
+          "master_index": 0,
+          "name": "Team",
+          "slug": "team",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 10,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 81.0,
+                "y": 339.641,
+                "w": 144.0,
+                "h": 31.592
+              }
+            },
+            {
+              "idx": 11,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 81.0,
+                "y": 374.233,
+                "w": 144.0,
+                "h": 43.5
+              }
+            },
+            {
+              "idx": 12,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 298.0,
+                "y": 341.141,
+                "w": 144.0,
+                "h": 31.592
+              }
+            },
+            {
+              "idx": 13,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 298.0,
+                "y": 374.233,
+                "w": 144.0,
+                "h": 43.5
+              }
+            },
+            {
+              "idx": 14,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 514.292,
+                "y": 339.641,
+                "w": 144.0,
+                "h": 33.092
+              }
+            },
+            {
+              "idx": 15,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 514.292,
+                "y": 374.233,
+                "w": 144.0,
+                "h": 43.5
+              }
+            },
+            {
+              "idx": 16,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 732.0,
+                "y": 341.141,
+                "w": 144.0,
+                "h": 33.092
+              }
+            },
+            {
+              "idx": 17,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 732.0,
+                "y": 374.233,
+                "w": 144.0,
+                "h": 43.5
+              }
+            },
+            {
+              "idx": 18,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 25",
+              "bounds": {
+                "x": 81.0,
+                "y": 181.806,
+                "w": 144.0,
+                "h": 144.22
+              }
+            },
+            {
+              "idx": 19,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 25",
+              "bounds": {
+                "x": 298.0,
+                "y": 181.806,
+                "w": 144.0,
+                "h": 144.22
+              }
+            },
+            {
+              "idx": 20,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 25",
+              "bounds": {
+                "x": 515.0,
+                "y": 181.806,
+                "w": 144.0,
+                "h": 144.22
+              }
+            },
+            {
+              "idx": 21,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 25",
+              "bounds": {
+                "x": 732.0,
+                "y": 182.227,
+                "w": 144.0,
+                "h": 144.22
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "col1": 10,
+            "col2": 11,
+            "col3": 12,
+            "col4": 13,
+            "col5": 14,
+            "col6": 15,
+            "col7": 16,
+            "col8": 17,
+            "image": 18
+          }
+        },
+        {
+          "index": 8,
+          "master_index": 0,
+          "name": "Timeline",
+          "slug": "timeline",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 17,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 74.143,
+                "y": 183.351,
+                "w": 180.0,
+                "h": 71.735
+              }
+            },
+            {
+              "idx": 19,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 488.714,
+                "y": 183.351,
+                "w": 180.0,
+                "h": 71.735
+              }
+            },
+            {
+              "idx": 20,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 488.714,
+                "y": 262.694,
+                "w": 180.0,
+                "h": 196.141
+              }
+            },
+            {
+              "idx": 21,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 696.0,
+                "y": 183.351,
+                "w": 180.0,
+                "h": 71.735
+              }
+            },
+            {
+              "idx": 22,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 696.0,
+                "y": 262.286,
+                "w": 180.0,
+                "h": 194.215
+              }
+            },
+            {
+              "idx": 23,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 281.429,
+                "y": 183.351,
+                "w": 180.0,
+                "h": 71.735
+              }
+            },
+            {
+              "idx": 24,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 280.151,
+                "y": 262.286,
+                "w": 180.0,
+                "h": 194.216
+              }
+            },
+            {
+              "idx": 25,
+              "type": "BODY",
+              "name": "Text Placeholder 2",
+              "bounds": {
+                "x": 76.25,
+                "y": 262.286,
+                "w": 180.0,
+                "h": 194.25
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 17
+          }
+        },
+        {
+          "index": 9,
+          "master_index": 0,
+          "name": "Content 2 Column",
+          "slug": "content_2_column",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 2,
+              "type": "BODY",
+              "name": "Content Placeholder 3",
+              "bounds": {
+                "x": 81.625,
+                "y": 239.731,
+                "w": 383.375,
+                "h": 152.924
+              }
+            },
+            {
+              "idx": 11,
+              "type": "BODY",
+              "name": "Content Placeholder 3",
+              "bounds": {
+                "x": 494.933,
+                "y": 239.731,
+                "w": 383.375,
+                "h": 152.924
+              }
+            },
+            {
+              "idx": 17,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 74.143,
+                "y": 183.351,
+                "w": 390.857,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 18,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 492.772,
+                "y": 183.351,
+                "w": 383.375,
+                "h": 50.81
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 17
+          }
+        },
+        {
+          "index": 10,
+          "master_index": 0,
+          "name": "Content 3 Column",
+          "slug": "content_3_column",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 2,
+              "type": "BODY",
+              "name": "Content Placeholder 3",
+              "bounds": {
+                "x": 81.625,
+                "y": 240.369,
+                "w": 242.375,
+                "h": 152.924
+              }
+            },
+            {
+              "idx": 11,
+              "type": "BODY",
+              "name": "Content Placeholder 3",
+              "bounds": {
+                "x": 633.0,
+                "y": 239.731,
+                "w": 245.308,
+                "h": 152.924
+              }
+            },
+            {
+              "idx": 13,
+              "type": "BODY",
+              "name": "Content Placeholder 3",
+              "bounds": {
+                "x": 357.461,
+                "y": 239.731,
+                "w": 245.308,
+                "h": 152.924
+              }
+            },
+            {
+              "idx": 17,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 74.143,
+                "y": 183.351,
+                "w": 249.857,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 18,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 351.673,
+                "y": 183.351,
+                "w": 245.308,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 19,
+              "type": "BODY",
+              "name": "Text Placeholder 4",
+              "bounds": {
+                "x": 624.655,
+                "y": 183.351,
+                "w": 245.308,
+                "h": 50.81
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 17
+          }
+        },
+        {
+          "index": 11,
+          "master_index": 0,
+          "name": "Summary",
+          "slug": "summary",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 81.0,
+                "y": 78.667,
+                "w": 615.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 10,
+              "type": "BODY",
+              "name": "Text Placeholder 2",
+              "bounds": {
+                "x": 81.0,
+                "y": 182.829,
+                "w": 384.0,
+                "h": 301.256
+              }
+            },
+            {
+              "idx": 11,
+              "type": "BODY",
+              "name": "Text Placeholder 2",
+              "bounds": {
+                "x": 492.0,
+                "y": 180.0,
+                "w": 384.0,
+                "h": 216.25
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "col1": 10,
+            "col2": 11
+          }
+        },
+        {
+          "index": 12,
+          "master_index": 0,
+          "name": "Thank you ",
+          "slug": "thank_you",
+          "usable": true,
+          "placeholders": [
+            {
+              "idx": 0,
+              "type": "TITLE",
+              "name": "Title 1",
+              "bounds": {
+                "x": 492.686,
+                "y": 78.667,
+                "w": 384.0,
+                "h": 50.81
+              }
+            },
+            {
+              "idx": 1,
+              "type": "BODY",
+              "name": "Content Placeholder 2",
+              "bounds": {
+                "x": 492.686,
+                "y": 180.0,
+                "w": 384.0,
+                "h": 183.679
+              }
+            },
+            {
+              "idx": 10,
+              "type": "PICTURE",
+              "name": "Picture Placeholder 3",
+              "bounds": {
+                "x": 0.0,
+                "y": 78.0,
+                "w": 380.88,
+                "h": 380.88
+              }
+            },
+            {
+              "idx": 12,
+              "type": "BODY",
+              "name": "Content Placeholder 13",
+              "bounds": {
+                "x": 492.686,
+                "y": 366.896,
+                "w": 384.0,
+                "h": 42.758
+              }
+            }
+          ],
+          "slot_mapping": {
+            "heading": 0,
+            "body": 1,
+            "image": 10
+          }
+        }
+      ]
+    }
+  ],
+  "theme": {
+    "colors": {
+      "primary": "#A9D4DB",
+      "secondary": "#FBE284",
+      "accent": "#4495A2",
+      "text": "#000000",
+      "heading_text": "#E4E4E4",
+      "subtle_text": "#7CA655",
+      "background": "#FFFFFF"
+    },
+    "fonts": {
+      "heading": "Arial Nova",
+      "body": "Arial Nova"
+    },
+    "spacing": {
+      "base_unit": 10.0,
+      "margin": 60.0,
+      "gutter": 20.0
+    }
+  }
+}

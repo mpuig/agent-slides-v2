@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo research runner: executes the full benchmark pipeline and outputs scores.
+"""Demo-layer scorer for benchmark decks.
 
 Usage:
     python scripts/demo_research.py [--benchmarks bcg-strategy,bcg-update] [--run-id RUN_ID]
@@ -9,7 +9,8 @@ Each benchmark produces:
         deck.json, deck.computed.json, deck.pptx
         review/  (slide PNGs + report)
         scores.json
-    runs/<run_id>/summary.json  (aggregate scores across all benchmarks)
+    runs/<run_id>/demo-summary.json
+    runs/<run_id>/summary.json  (merged run summary with layers.demo)
 """
 
 from __future__ import annotations
@@ -26,11 +27,17 @@ from typing import Any
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from benchmark_layers import (
+    ROOT,
+    RUNS_DIR,
+    demo_summary_path_for,
+    load_json,
+    update_run_summary,
+    write_json,
+)
 from compare_coverage import compare_coverage_files
 
-ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS_DIR = ROOT / "benchmarks"
-RUNS_DIR = ROOT / "runs"
 REVIEW_REGRESSION_THRESHOLD = 0.05
 
 # Deterministic score weights
@@ -234,12 +241,6 @@ def compute_composite(scores: dict[str, Any]) -> float:
     return round(composite / total_weight * 100, 1) if total_weight > 0 else 0.0
 
 
-def load_json(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    return _parse_json(path.read_text(encoding="utf-8"))
-
-
 def load_review_metrics(report_json_path: Path) -> dict[str, Any]:
     report = load_json(report_json_path) or {}
     active = report.get("active", {})
@@ -255,6 +256,32 @@ def load_review_metrics(report_json_path: Path) -> dict[str, Any]:
     }
 
 
+def _demo_mean_composite(summary: dict[str, Any]) -> float | None:
+    layers = summary.get("layers")
+    if isinstance(layers, dict):
+        demo = layers.get("demo")
+        if isinstance(demo, dict):
+            value = demo.get("mean_composite")
+            if isinstance(value, int | float):
+                return float(value)
+    value = summary.get("mean_composite")
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _demo_decision(summary: dict[str, Any]) -> str | None:
+    layers = summary.get("layers")
+    if isinstance(layers, dict):
+        demo = layers.get("demo")
+        if isinstance(demo, dict):
+            decision = demo.get("decision")
+            if isinstance(decision, str):
+                return decision
+    decision = summary.get("decision")
+    return decision if isinstance(decision, str) else None
+
+
 def previous_best_summary(*, current_run_id: str) -> dict[str, Any] | None:
     candidates: list[dict[str, Any]] = []
     for summary_path in sorted(RUNS_DIR.glob("*/summary.json")):
@@ -263,13 +290,13 @@ def previous_best_summary(*, current_run_id: str) -> dict[str, Any] | None:
         summary = load_json(summary_path)
         if summary is None:
             continue
-        if summary.get("decision") == "reject":
+        if _demo_decision(summary) == "reject":
             continue
-        if isinstance(summary.get("mean_composite"), (int, float)):
+        if _demo_mean_composite(summary) is not None:
             candidates.append(summary)
     if not candidates:
         return None
-    return max(candidates, key=lambda item: float(item.get("mean_composite", 0.0)))
+    return max(candidates, key=lambda item: _demo_mean_composite(item) or 0.0)
 
 
 def coverage_path_for_run(run_id: str) -> Path:
@@ -305,7 +332,7 @@ def evaluate_reject_reasons(
         return []
 
     reject_reasons: list[str] = []
-    baseline_mean = float(baseline_summary.get("mean_composite", 0.0))
+    baseline_mean = _demo_mean_composite(baseline_summary) or 0.0
     if current_mean_composite < baseline_mean:
         reject_reasons.append(
             f"composite regressed from {baseline_mean:.1f} to {current_mean_composite:.1f}"
@@ -384,20 +411,39 @@ def build_summary(*, run_id: str, results: list[dict[str, Any]]) -> dict[str, An
         for result in results
         if not result.get("scores", {}).get("review_available", False)
     ]
+    available_review_scores = [
+        float(result.get("scores", {}).get("review_quality", 0.0))
+        for result in results
+        if result.get("scores", {}).get("review_available", False)
+    ]
+    mean_review_quality = (
+        round(
+            sum(available_review_scores) / len(available_review_scores),
+            4,
+        )
+        if available_review_scores
+        else 0.0
+    )
+    demo_layer: dict[str, Any] = {
+        "mean_composite": mean_composite,
+        "review_quality": mean_review_quality,
+        "decision": "reject" if reject_reasons else "accept",
+        "reject_reasons": reject_reasons,
+        "review_unavailable_benchmarks": review_unavailable,
+    }
     summary: dict[str, Any] = {
         "run_id": run_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "benchmarks": results,
         "mean_composite": mean_composite,
-        "decision": "reject" if reject_reasons else "accept",
+        "decision": demo_layer["decision"],
         "reject_reasons": reject_reasons,
         "review_unavailable_benchmarks": review_unavailable,
+        "layers": {"demo": demo_layer},
     }
     if baseline_summary is not None:
         summary["previous_best_run_id"] = baseline_summary.get("run_id")
-        summary["previous_best_mean_composite"] = baseline_summary.get("mean_composite")
-    if coverage_diff is not None:
-        summary["coverage_diff"] = coverage_diff
+        summary["previous_best_mean_composite"] = _demo_mean_composite(baseline_summary)
     return summary
 
 
@@ -802,10 +848,26 @@ def main():
     # Aggregate summary
     summary = build_summary(run_id=run_id, results=results)
 
-    summary_path = run_dir / "summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2))
+    demo_summary_path = demo_summary_path_for(run_id)
+    write_json(demo_summary_path, summary)
+    summary_path = RUNS_DIR / run_id / "summary.json"
+    update_run_summary(
+        run_id,
+        layer_name="demo",
+        layer_payload=summary["layers"]["demo"],
+        top_level_updates={
+            "benchmarks": results,
+            "mean_composite": summary["mean_composite"],
+            "decision": summary["decision"],
+            "reject_reasons": summary["reject_reasons"],
+            "review_unavailable_benchmarks": summary["review_unavailable_benchmarks"],
+            "previous_best_run_id": summary.get("previous_best_run_id"),
+            "previous_best_mean_composite": summary.get("previous_best_mean_composite"),
+        },
+    )
     print(f"\n=== Summary: mean_composite={summary['mean_composite']} ===")
-    print(f"Results: {summary_path}")
+    print(f"Demo summary: {demo_summary_path}")
+    print(f"Run summary: {summary_path}")
 
 
 if __name__ == "__main__":
