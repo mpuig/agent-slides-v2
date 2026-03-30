@@ -652,7 +652,9 @@ def score_deck(deck_path: Path, brief: dict, run_dir: Path) -> dict:
     min_source_lines = brief.get("min_source_lines", 0)
     if min_source_lines > 0:
         found = brief_compliance.get("source_lines_found", 0)
-        compliance_cap = min(compliance_cap, min(1.0, found / min_source_lines))
+        # Floor at 0.5 — missing source lines is a penalty, not a zero-out
+        source_ratio = max(0.5, min(1.0, found / min_source_lines))
+        compliance_cap = min(compliance_cap, source_ratio)
 
     scores["composite"] = round(min(composite_score, compliance_cap * 100), 1)
 
