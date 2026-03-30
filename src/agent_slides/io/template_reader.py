@@ -13,6 +13,7 @@ from xml.etree import ElementTree as ET
 from zipfile import BadZipFile
 
 from pptx import Presentation
+from pptx.enum.dml import MSO_FILL
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
@@ -26,11 +27,20 @@ OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 THEME_RELATIONSHIP = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
 )
+PRESENTATIONML_NS = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
 DRAWINGML_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+OOXML_NS = {**PRESENTATIONML_NS, **DRAWINGML_NS}
 SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 NON_PLACEHOLDER_IDX_OFFSET = 1_000_000
 BODY_SLOT_TYPES = {"BODY", "TEXT_BOX", "TABLE", "CHART", "GROUP"}
 SPECIAL_SLOT_TYPES = {"quote", "attribution"}
+SLIDE_WIDTH_PT = 960.0
+SLIDE_HEIGHT_PT = 540.0
+SLIDE_AREA_PT = SLIDE_WIDTH_PT * SLIDE_HEIGHT_PT
+PANEL_AREA_THRESHOLD_PT = SLIDE_AREA_PT * 0.15
+DEFAULT_DARK_TEXT = "333333"
+DEFAULT_LIGHT_TEXT = "FFFFFF"
+DEFAULT_BG_COLOR = "FFFFFF"
 
 _PLACEHOLDER_TYPE_MAP = {
     PP_PLACEHOLDER.TITLE: "TITLE",
@@ -122,14 +132,26 @@ def _build_manifest(
     warnings: list[str] = []
     slug_counts: dict[str, int] = {}
     masters: list[dict[str, object]] = []
+    theme: dict[str, object] | None = None
+    scheme_colors: dict[str, str] = {}
 
     for master_index, slide_master in enumerate(presentation.slide_masters):
         layouts: list[dict[str, object]] = []
         for layout_index, slide_layout in enumerate(slide_master.slide_layouts):
+            if theme is None:
+                theme = _extract_theme(presentation)
+                scheme_colors = _theme_scheme_colors(theme)
             layouts_found += 1
             layout_name = slide_layout.name or f"Layout {layout_index + 1}"
-            placeholders, slot_mapping, layout_warnings = _extract_layout(
-                slide_layout, layout_name
+            (
+                placeholders,
+                slot_mapping,
+                color_zones,
+                layout_warnings,
+            ) = _extract_layout(
+                slide_layout,
+                layout_name,
+                scheme_colors=scheme_colors,
             )
             warnings.extend(layout_warnings)
 
@@ -147,6 +169,7 @@ def _build_manifest(
                     "usable": usable,
                     "placeholders": placeholders,
                     "slot_mapping": slot_mapping,
+                    "color_zones": color_zones,
                 }
             )
 
@@ -162,12 +185,14 @@ def _build_manifest(
         raise AgentSlidesError(SCHEMA_ERROR, "template has no slide layouts")
     if usable_layouts == 0:
         warnings.append("template has 0 usable layouts")
+    if theme is None:
+        theme = _extract_theme(presentation)
 
     manifest = {
         "source": _relative_source_path(template_path, manifest_path),
         "source_hash": _sha256(template_path),
         "slide_masters": masters,
-        "theme": _extract_theme(presentation),
+        "theme": theme,
     }
     _write_manifest(manifest_path, manifest)
 
@@ -181,8 +206,16 @@ def _build_manifest(
 
 
 def _extract_layout(
-    slide_layout: object, layout_name: str
-) -> tuple[list[dict[str, object]], dict[str, int], list[str]]:
+    slide_layout: object,
+    layout_name: str,
+    *,
+    scheme_colors: Mapping[str, str],
+) -> tuple[
+    list[dict[str, object]],
+    dict[str, int],
+    list[dict[str, object]],
+    list[str],
+]:
     placeholders: list[dict[str, object]] = []
     warnings: list[str] = []
 
@@ -219,7 +252,277 @@ def _extract_layout(
             placeholders.append(extracted)
 
     placeholders.sort(key=lambda item: int(item["idx"]))
-    return placeholders, _build_slot_mapping(placeholders), warnings
+    return (
+        placeholders,
+        _build_slot_mapping(placeholders),
+        _extract_color_zones(
+            slide_layout,
+            placeholders,
+            scheme_colors=scheme_colors,
+        ),
+        warnings,
+    )
+
+
+def _extract_color_zones(
+    slide_layout: object,
+    placeholders: list[dict[str, object]],
+    *,
+    scheme_colors: Mapping[str, str],
+) -> list[dict[str, object]]:
+    background = _layout_background_color(slide_layout, scheme_colors=scheme_colors)
+    panels = sorted(
+        _extract_panel_candidates(slide_layout),
+        key=lambda panel: (float(panel["left"]), float(panel["width"])),
+    )
+
+    if not panels:
+        return [
+            _build_zone(
+                region="full_slide",
+                left=0.0,
+                width=SLIDE_WIDTH_PT,
+                bg_color=background,
+                title_placeholder=_title_placeholder(placeholders),
+            )
+        ]
+
+    zones: list[dict[str, object]] = []
+    cursor = 0.0
+    gap_index = 0
+    title_placeholder = _title_placeholder(placeholders)
+    for panel_index, panel in enumerate(panels):
+        panel_left = float(panel["left"])
+        panel_width = float(panel["width"])
+        panel_right = min(SLIDE_WIDTH_PT, panel_left + panel_width)
+        if panel_left > cursor:
+            zones.append(
+                _build_zone(
+                    region=f"gap_{gap_index}",
+                    left=cursor,
+                    width=panel_left - cursor,
+                    bg_color=background,
+                    title_placeholder=title_placeholder,
+                )
+            )
+            gap_index += 1
+
+        zones.append(
+            _build_zone(
+                region=f"panel_{panel_index}",
+                left=panel_left,
+                width=max(0.0, panel_right - panel_left),
+                bg_color=str(panel["bg_color"]),
+                title_placeholder=title_placeholder,
+            )
+        )
+        cursor = max(cursor, panel_right)
+
+    if cursor < SLIDE_WIDTH_PT:
+        zones.append(
+            _build_zone(
+                region=f"gap_{gap_index}",
+                left=cursor,
+                width=SLIDE_WIDTH_PT - cursor,
+                bg_color=background,
+                title_placeholder=title_placeholder,
+            )
+        )
+
+    return [zone for zone in zones if float(zone["width"]) > 0]
+
+
+def _extract_panel_candidates(slide_layout: object) -> list[dict[str, object]]:
+    panels: list[dict[str, object]] = []
+    for shape in getattr(slide_layout, "shapes", []):
+        if getattr(shape, "is_placeholder", False):
+            continue
+        fill = getattr(shape, "fill", None)
+        if fill is None or getattr(fill, "type", None) != MSO_FILL.SOLID:
+            continue
+        bg_color = _shape_fill_color(shape)
+        if bg_color is None:
+            continue
+
+        left = max(0.0, _emu_to_points(getattr(shape, "left", 0)))
+        width = _emu_to_points(getattr(shape, "width", 0))
+        height = _emu_to_points(getattr(shape, "height", 0))
+        if width <= 0 or height <= 0:
+            continue
+        if width * height < PANEL_AREA_THRESHOLD_PT:
+            continue
+
+        panels.append(
+            {
+                "left": left,
+                "width": max(0.0, min(SLIDE_WIDTH_PT - left, width)),
+                "bg_color": bg_color,
+            }
+        )
+    return panels
+
+
+def _shape_fill_color(shape: object) -> str | None:
+    fill = getattr(shape, "fill", None)
+    if fill is None:
+        return None
+    color = getattr(fill, "fore_color", None)
+    rgb = getattr(color, "rgb", None)
+    if rgb is None:
+        return None
+    return _normalize_hex_color(str(rgb))
+
+
+def _layout_background_color(
+    slide_layout: object, *, scheme_colors: Mapping[str, str]
+) -> str:
+    for element in (
+        getattr(slide_layout, "_element", None),
+        getattr(getattr(slide_layout, "slide_master", None), "_element", None),
+    ):
+        bg_pr = _find_background_properties(element)
+        if bg_pr is None:
+            continue
+        color = _solid_fill_color(bg_pr, scheme_colors=scheme_colors)
+        if color is not None:
+            return color
+    return _normalize_hex_color(scheme_colors.get("lt1", DEFAULT_BG_COLOR))
+
+
+def _find_background_properties(element: object | None) -> object | None:
+    if element is None or not hasattr(element, "find"):
+        return None
+    background = element.find("./p:cSld/p:bg/p:bgPr", OOXML_NS)
+    if background is not None:
+        return background
+    return element.find(".//p:bgPr", OOXML_NS)
+
+
+def _solid_fill_color(
+    parent: object | None, *, scheme_colors: Mapping[str, str]
+) -> str | None:
+    if parent is None or not hasattr(parent, "find"):
+        return None
+    solid_fill = parent.find("./a:solidFill", OOXML_NS)
+    if solid_fill is None:
+        return None
+    srgb = solid_fill.find("./a:srgbClr", OOXML_NS)
+    if srgb is not None:
+        return _normalize_hex_color(srgb.attrib.get("val"))
+    system = solid_fill.find("./a:sysClr", OOXML_NS)
+    if system is not None:
+        return _normalize_hex_color(system.attrib.get("lastClr", system.attrib.get("val")))
+    scheme = solid_fill.find("./a:schemeClr", OOXML_NS)
+    if scheme is not None:
+        scheme_name = scheme.attrib.get("val")
+        if scheme_name:
+            return _normalize_hex_color(scheme_colors.get(scheme_name, DEFAULT_BG_COLOR))
+    return None
+
+
+def _title_placeholder(
+    placeholders: list[dict[str, object]],
+) -> dict[str, object] | None:
+    titles = sorted(_placeholders_of_type(placeholders, "TITLE"), key=_sort_key_by_position)
+    return titles[0] if titles else None
+
+
+def _build_zone(
+    *,
+    region: str,
+    left: float,
+    width: float,
+    bg_color: str,
+    title_placeholder: dict[str, object] | None,
+) -> dict[str, object]:
+    zone = {
+        "region": region,
+        "left": round(left, 3),
+        "width": round(width, 3),
+        "bg_color": _normalize_hex_color(bg_color),
+    }
+    zone["text_color"] = _contrasting_text_color(str(zone["bg_color"]))
+    _attach_editable_regions(zone, title_placeholder)
+    return zone
+
+
+def _attach_editable_regions(
+    zone: dict[str, object], title_placeholder: dict[str, object] | None
+) -> None:
+    if title_placeholder is None:
+        return
+    bounds = title_placeholder.get("bounds")
+    if not isinstance(bounds, dict):
+        return
+    zone_left = float(zone["left"])
+    zone_right = zone_left + float(zone["width"])
+    title_left = float(bounds.get("x", 0))
+    title_width = float(bounds.get("w", bounds.get("width", 0)))
+    title_midpoint = title_left + (title_width / 2)
+    if not (zone_left <= title_midpoint <= zone_right):
+        return
+
+    title_top = max(0.0, float(bounds.get("y", 0)))
+    title_height = max(0.0, float(bounds.get("h", bounds.get("height", 0))))
+    title_bottom = min(SLIDE_HEIGHT_PT, title_top + title_height)
+
+    if title_top > 0:
+        zone["editable_above"] = {
+            "left": zone_left,
+            "top": 0.0,
+            "width": float(zone["width"]),
+            "height": round(title_top, 3),
+        }
+    if title_bottom < SLIDE_HEIGHT_PT:
+        zone["editable_below"] = {
+            "left": zone_left,
+            "top": round(title_bottom, 3),
+            "width": float(zone["width"]),
+            "height": round(SLIDE_HEIGHT_PT - title_bottom, 3),
+        }
+
+
+def _contrasting_text_color(bg_color: str) -> str:
+    red, green, blue = _hex_to_rgb(bg_color)
+    luminance = (
+        (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+    ) / 255.0
+    return DEFAULT_DARK_TEXT if luminance > 0.5 else DEFAULT_LIGHT_TEXT
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    normalized = _normalize_hex_color(value)
+    return (
+        int(normalized[0:2], 16),
+        int(normalized[2:4], 16),
+        int(normalized[4:6], 16),
+    )
+
+
+def _normalize_hex_color(value: str | None) -> str:
+    if not value:
+        return DEFAULT_BG_COLOR
+    normalized = str(value).strip().lstrip("#").upper()
+    if len(normalized) == 3:
+        normalized = "".join(channel * 2 for channel in normalized)
+    if len(normalized) != 6:
+        return DEFAULT_BG_COLOR
+    return normalized
+
+
+def _theme_scheme_colors(theme: Mapping[str, object]) -> dict[str, str]:
+    colors = theme.get("colors")
+    if not isinstance(colors, Mapping):
+        return {}
+    return {
+        "accent1": _normalize_hex_color(str(colors.get("primary", DEFAULT_BG_COLOR))),
+        "accent2": _normalize_hex_color(str(colors.get("secondary", DEFAULT_BG_COLOR))),
+        "accent3": _normalize_hex_color(str(colors.get("accent", DEFAULT_BG_COLOR))),
+        "dk1": _normalize_hex_color(str(colors.get("text", DEFAULT_DARK_TEXT))),
+        "dk2": _normalize_hex_color(str(colors.get("heading_text", DEFAULT_DARK_TEXT))),
+        "lt1": _normalize_hex_color(str(colors.get("background", DEFAULT_BG_COLOR))),
+        "lt2": _normalize_hex_color(str(colors.get("subtle_text", DEFAULT_LIGHT_TEXT))),
+    }
 
 
 def _normalize_placeholder_type(raw_type: PP_PLACEHOLDER) -> str | None:
