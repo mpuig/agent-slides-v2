@@ -84,7 +84,11 @@ def make_manifest() -> dict[str, object]:
     }
 
 
-def make_heading_only_manifest() -> dict[str, object]:
+def make_heading_only_manifest(
+    *,
+    color_zones: list[dict[str, object]] | None = None,
+    editable_regions: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     return {
         "name": "template",
         "source": "template.pptx",
@@ -93,6 +97,12 @@ def make_heading_only_manifest() -> dict[str, object]:
             {
                 "slug": "green_highlight",
                 "usable": True,
+                **({"color_zones": color_zones} if color_zones is not None else {}),
+                **(
+                    {"editable_regions": editable_regions}
+                    if editable_regions is not None
+                    else {}
+                ),
                 "slot_mapping": {
                     "heading": {
                         "role": "heading",
@@ -315,7 +325,50 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
 ) -> None:
     manifest_path = tmp_path / "template.manifest.json"
     (tmp_path / "template.pptx").write_bytes(b"pptx")
-    write_json(manifest_path, make_heading_only_manifest())
+    write_json(
+        manifest_path,
+        make_heading_only_manifest(
+            color_zones=[
+                {
+                    "region": "panel_0",
+                    "left": 0.0,
+                    "width": 420.0,
+                    "bg_color": "FFFFFF",
+                    "text_color": "333333",
+                    "editable_below": {
+                        "left": 0.0,
+                        "top": 90.0,
+                        "width": 420.0,
+                        "height": 450.0,
+                    },
+                },
+                {
+                    "region": "gap_0",
+                    "left": 420.0,
+                    "width": 120.0,
+                    "bg_color": "FFFFFF",
+                    "text_color": "333333",
+                },
+                {
+                    "region": "panel_1",
+                    "left": 540.0,
+                    "width": 420.0,
+                    "bg_color": "00A651",
+                    "text_color": "FFFFFF",
+                },
+            ],
+            editable_regions=[
+                {
+                    "name": "content_area",
+                    "left": 540.0,
+                    "top": 170.0,
+                    "width": 420.0,
+                    "height": 320.0,
+                    "source": "visual_inference_no_placeholders",
+                }
+            ],
+        ),
+    )
 
     fit_calls: list[
         tuple[float, float, float, float, str, str, list[float] | None]
@@ -378,11 +431,11 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert set(computed) == {"n-1", "n-2"}
 
     body = computed["n-2"]
-    assert (body.x, body.y, body.width, body.height) == (72.0, 262.0, 600.0, 230.0)
+    assert (body.x, body.y, body.width, body.height) == (0.0, 90.0, 420.0, 450.0)
     assert body.font_size_pt == 14.0
     assert body.font_family == "Aptos"
     assert body.color == "#101010"
     assert body.text_overflow is False
 
     body_call = fit_calls[1]
-    assert body_call[:6] == (600.0, 230.0, 18.0, 10.0, "body", "Aptos")
+    assert body_call[:6] == (420.0, 450.0, 18.0, 10.0, "body", "Aptos")
