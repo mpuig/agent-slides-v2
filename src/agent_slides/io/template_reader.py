@@ -255,6 +255,7 @@ def _build_slot_mapping(placeholders: list[dict[str, object]]) -> dict[str, int]
         for placeholder in placeholders
         if placeholder["type"] in BODY_SLOT_TYPES
         and int(placeholder["idx"]) not in claimed_indexes
+        and _placeholder_height(placeholder) >= _MIN_BODY_HEIGHT_PT
     ]
     preferred_types = (
         {"BODY"}
@@ -416,6 +417,16 @@ def _collect_suggested_slots(
     return suggestions
 
 
+_MIN_BODY_HEIGHT_PT = 20.0
+
+
+def _placeholder_height(placeholder: Mapping[str, object]) -> float:
+    bounds = placeholder.get("bounds")
+    if isinstance(bounds, dict):
+        return float(bounds.get("h", bounds.get("height", 0)))
+    return 0.0
+
+
 def _suggest_slot_name(placeholder: Mapping[str, object]) -> str | None:
     placeholder_type = placeholder.get("type")
     if placeholder_type == "TITLE":
@@ -426,6 +437,14 @@ def _suggest_slot_name(placeholder: Mapping[str, object]) -> str | None:
         return "image"
     if placeholder_type not in BODY_SLOT_TYPES:
         return None
+
+    # Skip tiny text boxes (< 20pt tall) — these are typically copyright or
+    # footer lines, not real body content areas.
+    bounds = placeholder.get("bounds")
+    if isinstance(bounds, dict):
+        height = float(bounds.get("h", bounds.get("height", 0)))
+        if height < _MIN_BODY_HEIGHT_PT:
+            return None
 
     role = infer_template_slot_role(str(placeholder.get("name", "")), placeholder)
     if role in {"quote", "attribution"}:

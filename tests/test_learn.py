@@ -395,7 +395,7 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
             self.left = 0
             self.top = top
             self.width = 100
-            self.height = 40
+            self.height = 40 * 12700  # 40pt in EMU
             self.is_placeholder = False
             self.has_text_frame = True
             self.has_table = False
@@ -412,9 +412,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
             self.shape_id = 3
             self.name = "Agenda Table"
             self.left = 0
-            self.top = 120
-            self.width = 200
-            self.height = 100
+            self.top = 120 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = True
@@ -430,9 +430,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
             self.shape_id = 4
             self.name = "Score Chart"
             self.left = 0
-            self.top = 240
-            self.width = 200
-            self.height = 100
+            self.top = 240 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = False
@@ -445,9 +445,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
             self.shape_id = 5
             self.name = "Agenda Group"
             self.left = 0
-            self.top = 360
-            self.width = 200
-            self.height = 100
+            self.top = 360 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = False
@@ -502,9 +502,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
     assert layout["placeholders"][4]["group"] == {"children": 2}
     assert layout["slot_mapping"]["quote"] == 1_000_001
     assert layout["slot_mapping"]["attribution"] == 1_000_002
-    assert layout["slot_mapping"]["col1"] == 1_000_003
-    assert layout["slot_mapping"]["col2"] == 1_000_004
-    assert layout["slot_mapping"]["col3"] == 1_000_005
+    # TABLE, CHART, GROUP are at different vertical positions (not same row),
+    # so the first body-like shape wins as "body", not col1/col2/col3
+    assert layout["slot_mapping"]["body"] == 1_000_003
 
 
 def test_read_template_manifest_marks_blank_variants_usable(
