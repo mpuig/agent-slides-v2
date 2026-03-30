@@ -101,6 +101,63 @@ def _build_manifest(base_dir: Path) -> Path:
     return manifest_path
 
 
+def _build_heading_only_manifest(base_dir: Path) -> Path:
+    template_path = base_dir / "templates" / "heading-only" / "template.pptx"
+    manifest_path = base_dir / "templates" / "heading-only" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "heading-only-template",
+                "source": "template.pptx",
+                "source_hash": "heading123",
+                "theme": {
+                    "name": "heading-only-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                        "heading_text": "#111111",
+                        "subtle_text": "#666666",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 12,
+                        "margin": 48,
+                        "gutter": 18,
+                    },
+                },
+                "layouts": [
+                    {
+                        "slug": "green_highlight",
+                        "usable": True,
+                        "slot_mapping": {
+                            "heading": {
+                                "role": "heading",
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 64,
+                                    "width": 560,
+                                    "height": 72,
+                                },
+                            }
+                        },
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
 def _build_template_deck(manifest_relpath: str) -> Deck:
     return Deck(
         deck_id="deck-template",
@@ -256,6 +313,24 @@ def test_template_layout_registry_uses_default_text_fitting(tmp_path: Path) -> N
     assert heading_fit.min_size == 24.0
     assert body_fit.default_size == 18.0
     assert body_fit.min_size == 10.0
+
+
+def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only_layout(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_heading_only_manifest(tmp_path)
+
+    registry = TemplateLayoutRegistry(str(manifest_path))
+    layout = registry.get_layout("green_highlight")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert registry.get_slot_names("green_highlight") == ["heading", "body"]
+    assert "body" not in manifest["layouts"][0]["slot_mapping"]
+    assert layout.slots["body"].role == "body"
+    assert layout.slots["body"].x == 72.0
+    assert layout.slots["body"].y == 154.0
+    assert layout.slots["body"].width == 600.0
+    assert layout.slots["body"].height == 338.0
 
 
 def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology(

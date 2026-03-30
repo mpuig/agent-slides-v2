@@ -327,6 +327,7 @@ Before QA, read `${CLAUDE_SKILL_DIR}/references/common-mistakes.md`.
 3. Fix any issues.
 4. Run `uv run agent-slides validate deck.json` again.
 5. Only then build the `.pptx`.
+6. When the user wants live review, run `uv run agent-slides preview deck.json --background` and open that URL for the user immediately.
 
 If validation passes but the storytelling checklist fails, the deck is not done.
 

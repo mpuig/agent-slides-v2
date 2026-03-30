@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agent_slides.model.types import STANDARD_SLIDE_HEIGHT_PT, STANDARD_SLIDE_WIDTH_PT
+from agent_slides.template_slots import infer_template_slot_role
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - PyYAML is a project dependency.
@@ -280,6 +283,83 @@ def _resolve_slot_bounds(
     )
 
 
+def _resolve_slot_mapping(
+    slot_name: str,
+    raw_slot: object,
+    *,
+    placeholders_by_idx: dict[int, dict[str, float]],
+) -> dict[str, Any]:
+    if isinstance(raw_slot, bool):
+        raise ValueError(f"slot_mapping[{slot_name!r}] must not be a boolean")
+    if isinstance(raw_slot, int):
+        try:
+            return dict(placeholders_by_idx[raw_slot])
+        except KeyError as exc:
+            raise ValueError(
+                f"slot_mapping[{slot_name!r}] references missing placeholder idx {raw_slot}"
+            ) from exc
+    if not isinstance(raw_slot, dict):
+        raise ValueError(f"slot_mapping[{slot_name!r}] must be an integer or object")
+    return dict(raw_slot)
+
+
+def _theme_spacing(manifest: dict[str, Any]) -> tuple[float, float]:
+    theme = manifest.get("theme", {})
+    if not isinstance(theme, dict):
+        return (48.0, 18.0)
+    spacing = theme.get("spacing", {})
+    if not isinstance(spacing, dict):
+        return (48.0, 18.0)
+
+    margin = spacing.get("margin", 48.0)
+    gutter = spacing.get("gutter", 18.0)
+    if isinstance(margin, bool) or not isinstance(margin, int | float):
+        margin = 48.0
+    if isinstance(gutter, bool) or not isinstance(gutter, int | float):
+        gutter = 18.0
+    return (float(margin), float(gutter))
+
+
+def _virtual_body_bounds(
+    layout: dict[str, Any],
+    *,
+    manifest: dict[str, Any],
+    placeholders_by_idx: dict[int, dict[str, float]],
+) -> dict[str, float] | None:
+    slot_mapping = layout.get("slot_mapping", {})
+    if not isinstance(slot_mapping, dict):
+        raise ValueError(
+            f"Layout '{layout.get('slug', '<unknown>')}' slot_mapping must be an object"
+        )
+    if "heading" not in slot_mapping or "body" in slot_mapping:
+        return None
+
+    for slot_name, raw_slot in slot_mapping.items():
+        if slot_name == "heading":
+            continue
+        resolved_slot = _resolve_slot_mapping(
+            slot_name,
+            raw_slot,
+            placeholders_by_idx=placeholders_by_idx,
+        )
+        if infer_template_slot_role(slot_name, resolved_slot) == "body":
+            return None
+
+    heading_bounds = _resolve_slot_bounds(
+        "heading",
+        slot_mapping["heading"],
+        placeholders_by_idx=placeholders_by_idx,
+    )
+    margin, gutter = _theme_spacing(manifest)
+    left = max(heading_bounds["x"], margin)
+    top = heading_bounds["y"] + heading_bounds["h"] + gutter
+    right = STANDARD_SLIDE_WIDTH_PT - margin
+    bottom = STANDARD_SLIDE_HEIGHT_PT - margin
+    if top >= bottom or left >= right:
+        return None
+    return {"x": left, "y": top, "w": right - left, "h": bottom - top}
+
+
 def _classify_slot_structure(fillable_slots: list[str]) -> str:
     slot_names = set(fillable_slots)
     if not slot_names:
@@ -329,10 +409,8 @@ def build_inventory(
         if not isinstance(slot_mapping, dict):
             raise ValueError(f"Layout '{slug}' slot_mapping must be an object")
 
-        fillable_slots = sorted(
-            (str(slot_name) for slot_name in slot_mapping), key=_slot_sort_key
-        )
         placeholder_idx_map = _placeholders_by_idx(layout)
+        fillable_slots = {str(slot_name) for slot_name in slot_mapping}
         placeholder_bounds = {
             slot_name: _resolve_slot_bounds(
                 slot_name,
@@ -341,6 +419,15 @@ def build_inventory(
             )
             for slot_name in fillable_slots
         }
+        virtual_body = _virtual_body_bounds(
+            layout,
+            manifest=manifest,
+            placeholders_by_idx=placeholder_idx_map,
+        )
+        if virtual_body is not None:
+            fillable_slots.add("body")
+            placeholder_bounds["body"] = virtual_body
+        ordered_fillable_slots = sorted(fillable_slots, key=_slot_sort_key)
         usable = bool(layout.get("usable", bool(fillable_slots)))
         exclude_reason = policy.get(slug)
         is_disclaimer_duplicate = slug.startswith("d_")
@@ -350,8 +437,8 @@ def build_inventory(
             "usable": usable,
             "requires_image": "image" in slot_mapping,
             "is_disclaimer_duplicate": is_disclaimer_duplicate,
-            "slot_structure": _classify_slot_structure(fillable_slots),
-            "fillable_slots": fillable_slots,
+            "slot_structure": _classify_slot_structure(ordered_fillable_slots),
+            "fillable_slots": ordered_fillable_slots,
             "placeholder_bounds": placeholder_bounds,
             "testable": _is_testable(
                 usable=usable,

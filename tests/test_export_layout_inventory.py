@@ -266,7 +266,7 @@ def test_export_layout_inventory_cli_outputs_expected_inventory(tmp_path: Path) 
 
     assert layouts["title_only"]["slot_structure"] == "heading_only"
     assert layouts["body_text"]["slot_structure"] == "heading_body"
-    assert layouts["visual_story"]["slot_structure"] == "heading_image"
+    assert layouts["visual_story"]["slot_structure"] == "heading_body_image"
     assert layouts["mixed_story"]["slot_structure"] == "heading_body_image"
     assert layouts["three_up"]["slot_structure"] == "multi_slot"
     assert layouts["blankish"]["slot_structure"] == "blank"
@@ -285,6 +285,7 @@ def test_export_layout_inventory_cli_outputs_expected_inventory(tmp_path: Path) 
         "body": {"x": 60.0, "y": 140.0, "w": 520.0, "h": 240.0},
     }
     assert layouts["mixed_story"]["fillable_slots"] == ["heading", "body", "image"]
+    assert layouts["visual_story"]["fillable_slots"] == ["heading", "body", "image"]
 
 
 def test_export_layout_inventory_treats_all_usable_layouts_as_testable_without_matching_policy(

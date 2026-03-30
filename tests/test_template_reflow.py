@@ -84,6 +84,51 @@ def make_manifest() -> dict[str, object]:
     }
 
 
+def make_heading_only_manifest() -> dict[str, object]:
+    return {
+        "name": "template",
+        "source": "template.pptx",
+        "source_hash": "abc123",
+        "layouts": [
+            {
+                "slug": "green_highlight",
+                "usable": True,
+                "slot_mapping": {
+                    "heading": {
+                        "role": "heading",
+                        "bounds": {
+                            "x": 72.0,
+                            "y": 64.0,
+                            "width": 560.0,
+                            "height": 72.0,
+                        },
+                    }
+                },
+            }
+        ],
+        "theme": {
+            "colors": {
+                "primary": "#112233",
+                "secondary": "#445566",
+                "accent": "#778899",
+                "text": "#101010",
+                "heading_text": "#202020",
+                "subtle_text": "#606060",
+                "background": "#FAFAFA",
+            },
+            "fonts": {
+                "heading": "Aptos Display",
+                "body": "Aptos",
+            },
+            "spacing": {
+                "base_unit": 10.0,
+                "margin": 48.0,
+                "gutter": 18.0,
+            },
+        },
+    }
+
+
 def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -263,3 +308,81 @@ def test_mutate_deck_reflows_template_manifests_with_unified_reflow(
     assert updated_deck.revision == 3
     assert updated_deck.theme == "corporate"
     assert reflow_calls == [(3, str((tmp_path / "template.pptx").resolve()))]
+
+
+def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manifest_path = tmp_path / "template.manifest.json"
+    (tmp_path / "template.pptx").write_bytes(b"pptx")
+    write_json(manifest_path, make_heading_only_manifest())
+
+    fit_calls: list[
+        tuple[float, float, float, float, str, str, list[float] | None]
+    ] = []
+
+    def fake_fit_text(
+        *,
+        text,
+        width: float,
+        height: float,
+        default_size: float,
+        min_size: float,
+        role: str,
+        font_family: str | None = None,
+        ladder: list[float] | None = None,
+        use_precise: bool = False,
+    ):
+        assert use_precise is False
+        fit_calls.append(
+            (width, height, default_size, min_size, role, font_family or "", ladder)
+        )
+        return (26.0, False) if role == "heading" else (14.0, False)
+
+    monkeypatch.setattr("agent_slides.engine.reflow.fit_text", fake_fit_text)
+
+    deck = Deck(
+        deck_id="deck-template",
+        revision=7,
+        theme="default",
+        design_rules="default",
+        template_manifest="template.manifest.json",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="green_highlight",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Long heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Long body copy",
+                    ),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    registry = TemplateLayoutRegistry(manifest_path)
+
+    reflow_deck(deck, registry)
+
+    computed = deck.slides[0].computed
+    assert set(computed) == {"n-1", "n-2"}
+
+    body = computed["n-2"]
+    assert (body.x, body.y, body.width, body.height) == (72.0, 154.0, 600.0, 338.0)
+    assert body.font_size_pt == 14.0
+    assert body.font_family == "Aptos"
+    assert body.color == "#101010"
+    assert body.text_overflow is False
+
+    body_call = fit_calls[1]
+    assert body_call[:6] == (600.0, 338.0, 18.0, 10.0, "body", "Aptos")

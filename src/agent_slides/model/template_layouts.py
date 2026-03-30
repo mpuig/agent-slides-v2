@@ -17,6 +17,8 @@ from agent_slides.model.types import (
     GridDef,
     LayoutDef,
     SlotDef,
+    STANDARD_SLIDE_HEIGHT_PT,
+    STANDARD_SLIDE_WIDTH_PT,
     TextFitting,
     Theme,
     ThemeColors,
@@ -397,6 +399,87 @@ def _coerce_placeholder_index(
     return placeholders
 
 
+def _build_virtual_body_slot(
+    slot_mapping: dict[str, Any],
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+    theme: Theme,
+) -> dict[str, Any] | None:
+    if "heading" not in slot_mapping or "body" in slot_mapping:
+        return None
+    for slot_name, raw_slot in slot_mapping.items():
+        if slot_name == "heading":
+            continue
+        resolved_slot = _coerce_slot_mapping(
+            slot_name,
+            raw_slot,
+            placeholders_by_idx=placeholders_by_idx,
+        )
+        if _infer_role(slot_name, resolved_slot) == "body":
+            return None
+
+    heading_mapping = _coerce_slot_mapping(
+        "heading",
+        slot_mapping["heading"],
+        placeholders_by_idx=placeholders_by_idx,
+    )
+    heading_bounds = _as_dict(
+        heading_mapping.get("bounds", heading_mapping),
+        context="slot_mapping['heading'] bounds",
+    )
+    heading_x = _optional_number(heading_bounds, "x", "left")
+    heading_y = _optional_number(heading_bounds, "y", "top")
+    heading_height = _optional_number(heading_bounds, "height", "h")
+    if heading_x is None or heading_y is None or heading_height is None:
+        return None
+
+    margin = float(theme.spacing.margin)
+    gutter = float(theme.spacing.gutter)
+    left = max(float(heading_x), margin)
+    top = float(heading_y) + float(heading_height) + gutter
+    right = STANDARD_SLIDE_WIDTH_PT - margin
+    bottom = STANDARD_SLIDE_HEIGHT_PT - margin
+    if top >= bottom or left >= right:
+        return None
+
+    return {
+        "role": "body",
+        "virtual": True,
+        "bounds": {
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        },
+    }
+
+
+def _augment_virtual_slots(
+    slot_mapping: dict[str, Any],
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+    theme: Theme,
+) -> dict[str, Any]:
+    virtual_body = _build_virtual_body_slot(
+        slot_mapping,
+        placeholders_by_idx=placeholders_by_idx,
+        theme=theme,
+    )
+    if virtual_body is None:
+        return slot_mapping
+
+    augmented: dict[str, Any] = {}
+    inserted = False
+    for slot_name, slot_value in slot_mapping.items():
+        augmented[slot_name] = slot_value
+        if slot_name == "heading":
+            augmented["body"] = virtual_body
+            inserted = True
+    if not inserted:
+        augmented["body"] = virtual_body
+    return augmented
+
+
 def _reading_order(slots: dict[str, SlotDef]) -> list[tuple[str, SlotDef]]:
     return sorted(
         slots.items(),
@@ -771,6 +854,11 @@ class TemplateLayoutRegistry:
             )
             slot_mapping = normalize_template_slot_mapping(
                 slot_mapping, placeholders_by_idx=placeholders_by_idx
+            )
+            slot_mapping = _augment_virtual_slots(
+                slot_mapping,
+                placeholders_by_idx=placeholders_by_idx,
+                theme=self._theme,
             )
             master_index = raw_layout.get("master_index", 0)
             layout_index = raw_layout.get("index", 0)

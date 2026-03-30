@@ -1838,6 +1838,97 @@ def test_write_pptx_fills_non_placeholder_text_box_slots_in_template_clone_path(
     assert quote_shape.height == int(120.0 * EMU_PER_POINT)
 
 
+def test_write_pptx_renders_virtual_body_slots_as_positioned_text_boxes(
+    tmp_path: Path,
+) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-virtual-body-output.pptx"
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["slide_masters"][0]["layouts"] = [
+        {
+            "index": title_layout["index"],
+            "master_index": title_layout["master_index"],
+            "name": title_layout["name"],
+            "slug": "green_highlight",
+            "usable": True,
+            "placeholders": title_layout["placeholders"],
+            "slot_mapping": {"heading": title_layout["slot_mapping"]["heading"]},
+        }
+    ]
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="template-virtual-body",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="green_highlight",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Updated title",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Body content in virtual slot",
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=36.0,
+                        width=576.0,
+                        height=72.0,
+                        font_size_pt=28.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=True,
+                        revision=1,
+                    ),
+                    "n-2": ComputedNode(
+                        x=72.0,
+                        y=154.0,
+                        width=576.0,
+                        height=220.0,
+                        font_size_pt=18.0,
+                        font_family="Aptos",
+                        color="#445566",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    body_shape = next(
+        shape
+        for shape in slide.shapes
+        if shape.has_text_frame and shape.text_frame.text == "Body content in virtual slot"
+    )
+
+    assert slide.slide_layout.name == title_layout["name"]
+    assert body_shape.is_placeholder is False
+    assert body_shape.left == int(72.0 * EMU_PER_POINT)
+    assert body_shape.top == int(154.0 * EMU_PER_POINT)
+    assert body_shape.width == int(576.0 * EMU_PER_POINT)
+    assert body_shape.height == int(220.0 * EMU_PER_POINT)
+
+
 def test_write_pptx_warns_when_template_hash_changes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
