@@ -101,7 +101,12 @@ def _build_manifest(base_dir: Path) -> Path:
     return manifest_path
 
 
-def _build_heading_only_manifest(base_dir: Path) -> Path:
+def _build_heading_only_manifest(
+    base_dir: Path,
+    *,
+    color_zones: list[dict[str, object]] | None = None,
+    editable_regions: list[dict[str, object]] | None = None,
+) -> Path:
     template_path = base_dir / "templates" / "heading-only" / "template.pptx"
     manifest_path = base_dir / "templates" / "heading-only" / "manifest.json"
     template_path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +142,12 @@ def _build_heading_only_manifest(base_dir: Path) -> Path:
                     {
                         "slug": "green_highlight",
                         "usable": True,
+                        **({"color_zones": color_zones} if color_zones is not None else {}),
+                        **(
+                            {"editable_regions": editable_regions}
+                            if editable_regions is not None
+                            else {}
+                        ),
                         "slot_mapping": {
                             "heading": {
                                 "role": "heading",
@@ -494,7 +505,48 @@ def test_template_layout_registry_uses_default_text_fitting(tmp_path: Path) -> N
 def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only_layout(
     tmp_path: Path,
 ) -> None:
-    manifest_path = _build_heading_only_manifest(tmp_path)
+    manifest_path = _build_heading_only_manifest(
+        tmp_path,
+        color_zones=[
+            {
+                "region": "panel_0",
+                "left": 0.0,
+                "width": 420.0,
+                "bg_color": "FFFFFF",
+                "text_color": "333333",
+                "editable_below": {
+                    "left": 0.0,
+                    "top": 90.0,
+                    "width": 420.0,
+                    "height": 450.0,
+                },
+            },
+            {
+                "region": "gap_0",
+                "left": 420.0,
+                "width": 120.0,
+                "bg_color": "FFFFFF",
+                "text_color": "333333",
+            },
+            {
+                "region": "panel_1",
+                "left": 540.0,
+                "width": 420.0,
+                "bg_color": "00A651",
+                "text_color": "FFFFFF",
+            },
+        ],
+        editable_regions=[
+            {
+                "name": "content_area",
+                "left": 540.0,
+                "top": 170.0,
+                "width": 420.0,
+                "height": 320.0,
+                "source": "visual_inference_no_placeholders",
+            }
+        ],
+    )
 
     registry = TemplateLayoutRegistry(str(manifest_path))
     layout = registry.get_layout("green_highlight")
@@ -503,6 +555,77 @@ def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only
     assert registry.get_slot_names("green_highlight") == ["heading", "body"]
     assert "body" not in manifest["layouts"][0]["slot_mapping"]
     assert layout.slots["body"].role == "body"
+    assert layout.slots["body"].x == 0.0
+    assert layout.slots["body"].y == 90.0
+    assert layout.slots["body"].width == 420.0
+    assert layout.slots["body"].height == 450.0
+
+
+def test_template_layout_registry_uses_editable_regions_when_zone_lacks_editable_below(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_heading_only_manifest(
+        tmp_path,
+        color_zones=[
+            {
+                "region": "panel_0",
+                "left": 0.0,
+                "width": 420.0,
+                "bg_color": "FFFFFF",
+                "text_color": "333333",
+            }
+        ],
+        editable_regions=[
+            {
+                "name": "above_heading",
+                "left": 72.0,
+                "top": 24.0,
+                "width": 220.0,
+                "height": 24.0,
+                "source": "visual_inference_no_placeholders",
+            },
+            {
+                "name": "body_area_small",
+                "left": 96.0,
+                "top": 180.0,
+                "width": 200.0,
+                "height": 180.0,
+                "source": "visual_inference_no_placeholders",
+            },
+            {
+                "name": "body_area_large",
+                "left": 320.0,
+                "top": 180.0,
+                "width": 280.0,
+                "height": 240.0,
+                "source": "visual_inference_no_placeholders",
+            },
+            {
+                "name": "ignored_source",
+                "left": 20.0,
+                "top": 220.0,
+                "width": 500.0,
+                "height": 240.0,
+                "source": "placeholder_geometry",
+            },
+        ],
+    )
+
+    layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("green_highlight")
+
+    assert layout.slots["body"].x == 320.0
+    assert layout.slots["body"].y == 180.0
+    assert layout.slots["body"].width == 280.0
+    assert layout.slots["body"].height == 240.0
+
+
+def test_template_layout_registry_falls_back_to_offset_formula_without_manifest_regions(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_heading_only_manifest(tmp_path)
+
+    layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("green_highlight")
+
     assert layout.slots["body"].x == 72.0
     assert layout.slots["body"].y == 262.0
     assert layout.slots["body"].width == 600.0

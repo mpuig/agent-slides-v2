@@ -53,19 +53,23 @@ class _PlaceholderStyle:
 
 
 @dataclass(frozen=True)
-class _ColorZone:
-    left: float
-    width: float
-    bg_color: str | None = None
-    text_color: str | None = None
-
-
-@dataclass(frozen=True)
 class _EditableRegion:
     left: float
     top: float
     width: float
     height: float
+    name: str | None = None
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class _ColorZone:
+    left: float
+    width: float
+    bg_color: str | None = None
+    text_color: str | None = None
+    editable_above: _EditableRegion | None = None
+    editable_below: _EditableRegion | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +157,14 @@ def _coerce_color_zones(raw_color_zones: object, *, slug: str) -> tuple[_ColorZo
                 width=width,
                 bg_color=_optional_string(zone, "bg_color"),
                 text_color=_optional_string(zone, "text_color"),
+                editable_above=_coerce_optional_manifest_region(
+                    zone.get("editable_above"),
+                    context=f"layout[{slug!r}].color_zones[{index}].editable_above",
+                ),
+                editable_below=_coerce_optional_manifest_region(
+                    zone.get("editable_below"),
+                    context=f"layout[{slug!r}].color_zones[{index}].editable_below",
+                ),
             )
         )
     return tuple(zones)
@@ -191,9 +203,28 @@ def _coerce_editable_regions(
                 top=float(top),
                 width=float(width),
                 height=float(height),
+                name=_optional_string(region, "name"),
+                source=_optional_string(region, "source"),
             )
         )
     return tuple(regions)
+
+
+def _coerce_optional_manifest_region(
+    value: object, *, context: str
+) -> _EditableRegion | None:
+    if value is None:
+        return None
+    bounds = _coerce_manifest_bounds(value, context=context)
+    region = _as_dict(value, context=context)
+    return _EditableRegion(
+        left=bounds["x"],
+        top=bounds["y"],
+        width=bounds["width"],
+        height=bounds["height"],
+        name=_optional_string(region, "name"),
+        source=_optional_string(region, "source"),
+    )
 
 
 def _resolve_color_zone(
@@ -551,16 +582,30 @@ def _build_virtual_body_slot(
     )
     heading_x = _optional_number(heading_bounds, "x", "left")
     heading_y = _optional_number(heading_bounds, "y", "top")
+    heading_width = _optional_number(heading_bounds, "width", "w")
     heading_height = _optional_number(heading_bounds, "height", "h")
-    if heading_x is None or heading_y is None or heading_height is None:
+    if (
+        heading_x is None
+        or heading_y is None
+        or heading_width is None
+        or heading_height is None
+    ):
         return None
 
-    editable_region = editable_regions[0] if editable_regions else None
-    if editable_region is not None:
-        left = editable_region.left
-        top = editable_region.top
-        right = editable_region.left + editable_region.width
-        bottom = editable_region.top + editable_region.height
+    heading_midpoint_x = float(heading_x) + (float(heading_width) / 2.0)
+    heading_midpoint_y = float(heading_y) + (float(heading_height) / 2.0)
+
+    manifest_bounds = _select_virtual_body_bounds_from_manifest(
+        heading_midpoint_x=heading_midpoint_x,
+        heading_midpoint_y=heading_midpoint_y,
+        color_zones=color_zones,
+        editable_regions=editable_regions,
+    )
+    if manifest_bounds is not None:
+        left = float(manifest_bounds["x"])
+        top = float(manifest_bounds["y"])
+        right = left + float(manifest_bounds["width"])
+        bottom = top + float(manifest_bounds["height"])
     else:
         margin = float(theme.spacing.margin)
         gutter = float(theme.spacing.gutter)
@@ -591,6 +636,87 @@ def _build_virtual_body_slot(
         "bg_color": zone.bg_color if zone is not None else None,
         "text_color": zone.text_color if zone is not None else None,
     }
+
+
+def _select_virtual_body_bounds_from_manifest(
+    *,
+    heading_midpoint_x: float,
+    heading_midpoint_y: float,
+    color_zones: tuple[_ColorZone, ...],
+    editable_regions: tuple[_EditableRegion, ...],
+) -> dict[str, float] | None:
+    zone_bounds = _select_color_zone_editable_below(
+        heading_midpoint_x=heading_midpoint_x,
+        color_zones=color_zones,
+    )
+    if zone_bounds is not None:
+        return zone_bounds
+    return _select_editable_region_below_heading(
+        heading_midpoint_y=heading_midpoint_y,
+        editable_regions=editable_regions,
+    )
+
+
+def _select_color_zone_editable_below(
+    *,
+    heading_midpoint_x: float,
+    color_zones: tuple[_ColorZone, ...],
+) -> dict[str, float] | None:
+    for zone in color_zones:
+        zone_right = zone.left + zone.width
+        if not (zone.left <= heading_midpoint_x <= zone_right):
+            continue
+        if zone.editable_below is None:
+            return None
+        return _region_to_bounds(zone.editable_below)
+    return None
+
+
+def _select_editable_region_below_heading(
+    *,
+    heading_midpoint_y: float,
+    editable_regions: tuple[_EditableRegion, ...],
+) -> dict[str, float] | None:
+    best_region: dict[str, float] | None = None
+    best_area = -1.0
+    for region in editable_regions:
+        if region.source != "visual_inference_no_placeholders":
+            continue
+        bounds = _region_to_bounds(region)
+        if bounds["y"] < heading_midpoint_y:
+            continue
+        area = bounds["width"] * bounds["height"]
+        if area <= best_area:
+            continue
+        best_area = area
+        best_region = bounds
+    return best_region
+
+
+def _region_to_bounds(region: _EditableRegion) -> dict[str, float]:
+    return {
+        "x": region.left,
+        "y": region.top,
+        "width": region.width,
+        "height": region.height,
+    }
+
+
+def _coerce_manifest_bounds(value: object, *, context: str) -> dict[str, float]:
+    bounds = _as_dict(value, context=context)
+    left = _optional_number(bounds, "x", "left")
+    top = _optional_number(bounds, "y", "top")
+    width = _optional_number(bounds, "width", "w")
+    height = _optional_number(bounds, "height", "h")
+    if left is None or top is None or width is None or height is None:
+        raise AgentSlidesError(
+            SCHEMA_ERROR,
+            (
+                f"{context} must define numeric left/top/width/height "
+                "or x/y/w/h bounds"
+            ),
+        )
+    return {"x": left, "y": top, "width": width, "height": height}
 
 
 def _augment_virtual_slots(
