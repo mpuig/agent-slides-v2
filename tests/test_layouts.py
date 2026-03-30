@@ -41,7 +41,9 @@ def test_image_capable_layouts_are_registered_with_expected_slots(
 
     layout = get_layout(layout_name)
 
-    assert {slot_name: slot.role for slot_name, slot in layout.slots.items()} == expected_roles
+    assert {
+        slot_name: slot.role for slot_name, slot in layout.slots.items()
+    } == expected_roles
 
 
 def test_reflow_image_left_computes_mixed_image_and_text_frames(tmp_path: Path) -> None:
@@ -50,9 +52,24 @@ def test_reflow_image_left_computes_mixed_image_and_text_frames(tmp_path: Path) 
         slide_id="s-1",
         layout="image_left",
         nodes=[
-            Node(node_id="n-1", slot_binding="image", type="image", image_path=str(image_path)),
-            Node(node_id="n-2", slot_binding="heading", type="text", content="Quarterly growth"),
-            Node(node_id="n-3", slot_binding="body", type="text", content="Revenue expanded across all regions."),
+            Node(
+                node_id="n-1",
+                slot_binding="image",
+                type="image",
+                image_path=str(image_path),
+            ),
+            Node(
+                node_id="n-2",
+                slot_binding="heading",
+                type="text",
+                content="Quarterly growth",
+            ),
+            Node(
+                node_id="n-3",
+                slot_binding="body",
+                type="text",
+                content="Revenue expanded across all regions.",
+            ),
         ],
     )
 
@@ -85,9 +102,21 @@ def test_reflow_hero_image_full_bleed_image_and_overlay_text(tmp_path: Path) -> 
         slide_id="s-hero",
         layout="hero_image",
         nodes=[
-            Node(node_id="n-1", slot_binding="image", type="image", image_path=str(image_path)),
-            Node(node_id="n-2", slot_binding="heading", type="text", content="Launch day"),
-            Node(node_id="n-3", slot_binding="subheading", type="text", content="A single story over a full-bleed visual."),
+            Node(
+                node_id="n-1",
+                slot_binding="image",
+                type="image",
+                image_path=str(image_path),
+            ),
+            Node(
+                node_id="n-2", slot_binding="heading", type="text", content="Launch day"
+            ),
+            Node(
+                node_id="n-3",
+                slot_binding="subheading",
+                type="text",
+                content="A single story over a full-bleed visual.",
+            ),
         ],
     )
 
@@ -113,8 +142,18 @@ def test_rebind_slots_creates_image_nodes_for_image_layouts() -> None:
         slide_id="s-1",
         layout="title_content",
         nodes=[
-            Node(node_id=deck.next_node_id(), slot_binding="heading", type="text", content="Heading"),
-            Node(node_id=deck.next_node_id(), slot_binding="body", type="text", content="Body"),
+            Node(
+                node_id=deck.next_node_id(),
+                slot_binding="heading",
+                type="text",
+                content="Heading",
+            ),
+            Node(
+                node_id=deck.next_node_id(),
+                slot_binding="body",
+                type="text",
+                content="Body",
+            ),
         ],
     )
     deck.slides.append(slide)
@@ -130,15 +169,21 @@ def test_rebind_slots_creates_image_nodes_for_image_layouts() -> None:
         ("img3", "image"),
         ("img4", "image"),
     ]
-    assert all(node.style_overrides.get("placeholder") is True for node in slide.nodes[2:])
+    assert all(
+        node.style_overrides.get("placeholder") is True for node in slide.nodes[2:]
+    )
 
 
-@pytest.mark.parametrize("layout_name", [name for name in list_layouts() if name != "blank"])
+@pytest.mark.parametrize(
+    "layout_name", [name for name in list_layouts() if name != "blank"]
+)
 def test_builtin_layout_slots_include_semantic_metadata(layout_name: str) -> None:
     layout = get_layout(layout_name)
 
     assert all(slot.alignment_group is not None for slot in layout.slots.values())
-    assert sorted(slot.reading_order for slot in layout.slots.values()) == list(range(len(layout.slots)))
+    assert sorted(slot.reading_order for slot in layout.slots.values()) == list(
+        range(len(layout.slots))
+    )
 
     if layout_name == "two_col":
         assert layout.slots["heading"].alignment_group == "top"

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import re
 
-from agent_slides.model.design_rules import ConditionalFormatting, ConditionalRule, DesignRules
+from agent_slides.model.design_rules import (
+    ConditionalFormatting,
+    ConditionalRule,
+    DesignRules,
+)
 from agent_slides.model.types import ChartSpec, TextBlock, TextRun
 
 POSITIVE_NUMBER_PATTERN = re.compile(
@@ -72,8 +76,14 @@ def _apply_rule_to_runs(runs: list[TextRun], rule: ConditionalRule) -> list[Text
                 continue
             matched = True
             if start > last_index:
-                formatted.append(run.model_copy(update={"text": run.text[last_index:start]}))
-            formatted.append(_overlay_run_style(run.model_copy(update={"text": run.text[start:end]}), rule))
+                formatted.append(
+                    run.model_copy(update={"text": run.text[last_index:start]})
+                )
+            formatted.append(
+                _overlay_run_style(
+                    run.model_copy(update={"text": run.text[start:end]}), rule
+                )
+            )
             last_index = end
         if not matched:
             formatted.append(run)
@@ -118,10 +128,16 @@ def resolve_chart_point_colors(
         return None
 
     style = chart_spec.style
-    chart_rules = conditional_formatting.chart if conditional_formatting is not None else None
+    chart_rules = (
+        conditional_formatting.chart if conditional_formatting is not None else None
+    )
     if style.highlight_index is not None:
-        highlight_color = style.highlight_color or (chart_rules.highlight_color if chart_rules else "#C98E48")
-        muted_color = style.muted_color or (chart_rules.muted_color if chart_rules else "#CFC8BD")
+        highlight_color = style.highlight_color or (
+            chart_rules.highlight_color if chart_rules else "#C98E48"
+        )
+        muted_color = style.muted_color or (
+            chart_rules.muted_color if chart_rules else "#CFC8BD"
+        )
         return [
             highlight_color if index == style.highlight_index else muted_color
             for index in range(len(values))
@@ -157,7 +173,9 @@ def resolve_table_cell_style(
     return status_style.fill, status_style.text, status_style.bold
 
 
-def preview_conditional_formatting_payload(design_rules: DesignRules) -> dict[str, object]:
+def preview_conditional_formatting_payload(
+    design_rules: DesignRules,
+) -> dict[str, object]:
     """Serialize only the preview-relevant conditional-formatting settings."""
 
     return design_rules.conditional_formatting.model_dump(mode="json")

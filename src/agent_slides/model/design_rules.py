@@ -100,7 +100,9 @@ class ChartConditionalFormatting(BaseModel):
     highlight_color: str = "#C98E48"
     muted_color: str = "#CFC8BD"
 
-    @field_validator("positive_color", "negative_color", "highlight_color", "muted_color")
+    @field_validator(
+        "positive_color", "negative_color", "highlight_color", "muted_color"
+    )
     @classmethod
     def validate_colors(cls, value: str, info) -> str:
         return _normalize_hex_color(value, field_name=info.field_name)
@@ -130,7 +132,9 @@ class TableConditionalFormatting(BaseModel):
 
     @field_validator("statuses")
     @classmethod
-    def validate_status_keys(cls, value: dict[str, TableStatusStyle]) -> dict[str, TableStatusStyle]:
+    def validate_status_keys(
+        cls, value: dict[str, TableStatusStyle]
+    ) -> dict[str, TableStatusStyle]:
         normalized: dict[str, TableStatusStyle] = {}
         for key, style in value.items():
             normalized_key = key.strip().casefold()
@@ -159,8 +163,12 @@ class ConditionalFormatting(BaseModel):
             ConditionalRule(pattern="negative_number", color="#D32F2F"),
         ]
     )
-    chart: ChartConditionalFormatting = Field(default_factory=ChartConditionalFormatting)
-    table: TableConditionalFormatting = Field(default_factory=TableConditionalFormatting)
+    chart: ChartConditionalFormatting = Field(
+        default_factory=ChartConditionalFormatting
+    )
+    table: TableConditionalFormatting = Field(
+        default_factory=TableConditionalFormatting
+    )
 
     @field_validator("color_aliases")
     @classmethod
@@ -170,7 +178,9 @@ class ConditionalFormatting(BaseModel):
             normalized_key = key.strip().casefold()
             if not normalized_key:
                 raise ValueError("color aliases must use non-empty names")
-            normalized[normalized_key] = _normalize_hex_color(color, field_name=f"color_aliases.{key}")
+            normalized[normalized_key] = _normalize_hex_color(
+                color, field_name=f"color_aliases.{key}"
+            )
         return normalized
 
 
@@ -208,20 +218,28 @@ class DesignRules(BaseModel):
     block_spacing: BlockSpacingRules = Field(default_factory=BlockSpacingRules)
     normalize_font_sizes: bool = True
     type_ladders: dict[str, list[float]] = Field(
-        default_factory=lambda: {role: list(sizes) for role, sizes in DEFAULT_TYPE_LADDERS.items()}
+        default_factory=lambda: {
+            role: list(sizes) for role, sizes in DEFAULT_TYPE_LADDERS.items()
+        }
     )
-    conditional_formatting: ConditionalFormatting = Field(default_factory=ConditionalFormatting)
+    conditional_formatting: ConditionalFormatting = Field(
+        default_factory=ConditionalFormatting
+    )
 
     @field_validator("type_ladders")
     @classmethod
-    def validate_type_ladders(cls, value: dict[str, list[float]]) -> dict[str, list[float]]:
+    def validate_type_ladders(
+        cls, value: dict[str, list[float]]
+    ) -> dict[str, list[float]]:
         normalized: dict[str, list[float]] = {}
         for role, sizes in value.items():
             if not sizes:
                 raise ValueError(f"type ladder for role '{role}' cannot be empty")
             ladder = [float(size) for size in sizes]
             if any(size <= 0 for size in ladder):
-                raise ValueError(f"type ladder for role '{role}' must contain positive sizes")
+                raise ValueError(
+                    f"type ladder for role '{role}' must contain positive sizes"
+                )
             normalized[role] = ladder
         return normalized
 

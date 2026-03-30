@@ -2,24 +2,37 @@ from __future__ import annotations
 
 from PIL import ImageFont
 
-from agent_slides.engine.text_fit import BlockFit, compose_blocks, fit_blocks, fit_text, measure_text_height
+from agent_slides.engine.text_fit import (
+    BlockFit,
+    compose_blocks,
+    fit_blocks,
+    fit_text,
+    measure_text_height,
+)
 from agent_slides.model.design_rules import BlockSpacingRules
 from agent_slides.model.types import NodeContent, TextBlock, TextFitting, TextRun
 
 
 def test_short_text_fits_at_default_size() -> None:
-    assert fit_text("Hello world", width=200, height=80, default_size=32, role="heading") == (32, False)
+    assert fit_text(
+        "Hello world", width=200, height=80, default_size=32, role="heading"
+    ) == (32, False)
 
 
 def test_body_text_uses_discrete_ladder_steps() -> None:
-    font_size, overflowed = fit_text("A" * 60, width=96, height=140, default_size=18, role="body")
+    font_size, overflowed = fit_text(
+        "A" * 60, width=96, height=140, default_size=18, role="body"
+    )
 
     assert font_size == 16
     assert overflowed is False
 
 
 def test_long_text_overflows_at_min_size() -> None:
-    assert fit_text("A" * 500, width=120, height=60, default_size=24, role="body") == (10.0, True)
+    assert fit_text("A" * 500, width=120, height=60, default_size=24, role="body") == (
+        10.0,
+        True,
+    )
 
 
 def test_empty_text_returns_largest_ladder_size() -> None:
@@ -27,15 +40,23 @@ def test_empty_text_returns_largest_ladder_size() -> None:
 
 
 def test_single_character_returns_default_size() -> None:
-    assert fit_text("A", width=20, height=20, default_size=32, role="heading") == (32, False)
+    assert fit_text("A", width=20, height=20, default_size=32, role="heading") == (
+        32,
+        False,
+    )
 
 
 def test_very_long_text_shrinks_to_min_size_and_overflows() -> None:
-    assert fit_text("A" * 10_000, width=500, height=200, default_size=24, role="body") == (10.0, True)
+    assert fit_text(
+        "A" * 10_000, width=500, height=200, default_size=24, role="body"
+    ) == (10.0, True)
 
 
 def test_zero_width_returns_smallest_ladder_size_with_overflow() -> None:
-    assert fit_text("Hello", width=0, height=60, default_size=24, role="body") == (10.0, True)
+    assert fit_text("Hello", width=0, height=60, default_size=24, role="body") == (
+        10.0,
+        True,
+    )
 
 
 def test_font_family_width_factors_change_selected_size() -> None:
@@ -85,7 +106,9 @@ def test_structured_blocks_account_for_heading_hierarchy_and_spacing() -> None:
         ]
     )
 
-    font_size, overflowed = fit_text(content, width=180, height=90, default_size=24, role="body")
+    font_size, overflowed = fit_text(
+        content, width=180, height=90, default_size=24, role="body"
+    )
 
     assert font_size == 14
     assert overflowed is False
@@ -113,7 +136,9 @@ def test_mixed_size_inline_runs_increase_measured_height() -> None:
         ]
     )
 
-    assert measure_text_height(mixed, width=160, font_size=18) > measure_text_height(plain, width=160, font_size=18)
+    assert measure_text_height(mixed, width=160, font_size=18) > measure_text_height(
+        plain, width=160, font_size=18
+    )
 
 
 def test_precise_measurement_uses_pillow_truetype(monkeypatch) -> None:

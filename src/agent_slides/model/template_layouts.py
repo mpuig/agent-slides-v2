@@ -13,8 +13,22 @@ from pptx import Presentation
 from agent_slides.errors import AgentSlidesError, INVALID_LAYOUT, SCHEMA_ERROR
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme
-from agent_slides.model.types import GridDef, LayoutDef, SlotDef, TextFitting, Theme, ThemeColors, ThemeFonts, ThemeSpacing
-from agent_slides.template_slots import infer_template_slot_role, normalize_template_slot_mapping
+from agent_slides.model.types import (
+    GridDef,
+    LayoutDef,
+    SlotDef,
+    STANDARD_SLIDE_HEIGHT_PT,
+    STANDARD_SLIDE_WIDTH_PT,
+    TextFitting,
+    Theme,
+    ThemeColors,
+    ThemeFonts,
+    ThemeSpacing,
+)
+from agent_slides.template_slots import (
+    infer_template_slot_role,
+    normalize_template_slot_mapping,
+)
 
 _TEMPLATE_GRID = GridDef(
     columns=1,
@@ -56,7 +70,9 @@ def _optional_number(mapping: dict[str, Any], *keys: str) -> float | None:
         if value is None:
             continue
         if isinstance(value, bool) or not isinstance(value, int | float):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{key}' must be numeric")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Manifest field '{key}' must be numeric"
+            )
         return float(value)
     return None
 
@@ -67,7 +83,9 @@ def _optional_int(mapping: dict[str, Any], *keys: str) -> int | None:
         if value is None:
             continue
         if isinstance(value, bool) or not isinstance(value, int):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{key}' must be an integer")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Manifest field '{key}' must be an integer"
+            )
         return value
     return None
 
@@ -78,7 +96,9 @@ def _optional_string(mapping: dict[str, Any], *keys: str) -> str | None:
         if value is None:
             continue
         if not isinstance(value, str):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{key}' must be a string")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Manifest field '{key}' must be a string"
+            )
         normalized = value.strip()
         return normalized or None
     return None
@@ -90,11 +110,15 @@ def _optional_string_list(mapping: dict[str, Any], *keys: str) -> list[str] | No
         if value is None:
             continue
         if not isinstance(value, list):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{key}' must be an array")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Manifest field '{key}' must be an array"
+            )
         items: list[str] = []
         for index, item in enumerate(value):
             if not isinstance(item, str):
-                raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{key}[{index}]' must be a string")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, f"Manifest field '{key}[{index}]' must be a string"
+                )
             normalized = item.strip().lower()
             if normalized not in _CONTENT_TYPES:
                 raise AgentSlidesError(
@@ -117,7 +141,9 @@ def _coerce_slot_mapping(
     placeholders_by_idx: dict[int, dict[str, Any]],
 ) -> dict[str, Any]:
     if isinstance(raw_slot, bool):
-        raise AgentSlidesError(SCHEMA_ERROR, f"slot_mapping[{slot_name!r}] must not be a boolean")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"slot_mapping[{slot_name!r}] must not be a boolean"
+        )
     if isinstance(raw_slot, int):
         try:
             placeholder = placeholders_by_idx[raw_slot]
@@ -162,22 +188,36 @@ def _build_slot(
         peer_group=_optional_string(slot_mapping, "peer_group"),
         alignment_group=_optional_string(slot_mapping, "alignment_group"),
         reading_order=_optional_int(slot_mapping, "reading_order") or 0,
-        size_policy=_optional_string(slot_mapping, "size_policy") or _default_size_policy(role),
-        allowed_content=_optional_string_list(slot_mapping, "allowed_content") or ["text", "image", "chart", "table", "icon", "pattern"],
+        size_policy=_optional_string(slot_mapping, "size_policy")
+        or _default_size_policy(role),
+        allowed_content=_optional_string_list(slot_mapping, "allowed_content")
+        or ["text", "image", "chart", "table", "icon", "pattern"],
         min_font=_optional_number(slot_mapping, "min_font"),
         max_font=_optional_number(slot_mapping, "max_font"),
         preferred_font=(
             _optional_number(slot_mapping, "preferred_font")
             if _optional_number(slot_mapping, "preferred_font") is not None
-            else (placeholder_style.preferred_font if placeholder_style is not None else None)
+            else (
+                placeholder_style.preferred_font
+                if placeholder_style is not None
+                else None
+            )
         ),
-        text_align=text_align or (placeholder_style.text_align if placeholder_style is not None else None) or "left",
+        text_align=text_align
+        or (placeholder_style.text_align if placeholder_style is not None else None)
+        or "left",
         vertical_align=(
             vertical_align
-            or (placeholder_style.vertical_align if placeholder_style is not None else None)
+            or (
+                placeholder_style.vertical_align
+                if placeholder_style is not None
+                else None
+            )
             or "top"
         ),
-        padding=_optional_number(slot_mapping, "padding") if _optional_number(slot_mapping, "padding") is not None else 0.0,
+        padding=_optional_number(slot_mapping, "padding")
+        if _optional_number(slot_mapping, "padding") is not None
+        else 0.0,
         x=_optional_number(bounds, "x", "left"),
         y=_optional_number(bounds, "y", "top"),
         width=_optional_number(bounds, "width", "w"),
@@ -235,7 +275,9 @@ def _extract_placeholder_style(placeholder: object) -> _PlaceholderStyle:
     paragraph = text_frame.paragraphs[0] if text_frame.paragraphs else None
     preferred_font: float | None = None
     text_align = _normalize_text_align(getattr(paragraph, "alignment", None))
-    vertical_align = _normalize_vertical_align(getattr(text_frame, "vertical_anchor", None))
+    vertical_align = _normalize_vertical_align(
+        getattr(text_frame, "vertical_anchor", None)
+    )
 
     font_candidates: list[object] = []
     if paragraph is not None:
@@ -256,7 +298,9 @@ def _extract_placeholder_style(placeholder: object) -> _PlaceholderStyle:
     )
 
 
-def _load_placeholder_styles(source_path: str) -> dict[tuple[int, int, int], _PlaceholderStyle]:
+def _load_placeholder_styles(
+    source_path: str,
+) -> dict[tuple[int, int, int], _PlaceholderStyle]:
     try:
         presentation = Presentation(source_path)
     except Exception:
@@ -266,22 +310,34 @@ def _load_placeholder_styles(source_path: str) -> dict[tuple[int, int, int], _Pl
     for master_index, slide_master in enumerate(presentation.slide_masters):
         for layout_index, slide_layout in enumerate(slide_master.slide_layouts):
             for placeholder in slide_layout.placeholders:
-                key = (master_index, layout_index, int(placeholder.placeholder_format.idx))
+                key = (
+                    master_index,
+                    layout_index,
+                    int(placeholder.placeholder_format.idx),
+                )
                 styles[key] = _extract_placeholder_style(placeholder)
     return styles
 
 
 def _coerce_layouts(raw_layouts: object) -> list[tuple[str, dict[str, Any]]]:
     if isinstance(raw_layouts, dict):
-        return [(str(slug), _as_dict(value, context=f"layout[{slug!r}]")) for slug, value in raw_layouts.items()]
+        return [
+            (str(slug), _as_dict(value, context=f"layout[{slug!r}]"))
+            for slug, value in raw_layouts.items()
+        ]
     if isinstance(raw_layouts, list):
         items: list[tuple[str, dict[str, Any]]] = []
         for index, value in enumerate(raw_layouts):
             layout = _as_dict(value, context=f"layouts[{index}]")
-            slug = _require_string(layout.get("slug") or layout.get("name"), context=f"layouts[{index}].slug")
+            slug = _require_string(
+                layout.get("slug") or layout.get("name"),
+                context=f"layouts[{index}].slug",
+            )
             items.append((slug, layout))
         return items
-    raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'layouts' must be a list or object")
+    raise AgentSlidesError(
+        SCHEMA_ERROR, "Manifest field 'layouts' must be a list or object"
+    )
 
 
 def _coerce_layout_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -298,13 +354,17 @@ def _coerce_layout_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
 
     raw_masters = manifest.get("slide_masters", [])
     if not isinstance(raw_masters, list):
-        raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'slide_masters' must be an array")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Manifest field 'slide_masters' must be an array"
+        )
 
     entries: list[dict[str, Any]] = []
     for master_index, raw_master in enumerate(raw_masters):
         master = _as_dict(raw_master, context=f"slide_masters[{master_index}]")
         manifest_master_index = master.get("index", master_index)
-        for layout_index, raw_layout in enumerate(_coerce_layouts(master.get("layouts", []))):
+        for layout_index, raw_layout in enumerate(
+            _coerce_layouts(master.get("layouts", []))
+        ):
             slug, layout = raw_layout
             entry = dict(layout)
             entry.setdefault("slug", slug)
@@ -314,20 +374,115 @@ def _coerce_layout_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
-def _coerce_placeholder_index(raw_placeholders: object, *, slug: str) -> dict[int, dict[str, Any]]:
+def _coerce_placeholder_index(
+    raw_placeholders: object, *, slug: str
+) -> dict[int, dict[str, Any]]:
     if raw_placeholders is None:
         return {}
     if not isinstance(raw_placeholders, list):
-        raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].placeholders must be an array")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"layout[{slug!r}].placeholders must be an array"
+        )
 
     placeholders: dict[int, dict[str, Any]] = {}
     for index, raw_placeholder in enumerate(raw_placeholders):
-        placeholder = _as_dict(raw_placeholder, context=f"layout[{slug!r}].placeholders[{index}]")
+        placeholder = _as_dict(
+            raw_placeholder, context=f"layout[{slug!r}].placeholders[{index}]"
+        )
         raw_idx = placeholder.get("idx")
         if isinstance(raw_idx, bool) or not isinstance(raw_idx, int):
-            raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].placeholders[{index}].idx must be an integer")
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                f"layout[{slug!r}].placeholders[{index}].idx must be an integer",
+            )
         placeholders[raw_idx] = placeholder
     return placeholders
+
+
+def _build_virtual_body_slot(
+    slot_mapping: dict[str, Any],
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+    theme: Theme,
+) -> dict[str, Any] | None:
+    if "heading" not in slot_mapping or "body" in slot_mapping:
+        return None
+    for slot_name, raw_slot in slot_mapping.items():
+        if slot_name == "heading":
+            continue
+        resolved_slot = _coerce_slot_mapping(
+            slot_name,
+            raw_slot,
+            placeholders_by_idx=placeholders_by_idx,
+        )
+        if _infer_role(slot_name, resolved_slot) == "body":
+            return None
+
+    heading_mapping = _coerce_slot_mapping(
+        "heading",
+        slot_mapping["heading"],
+        placeholders_by_idx=placeholders_by_idx,
+    )
+    heading_bounds = _as_dict(
+        heading_mapping.get("bounds", heading_mapping),
+        context="slot_mapping['heading'] bounds",
+    )
+    heading_x = _optional_number(heading_bounds, "x", "left")
+    heading_y = _optional_number(heading_bounds, "y", "top")
+    heading_height = _optional_number(heading_bounds, "height", "h")
+    if heading_x is None or heading_y is None or heading_height is None:
+        return None
+
+    margin = float(theme.spacing.margin)
+    gutter = float(theme.spacing.gutter)
+    left = max(float(heading_x), margin)
+    # Heading text often wraps beyond the placeholder height, so start the
+    # virtual body well below the heading bottom edge. Use at least 2x the
+    # heading height or heading height + 40pt, whichever is larger.
+    heading_h = float(heading_height)
+    body_offset = max(heading_h * 2.5, heading_h + 40)
+    top = float(heading_y) + body_offset + gutter
+    right = STANDARD_SLIDE_WIDTH_PT - margin
+    bottom = STANDARD_SLIDE_HEIGHT_PT - margin
+    if top >= bottom or left >= right:
+        return None
+
+    return {
+        "role": "body",
+        "virtual": True,
+        "bounds": {
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        },
+    }
+
+
+def _augment_virtual_slots(
+    slot_mapping: dict[str, Any],
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+    theme: Theme,
+) -> dict[str, Any]:
+    virtual_body = _build_virtual_body_slot(
+        slot_mapping,
+        placeholders_by_idx=placeholders_by_idx,
+        theme=theme,
+    )
+    if virtual_body is None:
+        return slot_mapping
+
+    augmented: dict[str, Any] = {}
+    inserted = False
+    for slot_name, slot_value in slot_mapping.items():
+        augmented[slot_name] = slot_value
+        if slot_name == "heading":
+            augmented["body"] = virtual_body
+            inserted = True
+    if not inserted:
+        augmented["body"] = virtual_body
+    return augmented
 
 
 def _reading_order(slots: dict[str, SlotDef]) -> list[tuple[str, SlotDef]]:
@@ -344,7 +499,10 @@ def _reading_order(slots: dict[str, SlotDef]) -> list[tuple[str, SlotDef]]:
 def _height_close(left: SlotDef, right: SlotDef) -> bool:
     if left.height is None or right.height is None:
         return False
-    allowed_delta = max(_ALIGNMENT_EPSILON_PT, min(float(left.height), float(right.height)) * _PEER_HEIGHT_RATIO)
+    allowed_delta = max(
+        _ALIGNMENT_EPSILON_PT,
+        min(float(left.height), float(right.height)) * _PEER_HEIGHT_RATIO,
+    )
     return abs(float(left.height) - float(right.height)) <= allowed_delta
 
 
@@ -413,7 +571,9 @@ def _infer_alignment_groups(slots: dict[str, SlotDef]) -> dict[str, str]:
         elif "image" in roles and roles == {"image"}:
             group_name = "media"
         else:
-            group_name = "content" if content_index == 0 else f"content_{content_index + 1}"
+            group_name = (
+                "content" if content_index == 0 else f"content_{content_index + 1}"
+            )
             content_index += 1
         for slot_name in group:
             assignments[slot_name] = group_name
@@ -432,7 +592,8 @@ def _infer_slot_metadata(slots: dict[str, SlotDef]) -> dict[str, SlotDef]:
         inferred[slot_name] = slot.model_copy(
             update={
                 "peer_group": slot.peer_group or peer_groups.get(slot_name),
-                "alignment_group": slot.alignment_group or alignment_groups.get(slot_name),
+                "alignment_group": slot.alignment_group
+                or alignment_groups.get(slot_name),
                 "reading_order": reading_order,
             }
         )
@@ -465,18 +626,30 @@ def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) 
     from agent_slides.engine.constraints import constraints_from_layout, solve
     from agent_slides.engine.layout_validator import validate_layout
 
-    if heading.x is None or heading.y is None or heading.width is None or heading.height is None:
+    if (
+        heading.x is None
+        or heading.y is None
+        or heading.width is None
+        or heading.height is None
+    ):
         return False
     if not bodies:
         return False
-    if any(slot.x is None or slot.y is None or slot.width is None or slot.height is None for slot in bodies):
+    if any(
+        slot.x is None or slot.y is None or slot.width is None or slot.height is None
+        for slot in bodies
+    ):
         return False
     if len(bodies) > 1:
         first_group = bodies[0].peer_group
-        if first_group is None or any(slot.peer_group != first_group for slot in bodies[1:]):
+        if first_group is None or any(
+            slot.peer_group != first_group for slot in bodies[1:]
+        ):
             return False
         first_alignment = bodies[0].alignment_group
-        if first_alignment is None or any(slot.alignment_group != first_alignment for slot in bodies[1:]):
+        if first_alignment is None or any(
+            slot.alignment_group != first_alignment for slot in bodies[1:]
+        ):
             return False
     validation_slots = {
         "heading": heading,
@@ -488,14 +661,23 @@ def _is_valid_variant(*, heading: SlotDef, bodies: list[SlotDef], theme: Theme) 
         grid=_TEMPLATE_GRID,
         text_fitting=_variant_text_fitting(validation_slots),
     )
-    rects = solve(constraints_from_layout(validation_layout, theme), {}, lambda _slot_name, _content, _width: 0.0)
-    return not any(violation.severity == "error" for violation in validate_layout(validation_layout, rects))
+    rects = solve(
+        constraints_from_layout(validation_layout, theme),
+        {},
+        lambda _slot_name, _content, _width: 0.0,
+    )
+    return not any(
+        violation.severity == "error"
+        for violation in validate_layout(validation_layout, rects)
+    )
 
 
 def _same_horizontal_band(left: SlotDef, right: SlotDef) -> bool:
     if left.y is None or right.y is None:
         return False
-    return abs(float(left.y) - float(right.y)) <= _PEER_Y_EPSILON_PT and _height_close(left, right)
+    return abs(float(left.y) - float(right.y)) <= _PEER_Y_EPSILON_PT and _height_close(
+        left, right
+    )
 
 
 def _expand_slot_horizontally(anchor: SlotDef, peers: list[SlotDef]) -> SlotDef | None:
@@ -515,14 +697,24 @@ def _generate_image_free_variant(
 ) -> LayoutDef | None:
     if len(body_slots) != 1 or not image_slots:
         return None
-    peer_images = [slot for slot in image_slots if _same_horizontal_band(body_slots[0], slot)]
+    peer_images = [
+        slot for slot in image_slots if _same_horizontal_band(body_slots[0], slot)
+    ]
     if not peer_images:
         return None
     expanded_body = _expand_slot_horizontally(body_slots[0], peer_images)
-    if expanded_body is None or not _is_valid_variant(heading=heading, bodies=[expanded_body], theme=theme):
+    if expanded_body is None or not _is_valid_variant(
+        heading=heading, bodies=[expanded_body], theme=theme
+    ):
         return None
     title_content_slots = {
-        "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
+        "heading": _copy_slot(
+            heading,
+            peer_group=None,
+            alignment_group="top",
+            reading_order=0,
+            size_policy="fit_content",
+        ),
         "body": _copy_slot(
             expanded_body,
             peer_group=None,
@@ -540,9 +732,15 @@ def _generate_image_free_variant(
 
 
 def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
-    heading_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "heading"]
-    body_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "body"]
-    image_slots = [slot for _, slot in _reading_order(layout.slots) if slot.role == "image"]
+    heading_slots = [
+        slot for _, slot in _reading_order(layout.slots) if slot.role == "heading"
+    ]
+    body_slots = [
+        slot for _, slot in _reading_order(layout.slots) if slot.role == "body"
+    ]
+    image_slots = [
+        slot for _, slot in _reading_order(layout.slots) if slot.role == "image"
+    ]
     if len(heading_slots) != 1 or len(body_slots) < 1:
         return []
 
@@ -553,9 +751,17 @@ def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
     if image_free is not None:
         variants.append(image_free)
 
-    if len(body_slots) == 2 and _is_valid_variant(heading=heading, bodies=[body_slots[0]], theme=theme):
+    if len(body_slots) == 2 and _is_valid_variant(
+        heading=heading, bodies=[body_slots[0]], theme=theme
+    ):
         title_content_slots = {
-            "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
+            "heading": _copy_slot(
+                heading,
+                peer_group=None,
+                alignment_group="top",
+                reading_order=0,
+                size_policy="fit_content",
+            ),
             "body": _copy_slot(
                 body_slots[0],
                 peer_group=None,
@@ -579,7 +785,13 @@ def _generate_variants(layout: LayoutDef, theme: Theme) -> list[LayoutDef]:
             continue
 
         column_slots = {
-            "heading": _copy_slot(heading, peer_group=None, alignment_group="top", reading_order=0, size_policy="fit_content"),
+            "heading": _copy_slot(
+                heading,
+                peer_group=None,
+                alignment_group="top",
+                reading_order=0,
+                size_policy="fit_content",
+            ),
             **{
                 f"col{index}": _copy_slot(
                     body_slot,
@@ -611,7 +823,9 @@ class TemplateLayoutRegistry:
         try:
             payload = json.loads(self._manifest_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise AgentSlidesError(SCHEMA_ERROR, f"Template manifest not found: {self._manifest_path}") from exc
+            raise AgentSlidesError(
+                SCHEMA_ERROR, f"Template manifest not found: {self._manifest_path}"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise AgentSlidesError(
                 SCHEMA_ERROR,
@@ -636,15 +850,31 @@ class TemplateLayoutRegistry:
     def _load_layouts(self, manifest: dict[str, Any]) -> None:
         for raw_layout in _coerce_layout_entries(manifest):
             slug = _require_string(raw_layout.get("slug"), context="layout.slug")
-            slot_mapping = _as_dict(raw_layout.get("slot_mapping", {}), context=f"layout[{slug!r}].slot_mapping")
-            placeholders_by_idx = _coerce_placeholder_index(raw_layout.get("placeholders"), slug=slug)
-            slot_mapping = normalize_template_slot_mapping(slot_mapping, placeholders_by_idx=placeholders_by_idx)
+            slot_mapping = _as_dict(
+                raw_layout.get("slot_mapping", {}),
+                context=f"layout[{slug!r}].slot_mapping",
+            )
+            placeholders_by_idx = _coerce_placeholder_index(
+                raw_layout.get("placeholders"), slug=slug
+            )
+            slot_mapping = normalize_template_slot_mapping(
+                slot_mapping, placeholders_by_idx=placeholders_by_idx
+            )
+            slot_mapping = _augment_virtual_slots(
+                slot_mapping,
+                placeholders_by_idx=placeholders_by_idx,
+                theme=self._theme,
+            )
             master_index = raw_layout.get("master_index", 0)
             layout_index = raw_layout.get("index", 0)
             if isinstance(master_index, bool) or not isinstance(master_index, int):
-                raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].master_index must be an integer")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, f"layout[{slug!r}].master_index must be an integer"
+                )
             if isinstance(layout_index, bool) or not isinstance(layout_index, int):
-                raise AgentSlidesError(SCHEMA_ERROR, f"layout[{slug!r}].index must be an integer")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, f"layout[{slug!r}].index must be an integer"
+                )
             slots = {
                 slot_name: _build_slot(
                     slot_name,
@@ -691,13 +921,17 @@ class TemplateLayoutRegistry:
             value = manifest.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
-        raise AgentSlidesError(SCHEMA_ERROR, "Template manifest is missing source hash metadata")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Template manifest is missing source hash metadata"
+        )
 
     def _resolve_theme(self, manifest: dict[str, Any]) -> Theme:
         default_theme = load_theme("default")
         raw_theme = manifest.get("theme", {})
         if not isinstance(raw_theme, dict):
-            raise AgentSlidesError(SCHEMA_ERROR, "Manifest field 'theme' must be an object")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "Manifest field 'theme' must be an object"
+            )
 
         raw_name = raw_theme.get("name")
         if isinstance(raw_name, str) and raw_name.strip():
@@ -706,23 +940,40 @@ class TemplateLayoutRegistry:
             stem = self._manifest_path.name.removesuffix(".json")
             if stem.endswith(".manifest"):
                 stem = stem.removesuffix(".manifest")
-            slug = _THEME_SLUG_PATTERN.sub("-", stem.casefold()).strip("-") or "template"
+            slug = (
+                _THEME_SLUG_PATTERN.sub("-", stem.casefold()).strip("-") or "template"
+            )
             theme_name = f"extracted-{slug}"
 
         raw_colors = raw_theme.get("colors", {})
         raw_fonts = raw_theme.get("fonts", {})
         raw_spacing = raw_theme.get("spacing", {})
-        if not isinstance(raw_colors, dict) or not isinstance(raw_fonts, dict) or not isinstance(raw_spacing, dict):
-            raise AgentSlidesError(SCHEMA_ERROR, "Template theme colors, fonts, and spacing must be objects")
+        if (
+            not isinstance(raw_colors, dict)
+            or not isinstance(raw_fonts, dict)
+            or not isinstance(raw_spacing, dict)
+        ):
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                "Template theme colors, fonts, and spacing must be objects",
+            )
 
         return Theme(
             name=theme_name,
             colors=ThemeColors(
                 primary=str(raw_colors.get("primary", default_theme.colors.primary)),
-                secondary=str(raw_colors.get("secondary", default_theme.colors.secondary)),
+                secondary=str(
+                    raw_colors.get("secondary", default_theme.colors.secondary)
+                ),
                 accent=str(raw_colors.get("accent", default_theme.colors.accent)),
-                background=str(raw_colors.get("background", default_theme.colors.background)),
-                text=str(raw_colors.get("text", raw_colors.get("foreground", default_theme.colors.text))),
+                background=str(
+                    raw_colors.get("background", default_theme.colors.background)
+                ),
+                text=str(
+                    raw_colors.get(
+                        "text", raw_colors.get("foreground", default_theme.colors.text)
+                    )
+                ),
                 heading_text=(
                     str(raw_colors["heading_text"])
                     if "heading_text" in raw_colors
@@ -739,7 +990,9 @@ class TemplateLayoutRegistry:
                 body=str(raw_fonts.get("body", default_theme.fonts.body)),
             ),
             spacing=ThemeSpacing(
-                base_unit=float(raw_spacing.get("base_unit", default_theme.spacing.base_unit)),
+                base_unit=float(
+                    raw_spacing.get("base_unit", default_theme.spacing.base_unit)
+                ),
                 margin=float(raw_spacing.get("margin", default_theme.spacing.margin)),
                 gutter=float(raw_spacing.get("gutter", default_theme.spacing.gutter)),
             ),

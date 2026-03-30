@@ -8,7 +8,15 @@ from pptx import Presentation
 
 from agent_slides.cli import cli
 from agent_slides.io import write_computed_deck
-from agent_slides.model import ChartSpec, Counters, Deck, Node, NodeContent, Slide, TextBlock
+from agent_slides.model import (
+    ChartSpec,
+    Counters,
+    Deck,
+    Node,
+    NodeContent,
+    Slide,
+    TextBlock,
+)
 from tests.image_helpers import write_png
 from tests.test_e2e_template import create_test_template, parse_last_json_line
 
@@ -22,7 +30,9 @@ def write_deck(path: Path, deck: Deck) -> None:
 
 
 def fake_render_factory() -> object:
-    def fake_render_pptx_to_pngs(pptx_path: Path, output_dir: Path, *, dpi: int) -> tuple[Path, list[Path]]:
+    def fake_render_pptx_to_pngs(
+        pptx_path: Path, output_dir: Path, *, dpi: int
+    ) -> tuple[Path, list[Path]]:
         assert dpi == 200
         pdf_dir = output_dir / "pdf"
         pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -52,28 +62,64 @@ def test_review_command_generates_visual_report(monkeypatch, tmp_path: Path) -> 
                 slide_id="s-1",
                 layout="title",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Q2 revenue review"),
-                    Node(node_id="n-2", slot_binding="subheading", type="text", content="March 2026"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Q2 revenue review",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="subheading",
+                        type="text",
+                        content="March 2026",
+                    ),
                 ],
             ),
             Slide(
                 slide_id="s-2",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-3", slot_binding="heading", type="text", content="Market Overview"),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="heading",
+                        type="text",
+                        content="Market Overview",
+                    ),
                     Node(
                         node_id="n-4",
                         slot_binding="body",
                         type="text",
                         content=NodeContent(
                             blocks=[
-                                TextBlock(type="bullet", text="Automation cuts weekly reporting time by 60%"),
-                                TextBlock(type="bullet", text="Sales coverage expanded into three new segments"),
-                                TextBlock(type="bullet", text="NPS improved after the onboarding refresh"),
-                                TextBlock(type="bullet", text="Revenue pipeline quality improved in enterprise"),
-                                TextBlock(type="bullet", text="Channel mix shifted toward higher-retention accounts"),
-                                TextBlock(type="bullet", text="Forecast variance narrowed materially"),
-                                TextBlock(type="bullet", text="Support backlog dropped below the target band"),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Automation cuts weekly reporting time by 60%",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Sales coverage expanded into three new segments",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="NPS improved after the onboarding refresh",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Revenue pipeline quality improved in enterprise",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Channel mix shifted toward higher-retention accounts",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Forecast variance narrowed materially",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Support backlog dropped below the target band",
+                                ),
                             ]
                         ),
                     ),
@@ -107,10 +153,14 @@ def test_review_command_generates_visual_report(monkeypatch, tmp_path: Path) -> 
         counters=Counters(slides=3, nodes=6),
     )
     write_deck(deck_path, deck)
-    monkeypatch.setattr("agent_slides.review.render_pptx_to_pngs", fake_render_factory())
+    monkeypatch.setattr(
+        "agent_slides.review.render_pptx_to_pngs", fake_render_factory()
+    )
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["review", str(deck_path), "--output-dir", str(output_dir)])
+    result = runner.invoke(
+        cli, ["review", str(deck_path), "--output-dir", str(output_dir)]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -138,7 +188,9 @@ def test_review_command_generates_visual_report(monkeypatch, tmp_path: Path) -> 
     assert "slide-02.png" in report_path.read_text(encoding="utf-8")
 
 
-def test_review_fix_rewrites_titles_and_chart_metadata(monkeypatch, tmp_path: Path) -> None:
+def test_review_fix_rewrites_titles_and_chart_metadata(
+    monkeypatch, tmp_path: Path
+) -> None:
     deck_path = tmp_path / "deck.json"
     output_dir = tmp_path / "review-artifacts"
     deck = Deck(
@@ -148,21 +200,50 @@ def test_review_fix_rewrites_titles_and_chart_metadata(monkeypatch, tmp_path: Pa
                 slide_id="s-1",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Market Overview"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Market Overview",
+                    ),
                     Node(
                         node_id="n-2",
                         slot_binding="body",
                         type="text",
                         content=NodeContent(
                             blocks=[
-                                TextBlock(type="bullet", text="Automation cuts weekly reporting time by 60%"),
-                                TextBlock(type="bullet", text="Sales coverage expanded into three new segments"),
-                                TextBlock(type="bullet", text="NPS improved after the onboarding refresh"),
-                                TextBlock(type="bullet", text="Revenue pipeline quality improved in enterprise"),
-                                TextBlock(type="bullet", text="Channel mix shifted toward higher-retention accounts"),
-                                TextBlock(type="bullet", text="Forecast variance narrowed materially"),
-                                TextBlock(type="bullet", text="Support backlog dropped below the target band"),
-                                TextBlock(type="bullet", text="Renewal risk fell in the SMB cohort"),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Automation cuts weekly reporting time by 60%",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Sales coverage expanded into three new segments",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="NPS improved after the onboarding refresh",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Revenue pipeline quality improved in enterprise",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Channel mix shifted toward higher-retention accounts",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Forecast variance narrowed materially",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Support backlog dropped below the target band",
+                                ),
+                                TextBlock(
+                                    type="bullet",
+                                    text="Renewal risk fell in the SMB cohort",
+                                ),
                             ]
                         ),
                     ),
@@ -172,7 +253,12 @@ def test_review_fix_rewrites_titles_and_chart_metadata(monkeypatch, tmp_path: Pa
                 slide_id="s-2",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-3", slot_binding="heading", type="text", content="Regional performance"),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="heading",
+                        type="text",
+                        content="Regional performance",
+                    ),
                     Node(
                         node_id="n-4",
                         slot_binding="body",
@@ -191,10 +277,14 @@ def test_review_fix_rewrites_titles_and_chart_metadata(monkeypatch, tmp_path: Pa
         counters=Counters(slides=2, nodes=4),
     )
     write_deck(deck_path, deck)
-    monkeypatch.setattr("agent_slides.review.render_pptx_to_pngs", fake_render_factory())
+    monkeypatch.setattr(
+        "agent_slides.review.render_pptx_to_pngs", fake_render_factory()
+    )
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["review", str(deck_path), "--output-dir", str(output_dir), "--fix"])
+    result = runner.invoke(
+        cli, ["review", str(deck_path), "--output-dir", str(output_dir), "--fix"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -202,25 +292,50 @@ def test_review_fix_rewrites_titles_and_chart_metadata(monkeypatch, tmp_path: Pa
 
     updated = Deck.model_validate_json(deck_path.read_text(encoding="utf-8"))
     assert len(updated.slides) == 3
-    assert updated.slides[0].nodes[0].content.to_plain_text() == "Automation cuts weekly reporting time by 60%"
+    assert (
+        updated.slides[0].nodes[0].content.to_plain_text()
+        == "Automation cuts weekly reporting time by 60%"
+    )
     assert updated.slides[1].nodes[0].content.to_plain_text().endswith("(continued)")
     assert updated.slides[2].nodes[1].chart_spec is not None
-    assert updated.slides[2].nodes[0].content.to_plain_text() == "Revenue increased from Q1 to Q2"
-    assert updated.slides[2].nodes[1].chart_spec.title == "Revenue increased from Q1 to Q2"
+    assert (
+        updated.slides[2].nodes[0].content.to_plain_text()
+        == "Revenue increased from Q1 to Q2"
+    )
+    assert (
+        updated.slides[2].nodes[1].chart_spec.title == "Revenue increased from Q1 to Q2"
+    )
 
-    report = json.loads(Path(payload["data"]["report_json_path"]).read_text(encoding="utf-8"))
+    report = json.loads(
+        Path(payload["data"]["report_json_path"]).read_text(encoding="utf-8")
+    )
     assert report["comparison"]["before_grade"]
     assert report["comparison"]["after_grade"]
     assert report["fixes_applied"]
 
 
-def test_review_command_fails_cleanly_when_tooling_is_missing(monkeypatch, tmp_path: Path) -> None:
+def test_review_command_fails_cleanly_when_tooling_is_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
     deck_path = tmp_path / "deck.json"
     write_deck(
         deck_path,
         Deck(
             deck_id="deck-missing-tool",
-            slides=[Slide(slide_id="s-1", layout="title", nodes=[Node(node_id="n-1", slot_binding="heading", type="text", content="Hello")])],
+            slides=[
+                Slide(
+                    slide_id="s-1",
+                    layout="title",
+                    nodes=[
+                        Node(
+                            node_id="n-1",
+                            slot_binding="heading",
+                            type="text",
+                            content="Hello",
+                        )
+                    ],
+                )
+            ],
             counters=Counters(slides=1, nodes=1),
         ),
     )
@@ -249,7 +364,9 @@ def test_review_command_supports_template_decks(monkeypatch, tmp_path: Path) -> 
     learn_result = runner.invoke(cli, ["learn", str(template_path)])
     assert learn_result.exit_code == 0
     manifest_path = tmp_path / "brand-template.manifest.json"
-    init_result = runner.invoke(cli, ["init", str(deck_path), "--template", str(manifest_path)])
+    init_result = runner.invoke(
+        cli, ["init", str(deck_path), "--template", str(manifest_path)]
+    )
     assert init_result.exit_code == 0
     runner.invoke(
         cli,
@@ -257,15 +374,31 @@ def test_review_command_supports_template_decks(monkeypatch, tmp_path: Path) -> 
     )
     runner.invoke(
         cli,
-        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "heading", "--text", "Template deck review"],
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "heading",
+            "--text",
+            "Template deck review",
+        ],
     )
-    monkeypatch.setattr("agent_slides.review.render_pptx_to_pngs", fake_render_factory())
+    monkeypatch.setattr(
+        "agent_slides.review.render_pptx_to_pngs", fake_render_factory()
+    )
 
-    result = runner.invoke(cli, ["review", str(deck_path), "--output-dir", str(output_dir)])
+    result = runner.invoke(
+        cli, ["review", str(deck_path), "--output-dir", str(output_dir)]
+    )
 
     assert result.exit_code == 0
     payload = parse_last_json_line(result.output)
-    report = json.loads(Path(payload["data"]["report_json_path"]).read_text(encoding="utf-8"))
+    report = json.loads(
+        Path(payload["data"]["report_json_path"]).read_text(encoding="utf-8")
+    )
     signals = json.loads((output_dir / "signals.json").read_text(encoding="utf-8"))
     assert report["active"]["deck"]["template"] == "template"
     assert len(signals) == 1

@@ -11,7 +11,17 @@ from agent_slides.engine.layout_validator import (
     validate_layout,
 )
 from agent_slides.engine.reflow import reflow_deck, reflow_slide
-from agent_slides.model import ComputedNode, Counters, Deck, GridDef, LayoutDef, Node, Slide, SlotDef, TextFitting
+from agent_slides.model import (
+    ComputedNode,
+    Counters,
+    Deck,
+    GridDef,
+    LayoutDef,
+    Node,
+    Slide,
+    SlotDef,
+    TextFitting,
+)
 from agent_slides.model.themes import load_theme
 
 
@@ -19,7 +29,14 @@ def _layout(slots: dict[str, SlotDef]) -> LayoutDef:
     return LayoutDef(
         name="custom",
         slots=slots,
-        grid=GridDef(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0], margin=0.0, gutter=0.0),
+        grid=GridDef(
+            columns=1,
+            rows=1,
+            row_heights=[1.0],
+            col_widths=[1.0],
+            margin=0.0,
+            gutter=0.0,
+        ),
         text_fitting={
             "heading": TextFitting(default_size=32.0, min_size=24.0),
             "body": TextFitting(default_size=18.0, min_size=10.0),
@@ -27,7 +44,9 @@ def _layout(slots: dict[str, SlotDef]) -> LayoutDef:
     )
 
 
-def _body_slot(*, x: float, y: float, width: float, height: float, peer_group: str = "columns") -> SlotDef:
+def _body_slot(
+    *, x: float, y: float, width: float, height: float, peer_group: str = "columns"
+) -> SlotDef:
     return SlotDef(
         grid_row=1,
         grid_col=1,
@@ -116,9 +135,15 @@ def test_validate_layout_checks_consistent_gutters() -> None:
 def test_validate_layout_checks_bounds_and_overlap_edges() -> None:
     layout = _layout(
         {
-            "left": _body_slot(x=-8.0, y=40.0, width=180.0, height=220.0, peer_group="cards"),
-            "center": _body_slot(x=172.0, y=40.0, width=180.0, height=220.0, peer_group="cards"),
-            "right": _body_slot(x=340.0, y=40.0, width=180.0, height=220.0, peer_group="cards"),
+            "left": _body_slot(
+                x=-8.0, y=40.0, width=180.0, height=220.0, peer_group="cards"
+            ),
+            "center": _body_slot(
+                x=172.0, y=40.0, width=180.0, height=220.0, peer_group="cards"
+            ),
+            "right": _body_slot(
+                x=340.0, y=40.0, width=180.0, height=220.0, peer_group="cards"
+            ),
         }
     )
 
@@ -155,7 +180,13 @@ def test_validate_layout_checks_bounds_and_overlap_edges() -> None:
 
 
 def test_validate_layout_reports_explicit_text_overflow() -> None:
-    layout = _layout({"body": _body_slot(x=60.0, y=120.0, width=420.0, height=120.0, peer_group="body")})
+    layout = _layout(
+        {
+            "body": _body_slot(
+                x=60.0, y=120.0, width=420.0, height=120.0, peer_group="body"
+            )
+        }
+    )
 
     violations = validate_layout(
         layout,
@@ -211,14 +242,21 @@ def test_reflow_slide_returns_layout_validator_errors() -> None:
         slide_id="s-1",
         layout="custom",
         nodes=[
-            Node(node_id="n-1", slot_binding="left", type="text", content="Left column"),
-            Node(node_id="n-2", slot_binding="right", type="text", content="Right column"),
+            Node(
+                node_id="n-1", slot_binding="left", type="text", content="Left column"
+            ),
+            Node(
+                node_id="n-2", slot_binding="right", type="text", content="Right column"
+            ),
         ],
     )
 
     violations = reflow_slide(slide, layout, load_theme("default"))
 
-    assert {violation.code for violation in violations} == {PEER_TOP_MISMATCH, PEER_WIDTH_MISMATCH}
+    assert {violation.code for violation in violations} == {
+        PEER_TOP_MISMATCH,
+        PEER_WIDTH_MISMATCH,
+    }
 
 
 class _SingleLayoutProvider:
@@ -257,8 +295,15 @@ def test_reflow_deck_returns_validator_errors_by_slide() -> None:
                 slide_id="s-1",
                 layout="custom",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="left", type="text", content="Left"),
-                    Node(node_id="n-2", slot_binding="right", type="text", content="Right"),
+                    Node(
+                        node_id="n-1", slot_binding="left", type="text", content="Left"
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="right",
+                        type="text",
+                        content="Right",
+                    ),
                 ],
             )
         ],

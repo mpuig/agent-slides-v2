@@ -7,7 +7,15 @@ from click.testing import CliRunner
 
 from agent_slides.cli import cli
 from agent_slides.io import read_deck
-from agent_slides.model import BuiltinLayoutProvider, ComputedNode, Counters, Deck, Node, Slide, resolve_layout_provider
+from agent_slides.model import (
+    BuiltinLayoutProvider,
+    ComputedNode,
+    Counters,
+    Deck,
+    Node,
+    Slide,
+    resolve_layout_provider,
+)
 from agent_slides.render_oracle import generate_render_signals
 from tests.test_e2e_template import create_test_template
 
@@ -20,7 +28,12 @@ def test_generate_render_signals_flags_expected_builtin_conditions() -> None:
                 slide_id="s-1",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Signal title"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Signal title",
+                    ),
                 ],
                 computed={
                     "n-1": ComputedNode(
@@ -39,8 +52,18 @@ def test_generate_render_signals_flags_expected_builtin_conditions() -> None:
                 slide_id="s-2",
                 layout="image_left",
                 nodes=[
-                    Node(node_id="n-2", slot_binding="heading", type="text", content="Image slide"),
-                    Node(node_id="n-3", slot_binding="body", type="text", content="Body copy"),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="heading",
+                        type="text",
+                        content="Image slide",
+                    ),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="body",
+                        type="text",
+                        content="Body copy",
+                    ),
                 ],
                 computed={
                     "n-2": ComputedNode(
@@ -103,15 +126,29 @@ def test_generate_render_signals_supports_template_layouts(tmp_path: Path) -> No
     assert learn_result.exit_code == 0
 
     manifest_path = tmp_path / "brand-template.manifest.json"
-    init_result = runner.invoke(cli, ["init", str(deck_path), "--template", str(manifest_path)])
+    init_result = runner.invoke(
+        cli, ["init", str(deck_path), "--template", str(manifest_path)]
+    )
     assert init_result.exit_code == 0
 
-    add_result = runner.invoke(cli, ["slide", "add", str(deck_path), "--layout", "title_slide"])
+    add_result = runner.invoke(
+        cli, ["slide", "add", str(deck_path), "--layout", "title_slide"]
+    )
     assert add_result.exit_code == 0
 
     slot_result = runner.invoke(
         cli,
-        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "heading", "--text", "Template title"],
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "heading",
+            "--text",
+            "Template title",
+        ],
     )
     assert slot_result.exit_code == 0
 
@@ -147,18 +184,32 @@ def test_review_command_writes_signals_json(monkeypatch, tmp_path: Path) -> None
                     slide_id="s-1",
                     layout="image_left",
                     nodes=[
-                        Node(node_id="n-1", slot_binding="heading", type="text", content="Signal review"),
-                        Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                        Node(
+                            node_id="n-1",
+                            slot_binding="heading",
+                            type="text",
+                            content="Signal review",
+                        ),
+                        Node(
+                            node_id="n-2",
+                            slot_binding="body",
+                            type="text",
+                            content="Body",
+                        ),
                     ],
                 )
             ],
             counters=Counters(slides=1, nodes=2),
         ),
     )
-    monkeypatch.setattr("agent_slides.review.render_pptx_to_pngs", fake_render_factory())
+    monkeypatch.setattr(
+        "agent_slides.review.render_pptx_to_pngs", fake_render_factory()
+    )
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["review", str(deck_path), "--output-dir", str(output_dir)])
+    result = runner.invoke(
+        cli, ["review", str(deck_path), "--output-dir", str(output_dir)]
+    )
 
     assert result.exit_code == 0
     signals = json.loads((output_dir / "signals.json").read_text(encoding="utf-8"))

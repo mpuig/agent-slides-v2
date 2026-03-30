@@ -23,7 +23,9 @@ from agent_slides.template_slots import infer_template_slot_role
 DEFAULT_BASE_UNIT_PT = 10.0
 BODY_ROW_THRESHOLD_PT = 54.0
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
-THEME_RELATIONSHIP = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+THEME_RELATIONSHIP = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+)
 DRAWINGML_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 NON_PLACEHOLDER_IDX_OFFSET = 1_000_000
@@ -70,9 +72,15 @@ def read_template_manifest(
 
     source_path = Path(template_path)
     if not source_path.exists():
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Template file not found: {source_path}")
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Template file not found: {source_path}"
+        )
 
-    manifest_path = Path(output_path) if output_path is not None else _default_manifest_path(source_path)
+    manifest_path = (
+        Path(output_path)
+        if output_path is not None
+        else _default_manifest_path(source_path)
+    )
     presentation = _open_presentation(source_path)
     return _build_manifest(source_path, manifest_path, presentation)
 
@@ -85,10 +93,14 @@ def _open_presentation(template_path: Path) -> Presentation:
     try:
         return Presentation(template_path)
     except FileNotFoundError as exc:
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Template file not found: {template_path}") from exc
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Template file not found: {template_path}"
+        ) from exc
     except (BadZipFile, KeyError, ValueError) as exc:
         if _looks_like_encrypted_office_file(template_path):
-            raise AgentSlidesError(SCHEMA_ERROR, "password-protected files not supported") from exc
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "password-protected files not supported"
+            ) from exc
         raise AgentSlidesError(SCHEMA_ERROR, "not a valid PPTX file") from exc
     except Exception as exc:
         raise AgentSlidesError(SCHEMA_ERROR, "not a valid PPTX file") from exc
@@ -102,7 +114,9 @@ def _looks_like_encrypted_office_file(path: Path) -> bool:
         return False
 
 
-def _build_manifest(template_path: Path, manifest_path: Path, presentation: Presentation) -> LearnResult:
+def _build_manifest(
+    template_path: Path, manifest_path: Path, presentation: Presentation
+) -> LearnResult:
     layouts_found = 0
     usable_layouts = 0
     warnings: list[str] = []
@@ -114,7 +128,9 @@ def _build_manifest(template_path: Path, manifest_path: Path, presentation: Pres
         for layout_index, slide_layout in enumerate(slide_master.slide_layouts):
             layouts_found += 1
             layout_name = slide_layout.name or f"Layout {layout_index + 1}"
-            placeholders, slot_mapping, layout_warnings = _extract_layout(slide_layout, layout_name)
+            placeholders, slot_mapping, layout_warnings = _extract_layout(
+                slide_layout, layout_name
+            )
             warnings.extend(layout_warnings)
 
             slug = _unique_slug(layout_name, slug_counts)
@@ -164,12 +180,16 @@ def _build_manifest(template_path: Path, manifest_path: Path, presentation: Pres
     )
 
 
-def _extract_layout(slide_layout: object, layout_name: str) -> tuple[list[dict[str, object]], dict[str, int], list[str]]:
+def _extract_layout(
+    slide_layout: object, layout_name: str
+) -> tuple[list[dict[str, object]], dict[str, int], list[str]]:
     placeholders: list[dict[str, object]] = []
     warnings: list[str] = []
 
     for placeholder in slide_layout.placeholders:
-        placeholder_type = _normalize_placeholder_type(placeholder.placeholder_format.type)
+        placeholder_type = _normalize_placeholder_type(
+            placeholder.placeholder_format.type
+        )
         if placeholder_type is None:
             raw_type = placeholder.placeholder_format.type
             if raw_type in _WARNING_ONLY_PLACEHOLDERS:
@@ -211,11 +231,15 @@ def _build_slot_mapping(placeholders: list[dict[str, object]]) -> dict[str, int]
 
     titles = _placeholders_of_type(placeholders, "TITLE")
     if titles:
-        slot_mapping["heading"] = int(sorted(titles, key=_sort_key_by_position)[0]["idx"])
+        slot_mapping["heading"] = int(
+            sorted(titles, key=_sort_key_by_position)[0]["idx"]
+        )
 
     subtitles = _placeholders_of_type(placeholders, "SUBTITLE")
     if subtitles:
-        slot_mapping["subheading"] = int(sorted(subtitles, key=_sort_key_by_position)[0]["idx"])
+        slot_mapping["subheading"] = int(
+            sorted(subtitles, key=_sort_key_by_position)[0]["idx"]
+        )
 
     claimed_indexes = set(slot_mapping.values())
     suggestions = _collect_suggested_slots(placeholders)
@@ -229,31 +253,51 @@ def _build_slot_mapping(placeholders: list[dict[str, object]]) -> dict[str, int]
     unmapped_body_like = [
         placeholder
         for placeholder in placeholders
-        if placeholder["type"] in BODY_SLOT_TYPES and int(placeholder["idx"]) not in claimed_indexes
+        if placeholder["type"] in BODY_SLOT_TYPES
+        and int(placeholder["idx"]) not in claimed_indexes
+        and _placeholder_height(placeholder) >= _MIN_BODY_HEIGHT_PT
     ]
-    preferred_types = {"BODY"} if any(placeholder["type"] == "BODY" for placeholder in unmapped_body_like) else BODY_SLOT_TYPES
+    preferred_types = (
+        {"BODY"}
+        if any(placeholder["type"] == "BODY" for placeholder in unmapped_body_like)
+        else BODY_SLOT_TYPES
+    )
     bodies = sorted(
-        [placeholder for placeholder in unmapped_body_like if placeholder["type"] in preferred_types],
+        [
+            placeholder
+            for placeholder in unmapped_body_like
+            if placeholder["type"] in preferred_types
+        ],
         key=_sort_key_by_position,
     )
     if len(bodies) == 1:
         slot_mapping["body"] = int(bodies[0]["idx"])
     elif len(bodies) > 1:
         if _same_row(bodies):
-            for index, placeholder in enumerate(sorted(bodies, key=_sort_key_by_x), start=1):
+            for index, placeholder in enumerate(
+                sorted(bodies, key=_sort_key_by_x), start=1
+            ):
                 slot_mapping[f"col{index}"] = int(placeholder["idx"])
         else:
             slot_mapping["body"] = int(bodies[0]["idx"])
 
-    pictures = sorted(_placeholders_of_type(placeholders, "PICTURE"), key=_sort_key_by_position)
+    pictures = sorted(
+        _placeholders_of_type(placeholders, "PICTURE"), key=_sort_key_by_position
+    )
     if pictures:
         slot_mapping["image"] = int(pictures[0]["idx"])
 
     return slot_mapping
 
 
-def _placeholders_of_type(placeholders: list[dict[str, object]], placeholder_type: str) -> list[dict[str, object]]:
-    return [placeholder for placeholder in placeholders if placeholder["type"] == placeholder_type]
+def _placeholders_of_type(
+    placeholders: list[dict[str, object]], placeholder_type: str
+) -> list[dict[str, object]]:
+    return [
+        placeholder
+        for placeholder in placeholders
+        if placeholder["type"] == placeholder_type
+    ]
 
 
 def _same_row(placeholders: list[dict[str, object]]) -> bool:
@@ -362,13 +406,25 @@ def _shape_text(shape: Any) -> str:
     return ""
 
 
-def _collect_suggested_slots(placeholders: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+def _collect_suggested_slots(
+    placeholders: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
     suggestions: dict[str, list[dict[str, object]]] = {}
     for placeholder in placeholders:
         slot_name = placeholder.get("suggested_slot")
         if isinstance(slot_name, str) and slot_name:
             suggestions.setdefault(slot_name, []).append(placeholder)
     return suggestions
+
+
+_MIN_BODY_HEIGHT_PT = 20.0
+
+
+def _placeholder_height(placeholder: Mapping[str, object]) -> float:
+    bounds = placeholder.get("bounds")
+    if isinstance(bounds, dict):
+        return float(bounds.get("h", bounds.get("height", 0)))
+    return 0.0
 
 
 def _suggest_slot_name(placeholder: Mapping[str, object]) -> str | None:
@@ -381,6 +437,14 @@ def _suggest_slot_name(placeholder: Mapping[str, object]) -> str | None:
         return "image"
     if placeholder_type not in BODY_SLOT_TYPES:
         return None
+
+    # Skip tiny text boxes (< 20pt tall) — these are typically copyright or
+    # footer lines, not real body content areas.
+    bounds = placeholder.get("bounds")
+    if isinstance(bounds, dict):
+        height = float(bounds.get("h", bounds.get("height", 0)))
+        if height < _MIN_BODY_HEIGHT_PT:
+            return None
 
     role = infer_template_slot_role(str(placeholder.get("name", "")), placeholder)
     if role in {"quote", "attribution"}:
@@ -443,7 +507,9 @@ def _theme_root(presentation: Presentation) -> ET.Element:
 def _theme_color(theme_root: ET.Element, color_name: str) -> str:
     color_element = theme_root.find(f".//a:clrScheme/a:{color_name}", DRAWINGML_NS)
     if color_element is None:
-        raise AgentSlidesError(SCHEMA_ERROR, f"template theme color '{color_name}' could not be read")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"template theme color '{color_name}' could not be read"
+        )
 
     srgb = color_element.find("./a:srgbClr", DRAWINGML_NS)
     if srgb is not None:
@@ -453,18 +519,24 @@ def _theme_color(theme_root: ET.Element, color_name: str) -> str:
     if system is not None:
         return f"#{system.attrib.get('lastClr', system.attrib['val'])}"
 
-    raise AgentSlidesError(SCHEMA_ERROR, f"template theme color '{color_name}' could not be read")
+    raise AgentSlidesError(
+        SCHEMA_ERROR, f"template theme color '{color_name}' could not be read"
+    )
 
 
 def _theme_font(theme_root: ET.Element, font_family: str) -> str:
     font = theme_root.find(f".//a:fontScheme/a:{font_family}/a:latin", DRAWINGML_NS)
     if font is None or "typeface" not in font.attrib:
-        raise AgentSlidesError(SCHEMA_ERROR, f"template theme font '{font_family}' could not be read")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"template theme font '{font_family}' could not be read"
+        )
     return font.attrib["typeface"]
 
 
 def _relative_source_path(template_path: Path, manifest_path: Path) -> str:
-    relative_path = os.path.relpath(template_path.resolve(), manifest_path.parent.resolve())
+    relative_path = os.path.relpath(
+        template_path.resolve(), manifest_path.parent.resolve()
+    )
     return Path(relative_path).as_posix()
 
 

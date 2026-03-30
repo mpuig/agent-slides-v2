@@ -140,7 +140,9 @@ def test_deck_json_round_trip_uses_counters_alias() -> None:
 def test_legacy_string_content_is_coerced_to_structured_paragraphs() -> None:
     node = Node(node_id="n-1", type="text", content="Hello world")
 
-    assert node.content == NodeContent(blocks=[TextBlock(type="paragraph", text="Hello world")])
+    assert node.content == NodeContent(
+        blocks=[TextBlock(type="paragraph", text="Hello world")]
+    )
 
 
 def test_node_content_from_text_converts_mixed_bullet_lines_to_blocks() -> None:
@@ -155,7 +157,9 @@ def test_node_content_from_text_converts_mixed_bullet_lines_to_blocks() -> None:
     )
 
 
-def test_node_content_from_text_keeps_empty_single_line_and_plain_multiline_text_unchanged() -> None:
+def test_node_content_from_text_keeps_empty_single_line_and_plain_multiline_text_unchanged() -> (
+    None
+):
     assert NodeContent.from_text("") == NodeContent(blocks=[])
     assert NodeContent.from_text("Hello world") == NodeContent(
         blocks=[TextBlock(type="paragraph", text="Hello world")]
@@ -189,6 +193,7 @@ def test_get_slide_raises_invalid_slide_error() -> None:
         deck.get_slide(99)
 
     assert exc_info.value.code == INVALID_SLIDE
+
 
 def test_image_nodes_require_image_path() -> None:
     with pytest.raises(ValidationError):
@@ -358,7 +363,9 @@ def test_computed_node_accepts_pattern_content_type_and_elements() -> None:
 
 def test_image_nodes_round_trip_through_json_serialization(tmp_path: Path) -> None:
     image_path = tmp_path / "diagram.svg"
-    image_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+    image_path.write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8"
+    )
 
     node = Node(node_id="n-9", type="image", image_path=str(image_path))
     restored = Node.model_validate_json(node.model_dump_json())
@@ -427,7 +434,10 @@ def test_chart_nodes_accept_chart_type_and_round_trip_json() -> None:
     assert restored.type == "chart"
     assert restored.chart_spec is not None
     assert restored.chart_spec.chart_type == "bar"
-    assert json.loads(node.model_dump_json())["chart_spec"]["series"][0]["values"] == [1.0, 2.0]
+    assert json.loads(node.model_dump_json())["chart_spec"]["series"][0]["values"] == [
+        1.0,
+        2.0,
+    ]
 
 
 def test_table_nodes_default_content_to_empty_structured_content() -> None:
@@ -501,7 +511,11 @@ def test_chart_spec_rejects_unknown_chart_type() -> None:
 
 def test_category_charts_require_categories_and_series_data() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        ChartSpec(chart_type="bar", categories=["Q1", "Q2"], series=[{"name": "Revenue", "values": [1.0]}])
+        ChartSpec(
+            chart_type="bar",
+            categories=["Q1", "Q2"],
+            series=[{"name": "Revenue", "values": [1.0]}],
+        )
 
     assert exc_info.value.errors()[0]["type"] == CHART_DATA_ERROR
 
@@ -561,7 +575,9 @@ def test_chart_style_validates_series_colors() -> None:
 
     assert style.series_colors == ["#FF0000", "00FF00"]
 
-    with pytest.raises(ValidationError, match="series_colors entries must use #RRGGBB or RRGGBB format"):
+    with pytest.raises(
+        ValidationError, match="series_colors entries must use #RRGGBB or RRGGBB format"
+    ):
         ChartStyle(series_colors=["bad-color"])
 
 
@@ -579,7 +595,12 @@ def test_parse_inline_markdown_color_suffixes_use_design_rule_aliases() -> None:
 
 
 def test_chart_style_accepts_conditional_point_color_settings() -> None:
-    style = ChartStyle(color_by_value=True, highlight_index=1, highlight_color="#C98E48", muted_color="CFC8BD")
+    style = ChartStyle(
+        color_by_value=True,
+        highlight_index=1,
+        highlight_color="#C98E48",
+        muted_color="CFC8BD",
+    )
 
     assert style.color_by_value is True
     assert style.highlight_index == 1
@@ -594,5 +615,8 @@ def test_design_rules_default_profile_exposes_conditional_formatting() -> None:
     rules = load_design_rules("default")
 
     assert rules.conditional_formatting.color_aliases["green"] == "#1B8A2D"
-    assert any(rule.pattern == "positive_number" for rule in rules.conditional_formatting.text_rules)
+    assert any(
+        rule.pattern == "positive_number"
+        for rule in rules.conditional_formatting.text_rules
+    )
     assert rules.conditional_formatting.table.statuses["in progress"].fill == "#FFF1C7"

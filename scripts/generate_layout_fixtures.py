@@ -96,7 +96,10 @@ def _is_column_slot(slot_name: str) -> bool:
 
 
 def _image_payload(index: int) -> dict[str, Any]:
-    return {"image_path": IMAGE_ASSET_PATHS[index % len(IMAGE_ASSET_PATHS)], "image_fit": "cover"}
+    return {
+        "image_path": IMAGE_ASSET_PATHS[index % len(IMAGE_ASSET_PATHS)],
+        "image_fit": "cover",
+    }
 
 
 def _heading_text(variant: str) -> str:
@@ -114,7 +117,11 @@ def _heading_text(variant: str) -> str:
 
 def _subheading_payload(variant: str) -> dict[str, Any]:
     if variant == "narrow_safe":
-        return _text_payload(_text_block("paragraph", "Focus on the six markets with the largest backlog."))
+        return _text_payload(
+            _text_block(
+                "paragraph", "Focus on the six markets with the largest backlog."
+            )
+        )
     return _text_payload(
         _text_block(
             "paragraph",
@@ -125,25 +132,51 @@ def _subheading_payload(variant: str) -> dict[str, Any]:
 
 def _body_payload(variant: str) -> dict[str, Any]:
     if variant == "narrow_safe":
-        return _text_payload(_text_block("paragraph", "Close the backlog before expanding coverage."))
+        return _text_payload(
+            _text_block("paragraph", "Close the backlog before expanding coverage.")
+        )
     if variant == "dense_body":
         return _text_payload(
             _text_block("heading", "Implications"),
-            _text_block("bullet", "Backlog exceeds the ten-day threshold in six priority metros."),
-            _text_block("bullet", "Travel time inflation is eroding technician utilization by roughly one shift per week."),
-            _text_block("bullet", "Attrition remains elevated where supervisors manage both dispatch and field coaching."),
+            _text_block(
+                "bullet",
+                "Backlog exceeds the ten-day threshold in six priority metros.",
+            ),
+            _text_block(
+                "bullet",
+                "Travel time inflation is eroding technician utilization by roughly one shift per week.",
+            ),
+            _text_block(
+                "bullet",
+                "Attrition remains elevated where supervisors manage both dispatch and field coaching.",
+            ),
             _text_block("heading", "Actions underway"),
-            _text_block("bullet", "Leadership is staging targeted hiring against the highest-margin territories first."),
-            _text_block("bullet", "Routing rules are being reset to reduce cross-district spillover."),
-            _text_block("bullet", "Weekly performance reviews now compare service-level recovery against hiring conversion."),
+            _text_block(
+                "bullet",
+                "Leadership is staging targeted hiring against the highest-margin territories first.",
+            ),
+            _text_block(
+                "bullet",
+                "Routing rules are being reset to reduce cross-district spillover.",
+            ),
+            _text_block(
+                "bullet",
+                "Weekly performance reviews now compare service-level recovery against hiring conversion.",
+            ),
         )
     return _text_payload(
         _text_block(
             "paragraph",
             "Demand grew 14% year on year while field capacity expanded only 6%, leaving recurring coverage gaps in select metros.",
         ),
-        _text_block("bullet", "Eight priority markets account for most of the open service backlog."),
-        _text_block("bullet", "Utilization improves quickly when routing is reset at the district level."),
+        _text_block(
+            "bullet",
+            "Eight priority markets account for most of the open service backlog.",
+        ),
+        _text_block(
+            "bullet",
+            "Utilization improves quickly when routing is reset at the district level.",
+        ),
     )
 
 
@@ -156,23 +189,48 @@ def _column_payload(slot_name: str, variant: str) -> dict[str, Any]:
         ),
     )
     if variant == "narrow_safe":
-        return _text_payload(_text_block("heading", heading_text), _text_block("paragraph", "Keep the plan simple."))
+        return _text_payload(
+            _text_block("heading", heading_text),
+            _text_block("paragraph", "Keep the plan simple."),
+        )
     if variant == "dense_body":
         return _text_payload(
             _text_block("heading", heading_text),
-            _text_block("bullet", "Revenue exposure is highest in locations with the thinnest bench."),
-            _text_block("bullet", "Supervisors are reallocating senior technicians to stabilize first-time fix rates."),
-            _text_block("bullet", "The queue length falls fastest when dispatch locks same-day overflow windows."),
+            _text_block(
+                "bullet",
+                "Revenue exposure is highest in locations with the thinnest bench.",
+            ),
+            _text_block(
+                "bullet",
+                "Supervisors are reallocating senior technicians to stabilize first-time fix rates.",
+            ),
+            _text_block(
+                "bullet",
+                "The queue length falls fastest when dispatch locks same-day overflow windows.",
+            ),
             _text_block("heading", "Decision needed"),
-            _text_block("bullet", "Approve temporary overtime in districts that already have qualified labor."),
-            _text_block("bullet", "Sequence new hiring after route redesign to avoid absorbing avoidable cost."),
+            _text_block(
+                "bullet",
+                "Approve temporary overtime in districts that already have qualified labor.",
+            ),
+            _text_block(
+                "bullet",
+                "Sequence new hiring after route redesign to avoid absorbing avoidable cost.",
+            ),
         )
-    return _text_payload(_text_block("heading", heading_text), _text_block("paragraph", paragraph_text))
+    return _text_payload(
+        _text_block("heading", heading_text), _text_block("paragraph", paragraph_text)
+    )
 
 
 def _quote_payload(variant: str) -> dict[str, Any]:
     if variant == "narrow_safe":
-        return _text_payload(_text_block("paragraph", "Capacity followed the old footprint, not the new demand map."))
+        return _text_payload(
+            _text_block(
+                "paragraph",
+                "Capacity followed the old footprint, not the new demand map.",
+            )
+        )
     return _text_payload(
         _text_block(
             "paragraph",
@@ -187,7 +245,11 @@ def _attribution_payload() -> dict[str, Any]:
 
 def _default_payload(slot_name: str, variant: str) -> dict[str, Any]:
     if variant == "narrow_safe":
-        return _text_payload(_text_block("paragraph", f"{slot_name.replace('_', ' ').title()} stays concise."))
+        return _text_payload(
+            _text_block(
+                "paragraph", f"{slot_name.replace('_', ' ').title()} stays concise."
+            )
+        )
     return _text_payload(
         _text_block(
             "paragraph",
@@ -196,7 +258,9 @@ def _default_payload(slot_name: str, variant: str) -> dict[str, Any]:
     )
 
 
-def _slot_payload(slot_name: str, variant: str, *, dense_target: str | None) -> dict[str, Any] | None:
+def _slot_payload(
+    slot_name: str, variant: str, *, dense_target: str | None
+) -> dict[str, Any] | None:
     if slot_name == "image":
         if variant == "image_missing":
             return None
@@ -207,10 +271,18 @@ def _slot_payload(slot_name: str, variant: str, *, dense_target: str | None) -> 
     if slot_name == "subheading":
         return _subheading_payload(variant)
     if slot_name == "body":
-        body_variant = "dense_body" if dense_target == slot_name and variant == "dense_body" else variant
+        body_variant = (
+            "dense_body"
+            if dense_target == slot_name and variant == "dense_body"
+            else variant
+        )
         return _body_payload(body_variant)
     if _is_column_slot(slot_name):
-        column_variant = "dense_body" if dense_target == slot_name and variant == "dense_body" else variant
+        column_variant = (
+            "dense_body"
+            if dense_target == slot_name and variant == "dense_body"
+            else variant
+        )
         return _column_payload(slot_name, column_variant)
     if slot_name == "quote":
         return _quote_payload(variant)
@@ -243,20 +315,31 @@ def _collect_slot_structures(inventory: dict[str, Any]) -> dict[str, list[str]]:
 
         slot_structure = layout.get("slot_structure")
         if not isinstance(slot_structure, str) or not slot_structure.strip():
-            raise ValueError("Testable layouts must include a non-empty 'slot_structure'")
+            raise ValueError(
+                "Testable layouts must include a non-empty 'slot_structure'"
+            )
         fillable_slots = layout.get("fillable_slots")
-        if not isinstance(fillable_slots, list) or not all(isinstance(slot, str) for slot in fillable_slots):
-            raise ValueError(f"Layout '{layout.get('slug', '<unknown>')}' fillable_slots must be a list of strings")
+        if not isinstance(fillable_slots, list) or not all(
+            isinstance(slot, str) for slot in fillable_slots
+        ):
+            raise ValueError(
+                f"Layout '{layout.get('slug', '<unknown>')}' fillable_slots must be a list of strings"
+            )
 
         structures.setdefault(slot_structure, set()).update(fillable_slots)
 
     if not structures:
         raise ValueError("Inventory does not contain any testable layouts")
 
-    return {key: sorted(values, key=_slot_sort_key) for key, values in sorted(structures.items())}
+    return {
+        key: sorted(values, key=_slot_sort_key)
+        for key, values in sorted(structures.items())
+    }
 
 
-def build_fixture_payloads(inventory: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+def build_fixture_payloads(
+    inventory: dict[str, Any],
+) -> dict[str, dict[str, dict[str, Any]]]:
     for asset_path in IMAGE_ASSET_PATHS:
         if not (ROOT / asset_path).is_file():
             raise ValueError(f"Image fixture asset not found: {asset_path}")
@@ -282,12 +365,16 @@ def build_fixture_payloads(inventory: dict[str, Any]) -> dict[str, dict[str, dic
     return payloads
 
 
-def write_fixture_payloads(payloads: dict[str, dict[str, dict[str, Any]]], output_dir: Path) -> list[Path]:
+def write_fixture_payloads(
+    payloads: dict[str, dict[str, dict[str, Any]]], output_dir: Path
+) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     written_paths: list[Path] = []
     for slot_structure, payload in payloads.items():
         path = output_dir / f"{slot_structure}.json"
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         written_paths.append(path)
     return written_paths
 

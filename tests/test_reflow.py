@@ -7,7 +7,17 @@ import pytest
 import agent_slides.engine.reflow as reflow_module
 from agent_slides.engine.reflow import reflow_deck, reflow_slide
 from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW
-from agent_slides.model import Counters, Deck, LayoutDef, Node, Slide, SlotDef, TextBlock, TextFitting, get_layout
+from agent_slides.model import (
+    Counters,
+    Deck,
+    LayoutDef,
+    Node,
+    Slide,
+    SlotDef,
+    TextBlock,
+    TextFitting,
+    get_layout,
+)
 from agent_slides.model.design_rules import load_design_rules
 from agent_slides.model.types import GridDef, NodeContent
 from agent_slides.model.themes import load_theme
@@ -24,7 +34,12 @@ def test_reflow_chart_nodes_use_grid_geometry_without_text_fitting() -> None:
         slide_id="s-chart",
         layout="title_content",
         nodes=[
-            Node(node_id="n-1", slot_binding="heading", type="text", content="KPI summary"),
+            Node(
+                node_id="n-1",
+                slot_binding="heading",
+                type="text",
+                content="KPI summary",
+            ),
             Node(
                 node_id="n-2",
                 slot_binding="body",
@@ -60,7 +75,12 @@ def test_reflow_scatter_chart_nodes_keep_chart_content_type() -> None:
         slide_id="s-scatter",
         layout="title_content",
         nodes=[
-            Node(node_id="n-1", slot_binding="heading", type="text", content="Correlation"),
+            Node(
+                node_id="n-1",
+                slot_binding="heading",
+                type="text",
+                content="Correlation",
+            ),
             Node(
                 node_id="n-2",
                 slot_binding="body",
@@ -91,7 +111,12 @@ def test_reflow_table_nodes_use_grid_geometry_without_text_fitting() -> None:
         slide_id="s-table",
         layout="title_content",
         nodes=[
-            Node(node_id="n-1", slot_binding="heading", type="text", content="Quarterly summary"),
+            Node(
+                node_id="n-1",
+                slot_binding="heading",
+                type="text",
+                content="Quarterly summary",
+            ),
             Node(
                 node_id="n-2",
                 slot_binding="body",
@@ -125,7 +150,12 @@ def test_reflow_pattern_nodes_generate_slot_bound_pattern_elements() -> None:
         slide_id="s-pattern",
         layout="title_content",
         nodes=[
-            Node(node_id="n-1", slot_binding="heading", type="text", content="Executive summary"),
+            Node(
+                node_id="n-1",
+                slot_binding="heading",
+                type="text",
+                content="Executive summary",
+            ),
             Node(
                 node_id="n-2",
                 slot_binding="body",
@@ -152,8 +182,14 @@ def test_reflow_pattern_nodes_generate_slot_bound_pattern_elements() -> None:
     assert pattern.width == pytest.approx(600.0)
     assert pattern.height == pytest.approx(369.6)
     assert len(pattern.pattern_elements) == 9
-    assert all(pattern.x <= element.x <= pattern.x + pattern.width for element in pattern.pattern_elements)
-    assert all(pattern.y <= element.y <= pattern.y + pattern.height for element in pattern.pattern_elements)
+    assert all(
+        pattern.x <= element.x <= pattern.x + pattern.width
+        for element in pattern.pattern_elements
+    )
+    assert all(
+        pattern.y <= element.y <= pattern.y + pattern.height
+        for element in pattern.pattern_elements
+    )
 
 
 def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
@@ -162,7 +198,9 @@ def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
         slide_id="s-image",
         layout="gallery",
         nodes=[
-            Node(node_id="n-1", slot_binding="heading", type="text", content="Snapshots"),
+            Node(
+                node_id="n-1", slot_binding="heading", type="text", content="Snapshots"
+            ),
             Node(
                 node_id="n-2",
                 slot_binding="img1",
@@ -181,7 +219,9 @@ def test_reflow_image_nodes_still_skip_text_fitting(tmp_path: Path) -> None:
     assert image.text_overflow is False
 
 
-def test_reflow_deck_normalizes_font_sizes_by_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reflow_deck_normalizes_font_sizes_by_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     deck = Deck(
         deck_id="deck-normalized",
         theme="default",
@@ -191,28 +231,63 @@ def test_reflow_deck_normalizes_font_sizes_by_role(monkeypatch: pytest.MonkeyPat
                 slide_id="s-1",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Short heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Short body"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Short heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Short body",
+                    ),
                 ],
             ),
             Slide(
                 slide_id="s-2",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-3", slot_binding="heading", type="text", content="Long heading"),
-                    Node(node_id="n-4", slot_binding="body", type="text", content="Long body"),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="heading",
+                        type="text",
+                        content="Long heading",
+                    ),
+                    Node(
+                        node_id="n-4",
+                        slot_binding="body",
+                        type="text",
+                        content="Long body",
+                    ),
                 ],
             ),
         ],
         counters=Counters(slides=2, nodes=4),
     )
 
-    def fake_fit_text(*, text, width, height, default_size, min_size, role, font_family=None, ladder=None, use_precise=False):
+    def fake_fit_text(
+        *,
+        text,
+        width,
+        height,
+        default_size,
+        min_size,
+        role,
+        font_family=None,
+        ladder=None,
+        use_precise=False,
+    ):
         assert font_family == "Calibri"
         if ladder == [24.0]:
             return (24.0, False)
         if role == "heading":
-            return (32.0, False) if text.to_plain_text() == "Short heading" else (24.0, False)
+            return (
+                (32.0, False)
+                if text.to_plain_text() == "Short heading"
+                else (24.0, False)
+            )
         return (18.0, False)
 
     monkeypatch.setattr(reflow_module, "fit_text", fake_fit_text)
@@ -222,6 +297,7 @@ def test_reflow_deck_normalizes_font_sizes_by_role(monkeypatch: pytest.MonkeyPat
     assert deck.slides[0].computed["n-1"].font_size_pt == 24.0
     assert deck.slides[1].computed["n-3"].font_size_pt == 24.0
     assert deck.slides[0].computed["n-2"].font_size_pt == 18.0
+
 
 def test_reflow_deck_uses_variant_fallback_without_mutating_authoring_layout(
     monkeypatch: pytest.MonkeyPatch,
@@ -235,9 +311,24 @@ def test_reflow_deck_uses_variant_fallback_without_mutating_authoring_layout(
                 slide_id="s-1",
                 layout="image_left",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Body copy"),
-                    Node(node_id="n-3", slot_binding="image", type="image", image_path="image.png"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Body copy",
+                    ),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="image",
+                        type="image",
+                        image_path="image.png",
+                    ),
                 ],
             )
         ],
@@ -264,7 +355,9 @@ def test_reflow_deck_uses_variant_fallback_without_mutating_authoring_layout(
 
     assert deck.slides[0].layout == "image_left"
     assert deck.slides[0].computed["n-1"].layout_used == "image_right"
-    assert deck.slides[0].computed["n-1"].layout_fallback_reason == "text overflow in body"
+    assert (
+        deck.slides[0].computed["n-1"].layout_fallback_reason == "text overflow in body"
+    )
     assert deck.model_dump(mode="json") == first_dump
 
 
@@ -288,7 +381,12 @@ def test_reflow_composes_text_blocks_with_padding_spacing_and_per_block_sizes() 
         ],
     )
 
-    reflow_slide(slide, get_layout("title_content"), load_theme("default"), load_design_rules("default"))
+    reflow_slide(
+        slide,
+        get_layout("title_content"),
+        load_theme("default"),
+        load_design_rules("default"),
+    )
 
     computed = slide.computed["n-1"]
 
@@ -343,7 +441,14 @@ def test_reflow_honors_vertical_alignment_and_peer_baseline_alignment() -> None:
                 vertical_align="bottom",
             ),
         },
-        grid=GridDef(columns=1, rows=1, row_heights=[1.0], col_widths=[1.0], margin=0.0, gutter=0.0),
+        grid=GridDef(
+            columns=1,
+            rows=1,
+            row_heights=[1.0],
+            col_widths=[1.0],
+            margin=0.0,
+            gutter=0.0,
+        ),
         text_fitting={
             "heading": TextFitting(default_size=32.0, min_size=24.0),
             "body": TextFitting(default_size=18.0, min_size=10.0),
@@ -353,9 +458,18 @@ def test_reflow_honors_vertical_alignment_and_peer_baseline_alignment() -> None:
         slide_id="s-peer",
         layout="peer_alignment",
         nodes=[
-            Node(node_id="n-1", slot_binding="col1", type="text", content="Left column"),
-            Node(node_id="n-2", slot_binding="col2", type="text", content="Right column"),
-            Node(node_id="n-3", slot_binding="footer", type="text", content="Bottom aligned"),
+            Node(
+                node_id="n-1", slot_binding="col1", type="text", content="Left column"
+            ),
+            Node(
+                node_id="n-2", slot_binding="col2", type="text", content="Right column"
+            ),
+            Node(
+                node_id="n-3",
+                slot_binding="footer",
+                type="text",
+                content="Bottom aligned",
+            ),
         ],
     )
 

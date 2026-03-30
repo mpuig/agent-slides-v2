@@ -37,7 +37,9 @@ def test_contract_command_emits_canonical_registry() -> None:
 
 
 def test_contract_command_registry_matches_cli_leaf_commands() -> None:
-    assert {payload["cli_command"] for payload in COMMAND_CONTRACTS.values()} == _leaf_commands(cli)
+    assert {
+        payload["cli_command"] for payload in COMMAND_CONTRACTS.values()
+    } == _leaf_commands(cli)
 
 
 def test_contract_mutation_registry_matches_supported_mutations() -> None:
@@ -48,7 +50,14 @@ def test_contract_tool_profiles_emit_shared_definitions() -> None:
     legacy_tools = get_tool_definitions(profile=LEGACY_ORCHESTRATOR_PROFILE)
     preview_tools = get_tool_definitions(profile=PREVIEW_CHAT_PROFILE)
 
-    assert [tool["name"] for tool in legacy_tools] == TOOL_PROFILES[LEGACY_ORCHESTRATOR_PROFILE]
-    assert [tool["name"] for tool in preview_tools] == TOOL_PROFILES[PREVIEW_CHAT_PROFILE]
-    assert any(tool["name"] == "build" and "output_path" in tool["input_schema"]["properties"] for tool in legacy_tools)
+    assert [tool["name"] for tool in legacy_tools] == TOOL_PROFILES[
+        LEGACY_ORCHESTRATOR_PROFILE
+    ]
+    assert [tool["name"] for tool in preview_tools] == TOOL_PROFILES[
+        PREVIEW_CHAT_PROFILE
+    ]
+    assert any(
+        tool["name"] == "build" and "output_path" in tool["input_schema"]["properties"]
+        for tool in legacy_tools
+    )
     assert any(tool["name"] == "get_deck_info" for tool in preview_tools)

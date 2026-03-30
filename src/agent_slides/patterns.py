@@ -10,7 +10,9 @@ from agent_slides.model.types import ComputedPatternElement, PatternSpec, Theme
 
 def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
     base_rgb = [int(base.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
-    overlay_rgb = [int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    overlay_rgb = [
+        int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)
+    ]
     blended = [
         int(round((1.0 - ratio) * base_channel + ratio * overlay_channel))
         for base_channel, overlay_channel in zip(base_rgb, overlay_rgb, strict=True)
@@ -150,11 +152,17 @@ def generate_pattern_elements(
         "comparison-cards": _generate_comparison_cards,
         "icon-row": _generate_icon_row,
     }
-    return generators[spec.pattern_type](spec, x=x, y=y, width=width, height=height, theme=theme)
+    return generators[spec.pattern_type](
+        spec, x=x, y=y, width=width, height=height, theme=theme
+    )
 
 
-def _generate_kpi_row(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
-    items = [_normalize_item(item, title_key="value") for item in _require_list(spec.data)]
+def _generate_kpi_row(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
+    items = [
+        _normalize_item(item, title_key="value") for item in _require_list(spec.data)
+    ]
     if len(items) < 2:
         raise ValueError("kpi-row requires at least 2 items")
 
@@ -228,7 +236,9 @@ def _generate_kpi_row(spec: PatternSpec, *, x: float, y: float, width: float, he
     return elements
 
 
-def _generate_card_grid(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
+def _generate_card_grid(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
     items = [_normalize_item(item) for item in _require_list(spec.data)]
     if len(items) < 2:
         raise ValueError("card-grid requires at least 2 items")
@@ -304,9 +314,14 @@ def _generate_card_grid(spec: PatternSpec, *, x: float, y: float, width: float, 
     return elements
 
 
-def _generate_process_flow(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
+def _generate_process_flow(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
     payload = _require_dict(spec.data)
-    phases = [_normalize_item(item, title_key="title") for item in _require_list(payload.get("phases"), field="data.phases")]
+    phases = [
+        _normalize_item(item, title_key="title")
+        for item in _require_list(payload.get("phases"), field="data.phases")
+    ]
     if len(phases) < 3:
         raise ValueError("process-flow requires at least 3 phases")
 
@@ -363,7 +378,9 @@ def _generate_process_flow(spec: PatternSpec, *, x: float, y: float, width: floa
                     width=gap,
                     height=0.0,
                     z_index=0,
-                    line_color=_mix_hex_colors(theme.colors.background, theme.colors.primary, 0.45),
+                    line_color=_mix_hex_colors(
+                        theme.colors.background, theme.colors.primary, 0.45
+                    ),
                     line_width=1.5,
                     dash="dash",
                 )
@@ -412,9 +429,14 @@ def _generate_process_flow(spec: PatternSpec, *, x: float, y: float, width: floa
     return elements
 
 
-def _generate_chevron_flow(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
+def _generate_chevron_flow(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
     payload = spec.data if isinstance(spec.data, dict) else {"phases": spec.data}
-    phases = [_normalize_item(item, title_key="label") for item in _require_list(payload.get("phases"), field="data.phases")]
+    phases = [
+        _normalize_item(item, title_key="label")
+        for item in _require_list(payload.get("phases"), field="data.phases")
+    ]
     if len(phases) < 3:
         raise ValueError("chevron-flow requires at least 3 phases")
 
@@ -438,7 +460,11 @@ def _generate_chevron_flow(spec: PatternSpec, *, x: float, y: float, width: floa
                 width=chevron_width,
                 height=height,
                 fill_color=fill_palette[index % len(fill_palette)],
-                line_color=_mix_hex_colors(theme.colors.background, fill_palette[index % len(fill_palette)], 0.2),
+                line_color=_mix_hex_colors(
+                    theme.colors.background,
+                    fill_palette[index % len(fill_palette)],
+                    0.2,
+                ),
                 line_width=1.0,
             )
         )
@@ -460,7 +486,9 @@ def _generate_chevron_flow(spec: PatternSpec, *, x: float, y: float, width: floa
     return elements
 
 
-def _generate_comparison_cards(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
+def _generate_comparison_cards(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
     if isinstance(spec.data, list):
         items = [_normalize_item(item) for item in spec.data]
         if len(items) != 2:
@@ -532,7 +560,10 @@ def _generate_comparison_cards(spec: PatternSpec, *, x: float, y: float, width: 
         ),
     ]
 
-    for card_x, payload, accent in ((x, left, theme.colors.primary), (x + card_width + gap, right, theme.colors.accent)):
+    for card_x, payload, accent in (
+        (x, left, theme.colors.primary),
+        (x + card_width + gap, right, theme.colors.accent),
+    ):
         elements.append(
             _text(
                 text=payload.get("title", ""),
@@ -577,7 +608,9 @@ def _generate_comparison_cards(spec: PatternSpec, *, x: float, y: float, width: 
     return elements
 
 
-def _generate_icon_row(spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme) -> list[ComputedPatternElement]:
+def _generate_icon_row(
+    spec: PatternSpec, *, x: float, y: float, width: float, height: float, theme: Theme
+) -> list[ComputedPatternElement]:
     items = [_normalize_item(item) for item in _require_list(spec.data)]
     if len(items) < 2:
         raise ValueError("icon-row requires at least 2 items")
@@ -602,7 +635,9 @@ def _generate_icon_row(spec: PatternSpec, *, x: float, y: float, width: float, h
                 y=circle_y,
                 width=circle,
                 height=circle,
-                fill_color=_mix_hex_colors(theme.colors.background, theme.colors.secondary, 0.08),
+                fill_color=_mix_hex_colors(
+                    theme.colors.background, theme.colors.secondary, 0.08
+                ),
                 line_color=theme.colors.primary,
                 line_width=1.4,
             )
@@ -643,7 +678,10 @@ def _generate_icon_row(spec: PatternSpec, *, x: float, y: float, width: float, h
                 x=item_x,
                 y=y + circle + max(theme.spacing.base_unit, 8.0) + height * 0.15,
                 width=card_width,
-                height=max(0.0, height - circle - height * 0.15 - max(theme.spacing.base_unit, 8.0)),
+                height=max(
+                    0.0,
+                    height - circle - height * 0.15 - max(theme.spacing.base_unit, 8.0),
+                ),
                 font_size_pt=body_size,
                 font_family=theme.fonts.body,
                 color=subtle,

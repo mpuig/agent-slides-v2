@@ -8,7 +8,12 @@ from pathlib import Path
 import click
 
 from agent_slides.engine.reflow import reflow_deck
-from agent_slides.io import read_deck, resolve_manifest_path, write_computed_deck, write_pptx
+from agent_slides.io import (
+    read_deck,
+    resolve_manifest_path,
+    write_computed_deck,
+    write_pptx,
+)
 from agent_slides.model.layout_provider import resolve_layout_provider
 
 

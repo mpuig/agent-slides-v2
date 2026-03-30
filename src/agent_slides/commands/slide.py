@@ -36,6 +36,8 @@ def _emit_warning(slide_id: str, unbound_nodes: list[str]) -> None:
         },
         err=True,
     )
+
+
 @click.group()
 def slide() -> None:
     """Manage deck slides."""
@@ -53,7 +55,9 @@ def _parse_content_json(raw: str) -> dict[str, object]:
     try:
         return NodeContent.model_validate(payload).model_dump(mode="json")
     except Exception as exc:
-        raise AgentSlidesError(SCHEMA_ERROR, "Argument '--content' must be valid structured text") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Argument '--content' must be valid structured text"
+        ) from exc
 
 
 @slide.command("add")
@@ -72,10 +76,14 @@ def add_slide_command(
     """Append a slide using a named layout."""
 
     if auto_layout and layout_name:
-        raise AgentSlidesError(SCHEMA_ERROR, "`--auto-layout` and `--layout` are mutually exclusive.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "`--auto-layout` and `--layout` are mutually exclusive."
+        )
     if auto_layout:
         if content_json is None:
-            raise AgentSlidesError(SCHEMA_ERROR, "`--content` is required when using `--auto-layout`.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "`--content` is required when using `--auto-layout`."
+            )
         mutation_args: dict[str, object] = {
             "auto_layout": True,
             "content": _parse_content_json(content_json),
@@ -83,11 +91,17 @@ def add_slide_command(
         }
     else:
         if layout_name is None:
-            raise AgentSlidesError(SCHEMA_ERROR, "`--layout` is required unless `--auto-layout` is set.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "`--layout` is required unless `--auto-layout` is set."
+            )
         if content_json is not None:
-            raise AgentSlidesError(SCHEMA_ERROR, "`--content` requires `--auto-layout`.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "`--content` requires `--auto-layout`."
+            )
         if image_count != 0:
-            raise AgentSlidesError(SCHEMA_ERROR, "`--image-count` requires `--auto-layout`.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR, "`--image-count` requires `--auto-layout`."
+            )
         mutation_args = {"layout": layout_name}
 
     def mutate(deck: Deck, provider: LayoutProvider) -> dict[str, object]:

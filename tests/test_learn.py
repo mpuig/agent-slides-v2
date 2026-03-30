@@ -22,7 +22,9 @@ NS = {"p": PML_NS, "a": DML_NS}
 
 ET.register_namespace("a", DML_NS)
 ET.register_namespace("p", PML_NS)
-ET.register_namespace("r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+ET.register_namespace(
+    "r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+)
 
 
 def invoke_cli(args: list[str]) -> Result:
@@ -157,7 +159,9 @@ def manifest_layouts(manifest: dict[str, object]) -> dict[str, dict[str, object]
     return layouts
 
 
-def test_learn_command_writes_manifest_and_extracts_expected_structure(tmp_path: Path) -> None:
+def test_learn_command_writes_manifest_and_extracts_expected_structure(
+    tmp_path: Path,
+) -> None:
     template_path = make_template_fixture(tmp_path)
 
     result = invoke_cli(["learn", str(template_path)])
@@ -177,7 +181,10 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(tmp_path:
         },
     }
     assert manifest["source"] == "corporate-template.pptx"
-    assert manifest["source_hash"] == hashlib.sha256(template_path.read_bytes()).hexdigest()
+    assert (
+        manifest["source_hash"]
+        == hashlib.sha256(template_path.read_bytes()).hexdigest()
+    )
     assert manifest["theme"] == {
         "colors": {
             "primary": "#112233",
@@ -202,8 +209,16 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(tmp_path:
     assert layouts["title_slide"]["slot_mapping"] == {"heading": 0, "subheading": 1}
     assert layouts["agenda"]["slot_mapping"] == {"heading": 0, "body": 1}
     assert layouts["agenda_2"]["slot_mapping"] == {"heading": 0, "col1": 1, "col2": 2}
-    assert layouts["comparison_lab"]["slot_mapping"] == {"heading": 0, "col1": 1, "col2": 3}
-    assert layouts["photo_story"]["slot_mapping"] == {"heading": 0, "body": 2, "image": 1}
+    assert layouts["comparison_lab"]["slot_mapping"] == {
+        "heading": 0,
+        "col1": 1,
+        "col2": 3,
+    }
+    assert layouts["photo_story"]["slot_mapping"] == {
+        "heading": 0,
+        "body": 2,
+        "image": 1,
+    }
     assert layouts["blank"]["usable"] is True
     assert layouts["blank"]["placeholders"] == []
     assert layouts["agenda"]["placeholders"][1]["idx"] == 1
@@ -218,9 +233,18 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(tmp_path:
     assert layouts["agenda"]["placeholders"][1]["shape_kind"] == "placeholder"
     assert layouts["agenda"]["placeholders"][1]["suggested_slot"] == "body"
 
-    assert "Warning: layout 'Comparison Lab': skipped unsupported media_clip placeholder 'Content Placeholder 5'" in result.output
-    assert "Warning: layout 'Comparison Lab': skipped unsupported chart placeholder 'Content Placeholder 3'" not in result.output
-    assert "Warning: layout 'Captioned Content': skipped unsupported table placeholder 'Content Placeholder 2'" not in result.output
+    assert (
+        "Warning: layout 'Comparison Lab': skipped unsupported media_clip placeholder 'Content Placeholder 5'"
+        in result.output
+    )
+    assert (
+        "Warning: layout 'Comparison Lab': skipped unsupported chart placeholder 'Content Placeholder 3'"
+        not in result.output
+    )
+    assert (
+        "Warning: layout 'Captioned Content': skipped unsupported table placeholder 'Content Placeholder 2'"
+        not in result.output
+    )
 
 
 def test_learn_uses_relative_source_when_output_path_changes(tmp_path: Path) -> None:
@@ -264,9 +288,13 @@ def test_learn_command_returns_schema_error_for_invalid_pptx(tmp_path: Path) -> 
     }
 
 
-def test_learn_command_returns_schema_error_for_password_protected_file(tmp_path: Path) -> None:
+def test_learn_command_returns_schema_error_for_password_protected_file(
+    tmp_path: Path,
+) -> None:
     template_path = tmp_path / "protected.pptx"
-    template_path.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1") + b"encrypted-office-data")
+    template_path.write_bytes(
+        bytes.fromhex("D0CF11E0A1B11AE1") + b"encrypted-office-data"
+    )
 
     result = invoke_cli(["learn", str(template_path)])
 
@@ -280,7 +308,9 @@ def test_learn_command_returns_schema_error_for_password_protected_file(tmp_path
     }
 
 
-def test_read_template_manifest_raises_schema_error_for_zero_layouts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_template_manifest_raises_schema_error_for_zero_layouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     template_path = tmp_path / "template.pptx"
     template_path.write_bytes(b"placeholder")
 
@@ -290,15 +320,21 @@ def test_read_template_manifest_raises_schema_error_for_zero_layouts(tmp_path: P
     class FakePresentation:
         slide_masters = [FakeSlideMaster()]
 
-    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
 
-    with pytest.raises(AgentSlidesError, match="template has no slide layouts") as exc_info:
+    with pytest.raises(
+        AgentSlidesError, match="template has no slide layouts"
+    ) as exc_info:
         read_template_manifest(template_path)
 
     assert exc_info.value.code == SCHEMA_ERROR
 
 
-def test_read_template_manifest_warns_when_no_layouts_are_usable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_template_manifest_warns_when_no_layouts_are_usable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     template_path = tmp_path / "template.pptx"
     template_path.write_bytes(b"placeholder")
 
@@ -324,8 +360,14 @@ def test_read_template_manifest_warns_when_no_layouts_are_usable(tmp_path: Path,
     class FakePresentation:
         slide_masters = [FakeSlideMaster()]
 
-    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
-    monkeypatch.setattr(template_reader, "_extract_theme", lambda _: {"colors": {}, "fonts": {}, "spacing": {}})
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
+    monkeypatch.setattr(
+        template_reader,
+        "_extract_theme",
+        lambda _: {"colors": {}, "fonts": {}, "spacing": {}},
+    )
 
     result = read_template_manifest(template_path)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
@@ -336,7 +378,9 @@ def test_read_template_manifest_warns_when_no_layouts_are_usable(tmp_path: Path,
     assert manifest["slide_masters"][0]["layouts"][0]["slot_mapping"] == {}
 
 
-def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_template_manifest_extracts_non_placeholder_content_shapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     template_path = tmp_path / "template.pptx"
     template_path.write_bytes(b"placeholder")
 
@@ -351,7 +395,7 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
             self.left = 0
             self.top = top
             self.width = 100
-            self.height = 40
+            self.height = 40 * 12700  # 40pt in EMU
             self.is_placeholder = False
             self.has_text_frame = True
             self.has_table = False
@@ -368,9 +412,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
             self.shape_id = 3
             self.name = "Agenda Table"
             self.left = 0
-            self.top = 120
-            self.width = 200
-            self.height = 100
+            self.top = 120 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = True
@@ -386,9 +430,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
             self.shape_id = 4
             self.name = "Score Chart"
             self.left = 0
-            self.top = 240
-            self.width = 200
-            self.height = 100
+            self.top = 240 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = False
@@ -401,9 +445,9 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
             self.shape_id = 5
             self.name = "Agenda Group"
             self.left = 0
-            self.top = 360
-            self.width = 200
-            self.height = 100
+            self.top = 360 * 12700
+            self.width = 200 * 12700
+            self.height = 100 * 12700
             self.is_placeholder = False
             self.has_text_frame = False
             self.has_table = False
@@ -428,11 +472,19 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
     class FakePresentation:
         slide_masters = [FakeSlideMaster()]
 
-    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
-    monkeypatch.setattr(template_reader, "_extract_theme", lambda _: {"colors": {}, "fonts": {}, "spacing": {}})
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
+    monkeypatch.setattr(
+        template_reader,
+        "_extract_theme",
+        lambda _: {"colors": {}, "fonts": {}, "spacing": {}},
+    )
 
     result = read_template_manifest(template_path)
-    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))["slide_masters"][0]["layouts"][0]
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "slide_masters"
+    ][0]["layouts"][0]
 
     assert result.usable_layouts == 1
     assert layout["usable"] is True
@@ -450,12 +502,14 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(tmp_path
     assert layout["placeholders"][4]["group"] == {"children": 2}
     assert layout["slot_mapping"]["quote"] == 1_000_001
     assert layout["slot_mapping"]["attribution"] == 1_000_002
-    assert layout["slot_mapping"]["col1"] == 1_000_003
-    assert layout["slot_mapping"]["col2"] == 1_000_004
-    assert layout["slot_mapping"]["col3"] == 1_000_005
+    # TABLE, CHART, GROUP are at different vertical positions (not same row),
+    # so the first body-like shape wins as "body", not col1/col2/col3
+    assert layout["slot_mapping"]["body"] == 1_000_003
 
 
-def test_read_template_manifest_marks_blank_variants_usable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_template_manifest_marks_blank_variants_usable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     template_path = tmp_path / "template.pptx"
     template_path.write_bytes(b"placeholder")
 
@@ -470,11 +524,19 @@ def test_read_template_manifest_marks_blank_variants_usable(tmp_path: Path, monk
     class FakePresentation:
         slide_masters = [FakeSlideMaster()]
 
-    monkeypatch.setattr(template_reader, "_open_presentation", lambda _: FakePresentation())
-    monkeypatch.setattr(template_reader, "_extract_theme", lambda _: {"colors": {}, "fonts": {}, "spacing": {}})
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
+    monkeypatch.setattr(
+        template_reader,
+        "_extract_theme",
+        lambda _: {"colors": {}, "fonts": {}, "spacing": {}},
+    )
 
     result = read_template_manifest(template_path)
-    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))["slide_masters"][0]["layouts"][0]
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "slide_masters"
+    ][0]["layouts"][0]
 
     assert result.usable_layouts == 1
     assert layout["usable"] is True

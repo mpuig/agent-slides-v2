@@ -4,21 +4,38 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from math import isclose
+from math import ceil, isclose
 
 from agent_slides.errors import AgentSlidesError, INVALID_SLOT
 from agent_slides.engine.constraints import Rect, constraints_from_layout, solve
-from agent_slides.engine.layout_validator import LayoutViolation, TEXT_OVERFLOW, validate_layout
+from agent_slides.engine.layout_validator import (
+    LayoutViolation,
+    TEXT_OVERFLOW,
+    validate_layout,
+)
 from agent_slides.engine.slide_revisions import resolve_slide_revision
 from agent_slides.icons import require_icon
-from agent_slides.engine.text_fit import compose_blocks, fit_blocks, fit_text, measure_text_height
+from agent_slides.engine.text_fit import (
+    compose_blocks,
+    fit_blocks,
+    fit_text,
+    measure_text_height,
+)
 from agent_slides.engine.validator import validate_slide
 from agent_slides.model import Deck, LayoutDef, Slide
 from agent_slides.model.design_rules import DesignRules, load_design_rules
 from agent_slides.model.layout_provider import BuiltinLayoutProvider, LayoutProvider
 from agent_slides.model.layouts import DEFAULT_TEXT_FITTING
 from agent_slides.model.themes import load_theme, resolve_style
-from agent_slides.model.types import ComputedNode, Node, NodeContent, SlotDef, TextBlock, TextFitting, Theme
+from agent_slides.model.types import (
+    ComputedNode,
+    Node,
+    NodeContent,
+    SlotDef,
+    TextBlock,
+    TextFitting,
+    Theme,
+)
 from agent_slides.patterns import generate_pattern_elements
 
 
@@ -48,19 +65,51 @@ def _adjust_text_fitting_for_slot(fitting: TextFitting, slot: SlotDef) -> TextFi
     )
     if has_explicit_bounds and slot.height is not None and float(slot.height) > 0:
         padding = slot.padding
-        available = max(float(slot.height) - 2 * padding, 0.0)
+        available_height = max(float(slot.height) - 2 * padding, 0.0)
+        available_width = (
+            max(float(slot.width) - 2 * padding, 0.0) if slot.width is not None else 0.0
+        )
         # A single line of text at font_size S occupies roughly S * line_height_factor.
         # For headings the effective size is S * heading_size_factor * heading_lh_factor.
         # Use a conservative 1.5 multiplier to cover heading scaling.
-        height_limit = available / 1.5
+        height_limit = available_height / 1.5
         if height_limit < min_size:
             min_size = max(height_limit, 8.0)
         # Text may wrap to multiple lines in narrow template placeholders,
         # requiring a smaller font than the single-line estimate suggests.
-        # Allow shrinking to half the height limit to accommodate 2-line wrap.
-        multi_line_limit = max(height_limit * 0.5, 8.0)
-        if multi_line_limit < min_size:
-            min_size = multi_line_limit
+        # Estimate wrap lines needed for a typical heading (~40 chars) at the
+        # current min_size.  Use a binary search to find the font size where
+        # the text fits within both width and height constraints.
+        if available_width > 0 and available_height > 0:
+            typical_chars = 40.0 if slot.role == "heading" else 60.0
+            size_factor = 1.35 if slot.role == "heading" else 1.0
+            lh_factor = 1.1 if slot.role == "heading" else 1.2
+            lo, hi = 8.0, min_size
+            # Check whether the current min_size already fits
+            eff = min_size * size_factor
+            cpl = available_width / max(eff * 0.55, 1.0)
+            lines_needed = ceil(typical_chars / max(cpl, 1.0))
+            total_h = lines_needed * eff * lh_factor
+            if total_h > available_height:
+                # Binary search for a font size that fits
+                for _ in range(20):
+                    mid = (lo + hi) / 2
+                    eff = mid * size_factor
+                    cpl = available_width / max(eff * 0.55, 1.0)
+                    ln = ceil(typical_chars / max(cpl, 1.0))
+                    lh = eff * lh_factor
+                    if ln * lh <= available_height:
+                        lo = mid
+                    else:
+                        hi = mid
+                width_aware_min = max(lo, 8.0)
+                if width_aware_min < min_size:
+                    min_size = width_aware_min
+        else:
+            # Fallback: allow shrinking to half the height limit for 2-line wrap
+            multi_line_limit = max(height_limit * 0.5, 8.0)
+            if multi_line_limit < min_size:
+                min_size = multi_line_limit
 
     if default_size == fitting.default_size and min_size == fitting.min_size:
         return fitting
@@ -93,7 +142,9 @@ def _extend_type_ladders_for_slot(
     return extended
 
 
-def _text_fit_rules(layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None) -> TextFitting:
+def _text_fit_rules(
+    layout_def: LayoutDef, node: Node, provider: LayoutProvider | None = None
+) -> TextFitting:
     slot_name = node.slot_binding or ""
     slot = layout_def.slots[slot_name]
     if provider is not None:
@@ -115,9 +166,7 @@ def _resolve_theme(deck: Deck, provider: LayoutProvider) -> Theme:
 
 def _content_by_slot(slide: Slide) -> dict[str, Node]:
     return {
-        node.slot_binding: node
-        for node in slide.nodes
-        if node.slot_binding is not None
+        node.slot_binding: node for node in slide.nodes if node.slot_binding is not None
     }
 
 
@@ -142,7 +191,9 @@ def _shape_geometry(node: Node) -> tuple[float, float, float, float]:
     return x, y, width, height
 
 
-def _measure_slot_height_factory(layout_def: LayoutDef, provider: LayoutProvider) -> Callable[[str, object | None, float], float]:
+def _measure_slot_height_factory(
+    layout_def: LayoutDef, provider: LayoutProvider
+) -> Callable[[str, object | None, float], float]:
     def measure(slot_name: str, content: object | None, width: float) -> float:
         node = content if isinstance(content, Node) else None
         if node is None:
@@ -150,7 +201,9 @@ def _measure_slot_height_factory(layout_def: LayoutDef, provider: LayoutProvider
         slot = layout_def.slots[slot_name]
         fit_rules = _text_fit_rules(layout_def, node, provider)
         inner_width = max(width - (2 * slot.padding), 0.0)
-        return measure_text_height(node.content, inner_width, fit_rules.default_size) + (2 * slot.padding)
+        return measure_text_height(
+            node.content, inner_width, fit_rules.default_size
+        ) + (2 * slot.padding)
 
     return measure
 
@@ -166,12 +219,16 @@ def _computed_by_slot(slide: Slide) -> dict[str, ComputedNode]:
     return computed_by_slot
 
 
-def _block_text_fitting(layout_def: LayoutDef, provider: LayoutProvider, role: str) -> dict[str, TextFitting]:
+def _block_text_fitting(
+    layout_def: LayoutDef, provider: LayoutProvider, role: str
+) -> dict[str, TextFitting]:
     text_fitting = dict(layout_def.text_fitting)
     try:
         text_fitting[role] = provider.get_text_fitting(layout_def.name, role)
     except (AgentSlidesError, KeyError):
-        text_fitting.setdefault(role, DEFAULT_TEXT_FITTING.get(role, DEFAULT_TEXT_FITTING["body"]))
+        text_fitting.setdefault(
+            role, DEFAULT_TEXT_FITTING.get(role, DEFAULT_TEXT_FITTING["body"])
+        )
     try:
         text_fitting["heading"] = provider.get_text_fitting(layout_def.name, "heading")
     except (AgentSlidesError, KeyError):
@@ -189,11 +246,17 @@ def _resolve_text_ladder(
     if design_rules is None:
         return None
     configured = design_rules.type_ladders.get(role, [])
-    ladder = [size for size in configured if fit_rules.min_size <= size <= fit_rules.default_size]
+    ladder = [
+        size
+        for size in configured
+        if fit_rules.min_size <= size <= fit_rules.default_size
+    ]
     return ladder or None
 
 
-def _normalize_deck_font_sizes(deck: Deck, provider: LayoutProvider, design_rules: DesignRules) -> None:
+def _normalize_deck_font_sizes(
+    deck: Deck, provider: LayoutProvider, design_rules: DesignRules
+) -> None:
     if not design_rules.normalize_font_sizes:
         return
 
@@ -224,7 +287,9 @@ def _normalize_deck_font_sizes(deck: Deck, provider: LayoutProvider, design_rule
         target_size = role_minimums[role]
         if computed.font_size_pt <= target_size:
             continue
-        if ladder is not None and not any(isclose(size, target_size, rel_tol=0.0, abs_tol=1e-6) for size in ladder):
+        if ladder is not None and not any(
+            isclose(size, target_size, rel_tol=0.0, abs_tol=1e-6) for size in ladder
+        ):
             continue
 
         normalized_size, overflow = fit_text(
@@ -237,10 +302,13 @@ def _normalize_deck_font_sizes(deck: Deck, provider: LayoutProvider, design_rule
             font_family=computed.font_family,
             ladder=[target_size],
         )
-        if overflow or not isclose(normalized_size, target_size, rel_tol=0.0, abs_tol=1e-6):
+        if overflow or not isclose(
+            normalized_size, target_size, rel_tol=0.0, abs_tol=1e-6
+        ):
             continue
         computed.font_size_pt = normalized_size
         computed.text_overflow = False
+
 
 @dataclass(frozen=True)
 class _VariantTextAssignment:
@@ -263,7 +331,9 @@ class _ReflowOutcome:
     fallback_used: bool
 
 
-def _slot_sort_key(layout_def: LayoutDef, slot_name: str) -> tuple[int, float, float, str]:
+def _slot_sort_key(
+    layout_def: LayoutDef, slot_name: str
+) -> tuple[int, float, float, str]:
     slot = layout_def.slots[slot_name]
     return (
         slot.reading_order,
@@ -273,20 +343,44 @@ def _slot_sort_key(layout_def: LayoutDef, slot_name: str) -> tuple[int, float, f
     )
 
 
-def _ordered_slot_names(layout_def: LayoutDef, *, role: str | None = None, include_image: bool = True) -> list[str]:
-    slot_names = sorted(layout_def.slots, key=lambda slot_name: _slot_sort_key(layout_def, slot_name))
+def _ordered_slot_names(
+    layout_def: LayoutDef, *, role: str | None = None, include_image: bool = True
+) -> list[str]:
+    slot_names = sorted(
+        layout_def.slots, key=lambda slot_name: _slot_sort_key(layout_def, slot_name)
+    )
     if role is not None:
-        return [slot_name for slot_name in slot_names if layout_def.slots[slot_name].role == role]
+        return [
+            slot_name
+            for slot_name in slot_names
+            if layout_def.slots[slot_name].role == role
+        ]
     if include_image:
         return slot_names
-    return [slot_name for slot_name in slot_names if layout_def.slots[slot_name].role != "image"]
+    return [
+        slot_name
+        for slot_name in slot_names
+        if layout_def.slots[slot_name].role != "image"
+    ]
 
 
-def _ordered_nodes(slide: Slide, layout_def: LayoutDef, *, node_type: str) -> list[Node]:
-    slot_order = {slot_name: index for index, slot_name in enumerate(_ordered_slot_names(layout_def))}
+def _ordered_nodes(
+    slide: Slide, layout_def: LayoutDef, *, node_type: str
+) -> list[Node]:
+    slot_order = {
+        slot_name: index
+        for index, slot_name in enumerate(_ordered_slot_names(layout_def))
+    }
     return sorted(
-        [node for node in slide.nodes if node.type == node_type and node.slot_binding is not None],
-        key=lambda node: (slot_order.get(node.slot_binding or "", len(slot_order)), node.node_id),
+        [
+            node
+            for node in slide.nodes
+            if node.type == node_type and node.slot_binding is not None
+        ],
+        key=lambda node: (
+            slot_order.get(node.slot_binding or "", len(slot_order)),
+            node.node_id,
+        ),
     )
 
 
@@ -320,7 +414,11 @@ def _clone_content(node: Node) -> NodeContent:
 def _merged_content(nodes: Iterable[Node]) -> NodeContent:
     blocks: list[TextBlock] = []
     for node in nodes:
-        blocks.extend(block.model_copy(deep=True) for block in _clone_content(node).blocks if block.text.strip())
+        blocks.extend(
+            block.model_copy(deep=True)
+            for block in _clone_content(node).blocks
+            if block.text.strip()
+        )
     return NodeContent(blocks=blocks)
 
 
@@ -337,7 +435,9 @@ def _annotate_computed_metadata(
         node.layout_overflow_reason = overflow_reason
 
 
-def _slide_violations(layout_def: LayoutDef, slide: Slide, rects: dict[str, Rect]) -> list[LayoutViolation]:
+def _slide_violations(
+    layout_def: LayoutDef, slide: Slide, rects: dict[str, Rect]
+) -> list[LayoutViolation]:
     return validate_layout(layout_def, rects, computed_by_slot=_computed_by_slot(slide))
 
 
@@ -371,7 +471,10 @@ def _build_variant_candidate(
     current_layout: LayoutDef,
     variant_layout: LayoutDef,
 ) -> _VariantCandidate | None:
-    if any(node.type in {"chart", "table", "pattern"} or node.slot_binding is None for node in slide.nodes):
+    if any(
+        node.type in {"chart", "table", "pattern"} or node.slot_binding is None
+        for node in slide.nodes
+    ):
         return None
 
     text_sources = _ordered_nodes(slide, current_layout, node_type="text")
@@ -381,7 +484,10 @@ def _build_variant_candidate(
         return None
 
     heading_sources = [
-        node for node in text_sources if current_layout.slots.get(node.slot_binding or "", None) and current_layout.slots[node.slot_binding].role == "heading"
+        node
+        for node in text_sources
+        if current_layout.slots.get(node.slot_binding or "", None)
+        and current_layout.slots[node.slot_binding].role == "heading"
     ]
     body_sources = [node for node in text_sources if node not in heading_sources]
     heading_slots = _ordered_slot_names(variant_layout, role="heading")
@@ -441,7 +547,9 @@ def _build_variant_candidate(
         )
 
     image_assignments: list[tuple[str, str]] = []
-    for index, (slot_name, source_node) in enumerate(zip(image_slots, image_sources, strict=False)):
+    for index, (slot_name, source_node) in enumerate(
+        zip(image_slots, image_sources, strict=False)
+    ):
         candidate_node_id = f"__fallback_image_{index}"
         candidate_nodes.append(
             source_node.model_copy(
@@ -476,7 +584,9 @@ def _map_candidate_to_original_computed(
     mapped: dict[str, ComputedNode] = {}
 
     for candidate_node_id, source_node_id in candidate.image_assignments:
-        mapped[source_node_id] = candidate.slide.computed[candidate_node_id].model_copy(deep=True)
+        mapped[source_node_id] = candidate.slide.computed[candidate_node_id].model_copy(
+            deep=True
+        )
 
     for assignment in candidate.text_assignments:
         base = candidate.slide.computed[assignment.candidate_node_id]
@@ -551,16 +661,22 @@ def _map_candidate_to_original_computed(
                 update={
                     "y": y_cursor,
                     "height": height,
-                    "font_size_pt": block_positions[0].font_size_pt if block_positions else font_size_pt,
+                    "font_size_pt": block_positions[0].font_size_pt
+                    if block_positions
+                    else font_size_pt,
                     "text_overflow": False,
                     "block_positions": block_positions,
                 },
                 deep=True,
             )
-            mapped[source.node_id].font_size_pt = _slot_font_size(source, mapped[source.node_id])
+            mapped[source.node_id].font_size_pt = _slot_font_size(
+                source, mapped[source.node_id]
+            )
             y_cursor += height
 
-    bound_node_ids = {node.node_id for node in slide.nodes if node.slot_binding is not None}
+    bound_node_ids = {
+        node.node_id for node in slide.nodes if node.slot_binding is not None
+    }
     if set(mapped) != bound_node_ids:
         return None
     return mapped
@@ -606,7 +722,9 @@ def reflow_slide_with_fallback(
             fallback_reason=None,
             overflow_reason=None,
         )
-        return _ReflowOutcome(rects=primary_rects, violations=primary_violations, fallback_used=False)
+        return _ReflowOutcome(
+            rects=primary_rects, violations=primary_violations, fallback_used=False
+        )
 
     failure_reason = _first_failure_reason(primary_candidate, primary_violations, rules)
     for variant_layout in provider.get_variants(slide.layout):
@@ -621,11 +739,15 @@ def reflow_slide_with_fallback(
             provider=provider,
             design_rules=rules,
         )
-        candidate_violations = _slide_violations(variant_layout, candidate.slide, candidate_rects)
+        candidate_violations = _slide_violations(
+            variant_layout, candidate.slide, candidate_rects
+        )
         if candidate_violations:
             continue
 
-        mapped = _map_candidate_to_original_computed(slide, candidate, variant_layout, provider, rules)
+        mapped = _map_candidate_to_original_computed(
+            slide, candidate, variant_layout, provider, rules
+        )
         if mapped is None:
             continue
 
@@ -647,14 +769,18 @@ def reflow_slide_with_fallback(
         fallback_reason=None,
         overflow_reason=failure_reason,
     )
-    return _ReflowOutcome(rects=primary_rects, violations=primary_violations, fallback_used=False)
+    return _ReflowOutcome(
+        rects=primary_rects, violations=primary_violations, fallback_used=False
+    )
 
 
 def _slot_font_size(node: Node, computed: ComputedNode) -> float:
     if not computed.block_positions:
         return computed.font_size_pt
 
-    positions_by_index = {position.block_index: position for position in computed.block_positions}
+    positions_by_index = {
+        position.block_index: position for position in computed.block_positions
+    }
     for index, block in enumerate(node.content.blocks):
         if block.type != "heading" and index in positions_by_index:
             return positions_by_index[index].font_size_pt
@@ -692,7 +818,11 @@ def _reflow_slide(
     active_design_rules = design_rules or load_design_rules("default")
     slot_constraints = constraints_from_layout(layout_def, theme)
     content_by_slot = _content_by_slot(slide)
-    rects = solve(slot_constraints, content_by_slot, _measure_slot_height_factory(layout_def, active_provider))
+    rects = solve(
+        slot_constraints,
+        content_by_slot,
+        _measure_slot_height_factory(layout_def, active_provider),
+    )
 
     for node in slide.nodes:
         if node.type == "shape":
@@ -796,7 +926,11 @@ def _reflow_slide(
             continue
 
         if slot.role == "image" or node.type == "image":
-            image_fit = "stretch" if slot.full_bleed and node.image_fit == "contain" else node.image_fit
+            image_fit = (
+                "stretch"
+                if slot.full_bleed and node.image_fit == "contain"
+                else node.image_fit
+            )
             computed[node.node_id] = ComputedNode(
                 x=x,
                 y=y,
@@ -826,7 +960,9 @@ def _reflow_slide(
         # configured ladder step, so that fit_blocks can actually shrink to
         # the sizes the adjusted fitting permits.
         effective_type_ladders = _extend_type_ladders_for_slot(
-            active_design_rules.type_ladders, text_fitting, slot.role,
+            active_design_rules.type_ladders,
+            text_fitting,
+            slot.role,
         )
         block_fits, text_overflow = fit_blocks(
             node.content.blocks,
@@ -858,7 +994,9 @@ def _reflow_slide(
             font_size_pt=block_positions[0].font_size_pt if block_positions else 0.0,
             font_family=str(style["font_family"]),
             color=str(style["color"]),
-            bg_color=slot.bg_color if slot.bg_color is not None else theme.colors.background,
+            bg_color=slot.bg_color
+            if slot.bg_color is not None
+            else theme.colors.background,
             bg_transparency=slot.bg_transparency,
             font_bold=bool(style["font_bold"]),
             text_overflow=text_overflow,
@@ -887,7 +1025,13 @@ def reflow_slide(
 ) -> list[LayoutViolation]:
     """Compute concrete geometry and styling for a single slide."""
 
-    rects = _reflow_slide(slide, layout_def, theme, revision=0, design_rules=design_rules or load_design_rules("default"))
+    rects = _reflow_slide(
+        slide,
+        layout_def,
+        theme,
+        revision=0,
+        design_rules=design_rules or load_design_rules("default"),
+    )
     return validate_layout(layout_def, rects, computed_by_slot=_computed_by_slot(slide))
 
 

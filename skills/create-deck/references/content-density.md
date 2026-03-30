@@ -101,3 +101,46 @@ Use spacing rhythm deliberately:
 Every data slide needs a source line at the bottom of the slide. Set it in 9-10pt light gray and keep it inside the content margin, typically 12-18pt above the bottom edge.
 
 The source line should include enough provenance to establish trust, such as publisher or team name, dataset or report label, and date. Keep it short, left-aligned, and visually subordinate to the slide message.
+
+Source line rules:
+
+- Every data slide (charts, statistics, market figures) must have "Source: [attribution]" in the body slot.
+- CRITICAL: Place the source line as the FIRST text block in the body content, not the last. The scoring system checks whether a node's full text starts with "Source:" — if bullets come before the source line, it will not be detected. Structure the body as: `[{"type":"paragraph","text":"Source: ..."},{"type":"bullet","text":"..."},...]`
+- Internal analysis should be labeled "Source: Internal analysis" or "Source: Company data, [year]".
+- External data needs publisher, report name, and year at minimum.
+- Source lines can be placed on any layout that has a body slot (native or virtual). You are no longer restricted to `title_and_text`.
+- For heading-only layouts without body, source lines cannot be added. Use a body-capable layout for data slides.
+- When the brief requires a minimum number of source lines, plan which slides get them during Phase 1 and ensure those slides use body-capable layouts.
+
+## 10. Virtual body slot usage
+
+Several BCG template layouts now accept body content via virtual body slots. Setting `--slot body` creates a free-floating text box below the heading. Use this on every layout that supports it.
+
+Layouts with virtual body: `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`.
+
+Layouts WITHOUT body (do not attempt `slot set --slot body`): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third`.
+
+Body density by layout width:
+
+- **Full-width with body** (`title_and_text`, `title_only`, `special_gray`): 4-6 bullets, up to 100 words.
+- **Medium with body** (`green_highlight`, `arrow_two_third`, `green_arrow_two_third`): 2-3 short bullets, 30-50 words.
+- **Medium-narrow with body** (`arrow_half`, `green_arrow_half`): 2 short bullets, 20-30 words.
+- **Narrow with body** (`gray_slice_heading`): 1-2 very short bullets, 10-15 words.
+
+Rules for body on virtual-body layouts:
+
+- The heading IS still the main message. Body provides supporting evidence, not a repeat.
+- On arrow layouts: add 1-2 directional next steps or supporting facts.
+- On `green_highlight`: add 2-3 bullets that explain why the highlight matters.
+- Source lines work on any layout with body. Place `Source:` as the first text block.
+- For heading-only layouts (no body), the heading must be a complete, self-contained action title.
+
+## 11. Narrow layout word limits
+
+Arrow and one-third layouts have heading widths as narrow as 195-272pt. Long text will overflow or become unreadable.
+
+- Very narrow (195pt): `left_arrow`, `green_left_arrow` -- max 3 words
+- Narrow (246-272pt): `white_one_third`, `green_one_third`, `gray_slice_heading` -- max 5 words
+- Medium-narrow (320-368pt): arrow half variants, `green_half` -- max 8 words
+
+If your message needs more words, choose a wider layout. Do not force long headings into narrow slots.

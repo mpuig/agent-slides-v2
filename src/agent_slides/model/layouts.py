@@ -16,7 +16,9 @@ DEFAULT_TEXT_FITTING = {
 }
 
 
-def _grid(*, columns: int, rows: int, row_heights: list[float], col_widths: list[float]) -> GridDef:
+def _grid(
+    *, columns: int, rows: int, row_heights: list[float], col_widths: list[float]
+) -> GridDef:
     return GridDef(
         columns=columns,
         rows=rows,
@@ -145,7 +147,9 @@ LAYOUTS: dict[str, LayoutDef] = {
                 size_policy="fill_remaining",
             ),
         },
-        grid=_grid(columns=2, rows=3, row_heights=[0.12, 0.18, 0.70], col_widths=[0.5, 0.5]),
+        grid=_grid(
+            columns=2, rows=3, row_heights=[0.12, 0.18, 0.70], col_widths=[0.5, 0.5]
+        ),
         text_fitting=DEFAULT_TEXT_FITTING,
     ),
     "quote": _layout(
@@ -447,7 +451,9 @@ LAYOUTS: dict[str, LayoutDef] = {
                 reading_order=4,
             ),
         },
-        grid=_grid(columns=2, rows=3, row_heights=[0.16, 0.42, 0.42], col_widths=[0.5, 0.5]),
+        grid=_grid(
+            columns=2, rows=3, row_heights=[0.16, 0.42, 0.42], col_widths=[0.5, 0.5]
+        ),
         text_fitting=DEFAULT_TEXT_FITTING,
     ),
 }
@@ -459,7 +465,9 @@ def _load_layout(name: str) -> LayoutDef:
         return LAYOUTS[name]
     except KeyError as exc:
         available = ", ".join(list_layouts())
-        raise AgentSlidesError(INVALID_LAYOUT, f"Unknown layout '{name}'. Available layouts: {available}") from exc
+        raise AgentSlidesError(
+            INVALID_LAYOUT, f"Unknown layout '{name}'. Available layouts: {available}"
+        ) from exc
 
 
 def get_layout(name: str) -> LayoutDef:
@@ -472,6 +480,7 @@ def list_layouts() -> list[str]:
     """Return the sorted list of available built-in layouts."""
 
     return sorted(LAYOUTS)
+
 
 def get_slot_names(name: str) -> list[str]:
     """Return slot names for a built-in layout."""

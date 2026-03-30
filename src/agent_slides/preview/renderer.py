@@ -59,10 +59,14 @@ class SlideRenderer:
         if cached is not None:
             return cached
 
-        await self._render_indices(deck, [slide_index], progress_callback=progress_callback)
+        await self._render_indices(
+            deck, [slide_index], progress_callback=progress_callback
+        )
         rendered = self.get_cached(slide.slide_id, slide_revision)
         if rendered is None:
-            raise SlideRenderError(f"Renderer did not produce a PNG for slide index {slide_index}.")
+            raise SlideRenderError(
+                f"Renderer did not produce a PNG for slide index {slide_index}."
+            )
         return rendered
 
     async def render_all(
@@ -74,10 +78,15 @@ class SlideRenderer:
         missing_indices = [
             index
             for index, slide in enumerate(deck.slides)
-            if self.get_cached(slide.slide_id, self._slide_revision(slide, deck.revision)) is None
+            if self.get_cached(
+                slide.slide_id, self._slide_revision(slide, deck.revision)
+            )
+            is None
         ]
         if missing_indices:
-            await self._render_indices(deck, missing_indices, progress_callback=progress_callback)
+            await self._render_indices(
+                deck, missing_indices, progress_callback=progress_callback
+            )
 
         return [
             self.get_cached(slide.slide_id, self._slide_revision(slide, deck.revision))
@@ -101,14 +110,20 @@ class SlideRenderer:
             is None
         ]
         if missing_indices:
-            await self._render_indices(deck, missing_indices, progress_callback=progress_callback)
+            await self._render_indices(
+                deck, missing_indices, progress_callback=progress_callback
+            )
 
         rendered_paths: list[Path] = []
         for index in slide_indices:
             slide = deck.slides[index]
-            cached = self.get_cached(slide.slide_id, self._slide_revision(slide, deck.revision))
+            cached = self.get_cached(
+                slide.slide_id, self._slide_revision(slide, deck.revision)
+            )
             if cached is None:
-                raise SlideRenderError(f"Renderer did not produce a PNG for slide index {index}.")
+                raise SlideRenderError(
+                    f"Renderer did not produce a PNG for slide index {index}."
+                )
             rendered_paths.append(cached)
         return rendered_paths
 
@@ -133,12 +148,16 @@ class SlideRenderer:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> None:
         if not self.is_available:
-            raise SlideRenderError("LibreOffice preview dependencies are not available.")
+            raise SlideRenderError(
+                "LibreOffice preview dependencies are not available."
+            )
         if not slide_indices:
             return
 
         async with self._lock:
-            await asyncio.to_thread(self._render_indices_sync, deck, slide_indices, progress_callback)
+            await asyncio.to_thread(
+                self._render_indices_sync, deck, slide_indices, progress_callback
+            )
 
     def _render_indices_sync(
         self,
@@ -149,7 +168,9 @@ class SlideRenderer:
         assert self.soffice_path is not None
         assert self.pdftoppm_path is not None
 
-        with tempfile.TemporaryDirectory(prefix="agent-slides-render-", dir=self.cache_dir) as tmp_dir_name:
+        with tempfile.TemporaryDirectory(
+            prefix="agent-slides-render-", dir=self.cache_dir
+        ) as tmp_dir_name:
             tmp_dir = Path(tmp_dir_name)
             pptx_path = tmp_dir / f"{self.deck_path.stem}-{deck.revision}.pptx"
             pdf_path = tmp_dir / f"{pptx_path.stem}.pdf"
@@ -205,7 +226,9 @@ class SlideRenderer:
                     text=True,
                     check=False,
                 )
-                rendered_path = output_prefix.with_name(f"{output_prefix.name}-{slide_index + 1}.png")
+                rendered_path = output_prefix.with_name(
+                    f"{output_prefix.name}-{slide_index + 1}.png"
+                )
                 if pdftoppm_result.returncode != 0 or not rendered_path.exists():
                     raise SlideRenderError(
                         "pdftoppm failed to render preview PNG: "
@@ -213,4 +236,6 @@ class SlideRenderer:
                     )
 
                 shutil.copyfile(rendered_path, png_path)
-                self._rendered[self._cache_key(slide.slide_id, slide_revision)] = png_path
+                self._rendered[self._cache_key(slide.slide_id, slide_revision)] = (
+                    png_path
+                )

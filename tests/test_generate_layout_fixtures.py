@@ -15,7 +15,9 @@ SCRIPT_PATH = ROOT / "scripts" / "generate_layout_fixtures.py"
 
 
 def _load_script_module():
-    spec = importlib.util.spec_from_file_location("generate_layout_fixtures", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "generate_layout_fixtures", SCRIPT_PATH
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -94,12 +96,16 @@ def _validate_text_payloads(payload: dict[str, object]) -> None:
         assert validated.blocks
 
 
-def test_generate_layout_fixtures_cli_writes_expected_fixture_files(tmp_path: Path) -> None:
+def test_generate_layout_fixtures_cli_writes_expected_fixture_files(
+    tmp_path: Path,
+) -> None:
     inventory_path = tmp_path / "layout-inventory.json"
     output_dir = tmp_path / "layout_cases"
     _write_inventory(inventory_path)
 
-    result = _run_script("--inventory", str(inventory_path), "--output", str(output_dir))
+    result = _run_script(
+        "--inventory", str(inventory_path), "--output", str(output_dir)
+    )
 
     assert result.returncode == 0, result.stderr
     summary = json.loads(result.stdout)
@@ -112,16 +118,28 @@ def test_generate_layout_fixtures_cli_writes_expected_fixture_files(tmp_path: Pa
         "multi_slot.json",
     ]
 
-    heading_only = json.loads((output_dir / "heading_only.json").read_text(encoding="utf-8"))
+    heading_only = json.loads(
+        (output_dir / "heading_only.json").read_text(encoding="utf-8")
+    )
     assert set(heading_only) == {"long_heading", "narrow_safe", "nominal"}
     assert len(heading_only["long_heading"]["heading"]["blocks"][0]["text"]) > 80
 
-    heading_body = json.loads((output_dir / "heading_body.json").read_text(encoding="utf-8"))
+    heading_body = json.loads(
+        (output_dir / "heading_body.json").read_text(encoding="utf-8")
+    )
     assert "dense_body" in heading_body
     assert len(heading_body["dense_body"]["body"]["blocks"]) >= 6
 
-    heading_image = json.loads((output_dir / "heading_image.json").read_text(encoding="utf-8"))
-    assert {"image_present", "image_missing", "long_heading", "narrow_safe", "nominal"} == set(heading_image)
+    heading_image = json.loads(
+        (output_dir / "heading_image.json").read_text(encoding="utf-8")
+    )
+    assert {
+        "image_present",
+        "image_missing",
+        "long_heading",
+        "narrow_safe",
+        "nominal",
+    } == set(heading_image)
     assert "image" in heading_image["image_present"]
     assert "image" not in heading_image["image_missing"]
 
@@ -138,8 +156,12 @@ def test_generate_layout_fixtures_is_deterministic(tmp_path: Path) -> None:
     second_output_dir = tmp_path / "second"
     _write_inventory(inventory_path)
 
-    first = _run_script("--inventory", str(inventory_path), "--output", str(first_output_dir))
-    second = _run_script("--inventory", str(inventory_path), "--output", str(second_output_dir))
+    first = _run_script(
+        "--inventory", str(inventory_path), "--output", str(first_output_dir)
+    )
+    second = _run_script(
+        "--inventory", str(inventory_path), "--output", str(second_output_dir)
+    )
 
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
@@ -155,13 +177,26 @@ def test_generate_layout_fixtures_is_deterministic(tmp_path: Path) -> None:
     assert first_payloads == second_payloads
 
 
-def test_build_fixture_payloads_rejects_inventory_without_testable_layouts(tmp_path: Path) -> None:
+def test_build_fixture_payloads_rejects_inventory_without_testable_layouts(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
     inventory_path = tmp_path / "layout-inventory.json"
-    inventory_path.write_text(json.dumps({"layouts": [{"slug": "blank", "testable": False, "slot_structure": "blank"}]}), encoding="utf-8")
+    inventory_path.write_text(
+        json.dumps(
+            {
+                "layouts": [
+                    {"slug": "blank", "testable": False, "slot_structure": "blank"}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="does not contain any testable layouts"):
-        module.build_fixture_payloads(json.loads(inventory_path.read_text(encoding="utf-8")))
+        module.build_fixture_payloads(
+            json.loads(inventory_path.read_text(encoding="utf-8"))
+        )
 
 
 def test_build_fixture_payloads_supports_blank_slot_structures() -> None:

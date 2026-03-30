@@ -9,13 +9,13 @@ def test_reflow_positions_image_nodes_on_the_same_grid_as_text_nodes() -> None:
         deck_id="deck-text",
         theme="default",
         slides=[
-                Slide(
-                    slide_id="s-1",
-                    layout="title_content",
-                    nodes=[
-                        Node(
-                            node_id="n-1",
-                            slot_binding="body",
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
                         type="text",
                         content="Hello",
                     )
@@ -29,13 +29,13 @@ def test_reflow_positions_image_nodes_on_the_same_grid_as_text_nodes() -> None:
         deck_id="deck-image",
         theme="default",
         slides=[
-                Slide(
-                    slide_id="s-1",
-                    layout="title_content",
-                    nodes=[
-                        Node(
-                            node_id="n-1",
-                            slot_binding="body",
+            Slide(
+                slide_id="s-1",
+                layout="title_content",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="body",
                         type="image",
                         image_path="photo.png",
                         image_fit="cover",

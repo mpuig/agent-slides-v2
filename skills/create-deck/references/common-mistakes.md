@@ -83,7 +83,49 @@ Choose a layout that reflects the relationship: comparison, sequence, hierarchy,
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only. Related layout guidance exists in [docs/auto-layout.md](/Users/puigmarc/code/agent-slides-v2-workspaces/mpuig_agent-slides-v2_127/docs/auto-layout.md).
 
-### 6. Evidence is unreadable even after shrink-to-fit
+### 6. Setting body on heading-only layouts
+
+**What it looks like**
+Bad example: using `slot set` to put body text on a layout like `big_statement_green` or `arrow_half` which only has a heading slot.
+
+**Why it's wrong**
+20 of 24 BCG template layouts have no body slot. Body content set on these layouts is silently dropped, resulting in incomplete slides that look unfinished.
+
+**How to fix it**
+Check the layout catalog in `layout-selection.md` before setting slots. If you need both heading and body, use `title_and_text` (the only content layout with both). Otherwise, write the heading as a complete, self-contained action title.
+
+**Which agent-slides validate rule catches it**
+`UNBOUND_NODES` may catch some cases, but the real fix is choosing the right layout upfront.
+
+### 7. Missing source attribution
+
+**What it looks like**
+Bad example: a slide citing "$4.2B market opportunity" or "32% CAGR" with no source line.
+
+**Why it's wrong**
+Unsourced numbers destroy credibility in consulting decks. Every data claim needs provenance.
+
+**How to fix it**
+Add "Source: [publisher], [report/dataset], [year]" in the body slot (for `title_and_text`) or as a trailing line in the heading. For internal data, use "Source: Internal analysis" or "Source: Company data, [year]".
+
+**Which agent-slides validate rule catches it**
+No current validator rule. Manual QA only.
+
+### 8. Long headings on narrow layouts
+
+**What it looks like**
+Bad example: "Digital transformation is reshaping the competitive landscape across all segments" on a `left_arrow` layout (195pt wide).
+
+**Why it's wrong**
+Narrow layouts (195-272pt) can hold at most 3-5 words. Longer headings overflow, get shrunk to unreadable sizes, or break the visual design.
+
+**How to fix it**
+Match word count to width class: 3 words for very narrow (195pt), 5 words for narrow (246-272pt), 8 words for medium-narrow (320-368pt). If the message needs more words, pick a wider layout.
+
+**Which agent-slides validate rule catches it**
+`OVERFLOW` may catch the worst cases after shrink-to-fit. Prevention is better: consult the width table in `layout-selection.md`.
+
+### 9. Evidence is unreadable even after shrink-to-fit
 
 **What it looks like**
 Bad example: text box still overflows or ends up at tiny text size because too much content was forced into the slot.
@@ -101,7 +143,7 @@ Reduce copy, split the content, or switch to a layout with more space for the co
 
 These mistakes make the deck look unprofessional even when the underlying idea is sound.
 
-### 7. No visual hierarchy
+### 10. No visual hierarchy
 
 **What it looks like**
 Bad example: title, headers, captions, and body copy all appear at nearly the same size and weight.
@@ -115,7 +157,7 @@ Make the title dominant, use smaller subheads, and keep body text materially sma
 **Which agent-slides validate rule catches it**
 `FONT_SIZE_OUT_OF_RANGE` can catch some hierarchy failures when computed heading or body text falls outside configured ranges in [src/agent_slides/config/design_rules/default.yaml](/Users/puigmarc/code/agent-slides-v2-workspaces/mpuig_agent-slides-v2_127/src/agent_slides/config/design_rules/default.yaml). It does not fully validate visual hierarchy.
 
-### 8. Slide has no visual element
+### 11. Slide has no visual element
 
 **What it looks like**
 Bad example: a full slide made only of text blocks, with no chart, table, icon, diagram, or supporting shape structure.
@@ -129,7 +171,7 @@ Add a chart, table, icon-supported callout, process diagram, comparison grid, or
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 9. Bullet-heavy slide
+### 12. Bullet-heavy slide
 
 **What it looks like**
 Bad example: seven or more bullets stacked in one body slot.
@@ -143,7 +185,7 @@ Reduce to the few points that matter, group content into columns or sections, or
 **Which agent-slides validate rule catches it**
 `MAX_BULLETS_PER_SLIDE_EXCEEDED` in [src/agent_slides/engine/validator.py](/Users/puigmarc/code/agent-slides-v2-workspaces/mpuig_agent-slides-v2_127/src/agent_slides/engine/validator.py) using `content_limits.max_bullets_per_slide` from [src/agent_slides/config/design_rules/default.yaml](/Users/puigmarc/code/agent-slides-v2-workspaces/mpuig_agent-slides-v2_127/src/agent_slides/config/design_rules/default.yaml).
 
-### 10. Centered body text
+### 13. Centered body text
 
 **What it looks like**
 Bad example: paragraph or bullet text centered in the middle of a content slide.
@@ -157,7 +199,7 @@ Left-align body text. Reserve centering for sparse title slides, section divider
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 11. Crammed content with no breathing room
+### 14. Crammed content with no breathing room
 
 **What it looks like**
 Bad example: every part of the canvas is occupied, with text or shapes pressed against each other and against slide edges.
@@ -171,7 +213,7 @@ Delete lower-value content first, then increase whitespace between title, sectio
 **Which agent-slides validate rule catches it**
 No current validator rule. `OVERFLOW` may catch the worst cases, but whitespace quality is mostly manual QA today.
 
-### 12. Action title exceeds two lines
+### 15. Action title exceeds two lines
 
 **What it looks like**
 Bad example: a title that wraps across three or more lines because it tries to contain the whole paragraph-length story.
@@ -185,7 +227,7 @@ Compress to one strong claim with the fewest necessary words. If two ideas remai
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 13. Unbound or floating content
+### 16. Unbound or floating content
 
 **What it looks like**
 Bad example: nodes placed on the slide without meaningful slot bindings, making their role in the layout ambiguous.
@@ -203,7 +245,7 @@ Bind each node to the intended slot role and keep content semantic instead of ma
 
 These mistakes look like detail problems, but they still signal weak discipline.
 
-### 14. Animations or slide transitions
+### 17. Animations or slide transitions
 
 **What it looks like**
 Bad example: text flying in, chart wipes, or decorative slide transitions between ordinary content slides.
@@ -217,7 +259,7 @@ Use static builds. If sequence matters, show it through slide order or an explic
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 15. Mixing section divider styles
+### 18. Mixing section divider styles
 
 **What it looks like**
 Bad example: one divider slide is centered on a dark background, the next uses a photo, and a third looks like a normal content slide.
@@ -231,7 +273,7 @@ Pick one divider pattern and repeat it consistently across the deck.
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 16. Oversized containers with dead space
+### 19. Oversized containers with dead space
 
 **What it looks like**
 Bad example: a large shaded box or table cell holding only one short line, with most of the area empty.
@@ -245,7 +287,7 @@ Shrink the container to fit the content, or use the freed space for a more usefu
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 17. Dense bullet wall without spacing
+### 20. Dense bullet wall without spacing
 
 **What it looks like**
 Bad example: bullet list with minimal paragraph spacing, no grouping, and no distinction between primary and secondary points.
@@ -259,7 +301,7 @@ Add grouping, reduce the list, or convert it into sections with clear spacing an
 **Which agent-slides validate rule catches it**
 `MAX_BULLETS_PER_SLIDE_EXCEEDED` can catch the worst cases, but spacing quality is not directly validated. Manual QA still required.
 
-### 18. Inconsistent number formats, units, or scales
+### 21. Inconsistent number formats, units, or scales
 
 **What it looks like**
 Bad example: one chart shows revenue in millions, another in raw currency, and a table mixes percentages with basis points without clear labels.

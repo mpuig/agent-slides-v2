@@ -33,7 +33,9 @@ def attach_layout_fallback_warning(
         wanted = set(slide_ids)
         slides = [slide for slide in deck.slides if slide.slide_id in wanted]
 
-    warnings = [warning for slide in slides if (warning := _fallback_warning(slide)) is not None]
+    warnings = [
+        warning for slide in slides if (warning := _fallback_warning(slide)) is not None
+    ]
     if not warnings:
         return payload
     if len(warnings) == 1:

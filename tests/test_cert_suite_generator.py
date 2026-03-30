@@ -37,11 +37,17 @@ def _run_cert_script(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _write_inventory_for_template(template_path: Path, manifest_path: Path, inventory_path: Path) -> dict[str, object]:
-    inventory_module = _load_script_module(INVENTORY_SCRIPT_PATH, "export_layout_inventory")
+def _write_inventory_for_template(
+    template_path: Path, manifest_path: Path, inventory_path: Path
+) -> dict[str, object]:
+    inventory_module = _load_script_module(
+        INVENTORY_SCRIPT_PATH, "export_layout_inventory"
+    )
     manifest = read_template_manifest(template_path, manifest_path).manifest
     inventory = inventory_module.build_inventory(manifest)
-    inventory_path.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    inventory_path.write_text(
+        json.dumps(inventory, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return inventory
 
 
@@ -63,7 +69,9 @@ def test_generate_layout_cert_suite_cli_writes_expected_decks(tmp_path: Path) ->
     inventory_path = tmp_path / "layout-inventory.json"
     output_dir = tmp_path / "cert-suite"
     create_test_template(template_path)
-    inventory = _write_inventory_for_template(template_path, manifest_path, inventory_path)
+    inventory = _write_inventory_for_template(
+        template_path, manifest_path, inventory_path
+    )
 
     result = _run_cert_script(
         "--manifest",
@@ -152,7 +160,9 @@ def test_generate_layout_cert_suite_is_deterministic(tmp_path: Path) -> None:
     assert first_payloads == second_payloads
 
 
-def test_generated_cert_suite_builds_for_multiple_templates_and_counts_all_templates(tmp_path: Path) -> None:
+def test_generated_cert_suite_builds_for_multiple_templates_and_counts_all_templates(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     total_expected = 0
     all_deck_paths: dict[str, list[Path]] = {}
@@ -163,7 +173,9 @@ def test_generated_cert_suite_builds_for_multiple_templates_and_counts_all_templ
         inventory_path = tmp_path / f"example-{index + 1}.inventory.json"
         output_dir = tmp_path / "cert-suite"
         Presentation().save(template_path)
-        inventory = _write_inventory_for_template(template_path, manifest_path, inventory_path)
+        inventory = _write_inventory_for_template(
+            template_path, manifest_path, inventory_path
+        )
         total_expected += _expected_deck_count(inventory)
 
         result = _run_cert_script(
@@ -179,7 +191,9 @@ def test_generated_cert_suite_builds_for_multiple_templates_and_counts_all_templ
 
         assert result.returncode == 0, result.stderr
         template_slug = f"example-{index + 1}"
-        all_deck_paths[template_slug] = sorted((output_dir / template_slug).glob("**/deck.json"))
+        all_deck_paths[template_slug] = sorted(
+            (output_dir / template_slug).glob("**/deck.json")
+        )
         assert all_deck_paths[template_slug]
 
     all_generated_decks = sorted((tmp_path / "cert-suite").glob("**/deck.json"))
@@ -188,7 +202,9 @@ def test_generated_cert_suite_builds_for_multiple_templates_and_counts_all_templ
     for template_slug in ("example-1", "example-2"):
         for deck_path in all_deck_paths[template_slug]:
             output_path = deck_path.with_suffix(".pptx")
-            result = runner.invoke(cli, ["build", str(deck_path), "-o", str(output_path)])
+            result = runner.invoke(
+                cli, ["build", str(deck_path), "-o", str(output_path)]
+            )
             assert result.exit_code == 0, result.output
             presentation = Presentation(str(output_path))
             assert len(presentation.slides) == 1

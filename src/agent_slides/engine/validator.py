@@ -11,6 +11,10 @@ from agent_slides.model.types import Deck, Node, NodeContent, Slide
 
 MAX_SLIDES_EXCEEDED = "MAX_SLIDES_EXCEEDED"
 MAX_WORDS_PER_COLUMN_EXCEEDED = "MAX_WORDS_PER_COLUMN_EXCEEDED"
+
+# Reference area (sq pt) for a standard body column in a two-column built-in layout.
+# Used to scale the max-words-per-column limit for larger template placeholders.
+_REFERENCE_COLUMN_AREA_SQPT = 300.0 * 350.0  # ~105 000 sq pt
 MAX_BULLETS_PER_SLIDE_EXCEEDED = "MAX_BULLETS_PER_SLIDE_EXCEEDED"
 FONT_SIZE_OUT_OF_RANGE = "FONT_SIZE_OUT_OF_RANGE"
 MISSING_TITLE_SLIDE = "MISSING_TITLE_SLIDE"
@@ -69,10 +73,16 @@ def _is_title_layout(layout: str) -> bool:
 
 
 _CLOSING_LAYOUT_SLUGS = {
-    "closing", "closing_slide", "statement", "statement_slide",
-    "end", "d_end",
-    "big_statement_green", "d_big_statement_green",
-    "big_statement_icon", "d_big_statement_icon",
+    "closing",
+    "closing_slide",
+    "statement",
+    "statement_slide",
+    "end",
+    "d_end",
+    "big_statement_green",
+    "d_big_statement_green",
+    "big_statement_icon",
+    "d_big_statement_icon",
 }
 
 
@@ -86,7 +96,9 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
 
     constraints: list[Constraint] = []
     layout_used, fallback_reason, overflow_reason = _fallback_metadata(slide)
-    unbound_node_ids = [node.node_id for node in slide.nodes if node.slot_binding is None]
+    unbound_node_ids = [
+        node.node_id for node in slide.nodes if node.slot_binding is None
+    ]
     if unbound_node_ids:
         constraints.append(
             Constraint(
@@ -101,19 +113,36 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
     total_bullets = 0
     for node in slide.nodes:
         if node.type == "text":
-            content = node.content if isinstance(node.content, NodeContent) else NodeContent.model_validate(node.content)
+            content = (
+                node.content
+                if isinstance(node.content, NodeContent)
+                else NodeContent.model_validate(node.content)
+            )
             total_bullets += _count_bullets(content)
 
             if node.slot_binding is not None:
                 word_count = _count_words(content)
-                if word_count > rules.content_limits.max_words_per_column:
+                base_limit = rules.content_limits.max_words_per_column
+
+                # Scale limit by placeholder area when computed data is available.
+                # Larger template placeholders can hold more text without visual
+                # overflow, so we allow proportionally more words (capped at 2x).
+                effective_limit = base_limit
+                computed_node = slide.computed.get(node.node_id)
+                if computed_node is not None:
+                    node_area = computed_node.width * computed_node.height
+                    if node_area > _REFERENCE_COLUMN_AREA_SQPT:
+                        scale = min(node_area / _REFERENCE_COLUMN_AREA_SQPT, 2.0)
+                        effective_limit = int(base_limit * scale)
+
+                if word_count > effective_limit:
                     constraints.append(
                         Constraint(
                             code=MAX_WORDS_PER_COLUMN_EXCEEDED,
                             severity="warning",
                             message=(
                                 f"Slot '{node.slot_binding}' has {word_count} words; "
-                                f"max is {rules.content_limits.max_words_per_column}."
+                                f"max is {effective_limit}."
                             ),
                             slide_id=slide.slide_id,
                             node_id=node.node_id,
@@ -153,20 +182,50 @@ def validate_slide(slide: Slide, rules: DesignRules) -> list[Constraint]:
             )
 
         allowed_range = _font_range_for_node(node, rules)
-        if not allowed_range.min_size <= computed.font_size_pt <= allowed_range.max_size:
-            constraints.append(
-                Constraint(
-                    code=FONT_SIZE_OUT_OF_RANGE,
-                    severity="warning",
-                    message=(
-                        f"Node '{node.node_id}' font size {computed.font_size_pt:g}pt is "
-                        f"outside the allowed {_node_role(node)} range "
-                        f"{allowed_range.min_size}-{allowed_range.max_size}pt."
-                    ),
-                    slide_id=slide.slide_id,
-                    node_id=node.node_id,
-                )
+        if (
+            not allowed_range.min_size
+            <= computed.font_size_pt
+            <= allowed_range.max_size
+        ):
+            # Template placeholders with constrained dimensions (e.g. arrow
+            # title bars at ~37pt tall, divider headings at ~26pt, narrow
+            # arrow columns at ~195pt wide) force the text-fit engine to
+            # shrink headings below the heading-range minimum.  When the
+            # placeholder is physically too small for the minimum heading
+            # font size and the engine resolved without overflow, suppress
+            # the warning — the result is the best fit for a constrained slot.
+            role = _node_role(node)
+            overflow_floor = float(rules.overflow_policy.min_font_size)
+            # A placeholder is height-constrained if it can't fit two lines
+            # at the minimum heading size (min_size * line_height(1.2) * 2).
+            two_line_min_height = allowed_range.min_size * 1.2 * 2
+            height_constrained = computed.height < two_line_min_height
+            # A placeholder is width-constrained if it is narrower than ~10x
+            # the minimum heading font size (roughly 10 characters at that
+            # size), which forces aggressive wrapping and font shrinking.
+            min_width_for_heading = allowed_range.min_size * 10
+            width_constrained = computed.width < min_width_for_heading
+            is_constrained_heading = (
+                role == "heading"
+                and computed.font_size_pt < allowed_range.min_size
+                and not computed.text_overflow
+                and computed.font_size_pt >= overflow_floor
+                and (height_constrained or width_constrained)
             )
+            if not is_constrained_heading:
+                constraints.append(
+                    Constraint(
+                        code=FONT_SIZE_OUT_OF_RANGE,
+                        severity="warning",
+                        message=(
+                            f"Node '{node.node_id}' font size {computed.font_size_pt:g}pt is "
+                            f"outside the allowed {role} range "
+                            f"{allowed_range.min_size}-{allowed_range.max_size}pt."
+                        ),
+                        slide_id=slide.slide_id,
+                        node_id=node.node_id,
+                    )
+                )
 
     if total_bullets > rules.content_limits.max_bullets_per_slide:
         constraints.append(

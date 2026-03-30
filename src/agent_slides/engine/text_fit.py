@@ -91,7 +91,9 @@ def fit_text(
     """Estimate a font size that fits text into a bounded area."""
 
     content = _normalize_content(text)
-    sizes = _resolve_ladder(role, default_size=default_size, min_size=min_size, ladder=ladder)
+    sizes = _resolve_ladder(
+        role, default_size=default_size, min_size=min_size, ladder=ladder
+    )
     largest_size = sizes[0]
     smallest_size = sizes[-1]
 
@@ -105,7 +107,14 @@ def fit_text(
         return largest_size, False
 
     for font_size in sizes:
-        if _fits(content, width, height, font_size, font_family=font_family, use_precise=use_precise):
+        if _fits(
+            content,
+            width,
+            height,
+            font_size,
+            font_family=font_family,
+            use_precise=use_precise,
+        ):
             return font_size, False
 
     return smallest_size, True
@@ -181,7 +190,9 @@ def fit_blocks(
             ladder_index=ladder.index(selected_size),
             overflowed=initial_overflow,
         )
-        _refresh_block_fit(state, available_width, font_family=font_family, use_precise=use_precise)
+        _refresh_block_fit(
+            state, available_width, font_family=font_family, use_precise=use_precise
+        )
         states.append(state)
 
     _shrink_states_to_fit(
@@ -254,22 +265,30 @@ def compose_blocks(
             )
         )
         if index < len(block_fits) - 1:
-            cursor_y += fit.rendered_height + spacing_between(fit.block, block_fits[index + 1].block, spacing_rules)
+            cursor_y += fit.rendered_height + spacing_between(
+                fit.block, block_fits[index + 1].block, spacing_rules
+            )
 
     return positions
 
 
-def spacing_between(previous: TextBlock, current: TextBlock, spacing_rules: BlockSpacingRules) -> float:
+def spacing_between(
+    previous: TextBlock, current: TextBlock, spacing_rules: BlockSpacingRules
+) -> float:
     return spacing_rules.between(previous.type, current.type)
 
 
-def total_height(block_fits: list[BlockFit], *, spacing_rules: BlockSpacingRules) -> float:
+def total_height(
+    block_fits: list[BlockFit], *, spacing_rules: BlockSpacingRules
+) -> float:
     if not block_fits:
         return 0.0
 
     spacing_total = 0.0
     for index in range(len(block_fits) - 1):
-        spacing_total += spacing_between(block_fits[index].block, block_fits[index + 1].block, spacing_rules)
+        spacing_total += spacing_between(
+            block_fits[index].block, block_fits[index + 1].block, spacing_rules
+        )
     return sum(fit.rendered_height for fit in block_fits) + spacing_total
 
 
@@ -279,7 +298,9 @@ def _normalize_content(text: str | NodeContent) -> NodeContent:
     return NodeContent.from_text(text)
 
 
-def _text_fitting_for_role(text_fitting: Mapping[str, TextFitting], role: str) -> TextFitting:
+def _text_fitting_for_role(
+    text_fitting: Mapping[str, TextFitting], role: str
+) -> TextFitting:
     rules = text_fitting.get(role)
     if rules is not None:
         return rules
@@ -298,7 +319,11 @@ def _resolve_block_ladder(
 ) -> list[float]:
     ladder = fit_rules.ladder
     if ladder is None and type_ladders is not None:
-        ladder = [size for size in type_ladders.get(role, []) if fit_rules.min_size <= size <= fit_rules.default_size] or None
+        ladder = [
+            size
+            for size in type_ladders.get(role, [])
+            if fit_rules.min_size <= size <= fit_rules.default_size
+        ] or None
     return _resolve_ladder(
         role,
         default_size=fit_rules.default_size,
@@ -326,7 +351,9 @@ def _normalize_font_family(font_family: str | None) -> str:
 
 
 def _width_factor(font_family: str | None) -> float:
-    return FONT_WIDTH_FACTORS.get(_normalize_font_family(font_family), DEFAULT_WIDTH_FACTOR)
+    return FONT_WIDTH_FACTORS.get(
+        _normalize_font_family(font_family), DEFAULT_WIDTH_FACTOR
+    )
 
 
 def _sanitize_ladder(values: list[float]) -> list[float]:
@@ -347,7 +374,9 @@ def _role_step(role: str) -> float:
     return ROLE_STEP_PT.get(role, 2.0)
 
 
-def _build_role_ladder(role: str, *, default_size: float, min_size: float) -> list[float]:
+def _build_role_ladder(
+    role: str, *, default_size: float, min_size: float
+) -> list[float]:
     step = _role_step(role)
     size = float(default_size)
     ladder = [size]
@@ -381,15 +410,21 @@ def _resolve_ladder(
     return [float(min_size)]
 
 
-def _block_width(width: float, block: TextBlock, font_size: float, *, font_family: str | None) -> float:
+def _block_width(
+    width: float, block: TextBlock, font_size: float, *, font_family: str | None
+) -> float:
     available_width = width
     if block.type == "bullet":
         available_width -= block.level * BULLET_INDENT_PT
-        available_width -= BULLET_GLYPH_WIDTH_CHARS * _width_factor(font_family) * font_size
+        available_width -= (
+            BULLET_GLYPH_WIDTH_CHARS * _width_factor(font_family) * font_size
+        )
     return max(available_width, 1.0)
 
 
-def _estimate_text_width(text: str, font_size: float, *, font_family: str | None) -> float:
+def _estimate_text_width(
+    text: str, font_size: float, *, font_family: str | None
+) -> float:
     if text == "":
         return 0.0
     return len(text) * _width_factor(font_family) * font_size
@@ -402,7 +437,9 @@ def _fallback_font_name(font_family: str | None) -> str:
     return "DejaVuSans.ttf"
 
 
-def _load_precise_font(font_family: str | None, size: float) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+def _load_precise_font(
+    font_family: str | None, size: float
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     requested_size = max(int(round(size)), 1)
     candidates: list[str] = []
     if font_family and font_family.strip():
@@ -482,14 +519,18 @@ def _break_long_token(
     for character in token.text:
         candidate = f"{current}{character}"
         candidate_run = token.model_copy(update={"text": candidate})
-        if current and _measure_run_width(
-            candidate_run,
-            font_family=font_family,
-            font_size=font_size,
-            block=block,
-            use_precise=use_precise,
-            font_cache=font_cache,
-        ) > width:
+        if (
+            current
+            and _measure_run_width(
+                candidate_run,
+                font_family=font_family,
+                font_size=font_size,
+                block=block,
+                use_precise=use_precise,
+                font_cache=font_cache,
+            )
+            > width
+        ):
             parts.append(token.model_copy(update={"text": current}))
             current = character
         else:
@@ -517,6 +558,7 @@ def _wrap_line_runs(
     wrapped: list[list[TextRun]] = []
     current: list[TextRun] = []
     current_width = 0.0
+
     def finish_line() -> None:
         nonlocal current, current_width
         while current and current[-1].text.isspace():
@@ -598,7 +640,11 @@ def _line_height(
             heights.append(_measure_precise_line_height(font))
         base_height = max(heights or [font_size * _font_size_factor(block)])
     else:
-        sizes = [_effective_run_font_size(block, font_size, run) for run in line_runs if run.text]
+        sizes = [
+            _effective_run_font_size(block, font_size, run)
+            for run in line_runs
+            if run.text
+        ]
         base_height = max(sizes or [font_size * _font_size_factor(block)])
 
     return base_height * _line_height_factor(block)
@@ -692,17 +738,24 @@ def _shrink_states_to_fit(
             candidates = [
                 state
                 for state in states
-                if (state.block.type == "heading") is shrink_heading and state.ladder_index < len(state.ladder) - 1
+                if (state.block.type == "heading") is shrink_heading
+                and state.ladder_index < len(state.ladder) - 1
             ]
             if not candidates:
                 return
 
-            candidate = max(candidates, key=lambda state: (state.font_size_pt, -state.block_index))
+            candidate = max(
+                candidates, key=lambda state: (state.font_size_pt, -state.block_index)
+            )
             candidate.ladder_index += 1
-            _refresh_block_fit(candidate, width, font_family=font_family, use_precise=use_precise)
+            _refresh_block_fit(
+                candidate, width, font_family=font_family, use_precise=use_precise
+            )
 
 
-def _states_total_height(states: list[_BlockFitState], spacing_rules: BlockSpacingRules) -> float:
+def _states_total_height(
+    states: list[_BlockFitState], spacing_rules: BlockSpacingRules
+) -> float:
     fits = [
         BlockFit(
             block_index=state.block_index,
@@ -726,10 +779,13 @@ def _fits(
     font_family: str | None,
     use_precise: bool,
 ) -> bool:
-    return _measured_text_height(
-        content,
-        width,
-        font_size,
-        font_family=font_family,
-        use_precise=use_precise,
-    ) <= height
+    return (
+        _measured_text_height(
+            content,
+            width,
+            font_size,
+            font_family=font_family,
+            use_precise=use_precise,
+        )
+        <= height
+    )

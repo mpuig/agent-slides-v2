@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agent_slides.model.types import STANDARD_SLIDE_HEIGHT_PT, STANDARD_SLIDE_WIDTH_PT
+from agent_slides.template_slots import infer_template_slot_role
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - PyYAML is a project dependency.
@@ -56,7 +59,9 @@ def _load_exclude_policy(
     manifest: dict[str, Any],
     manifest_path: Path,
 ) -> dict[str, str]:
-    resolved_path = _resolve_exclude_policy_path(path, manifest=manifest, manifest_path=manifest_path)
+    resolved_path = _resolve_exclude_policy_path(
+        path, manifest=manifest, manifest_path=manifest_path
+    )
     if resolved_path is None:
         return {}
 
@@ -73,7 +78,9 @@ def _load_exclude_policy(
         try:
             loaded = json.loads(raw_text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Exclude policy file is not valid JSON: {resolved_path}") from exc
+            raise ValueError(
+                f"Exclude policy file is not valid JSON: {resolved_path}"
+            ) from exc
 
     if loaded is None:
         return {}
@@ -140,10 +147,14 @@ def _load_policy_entries(entries: list[object]) -> dict[str, str]:
             raise ValueError(f"Exclude policy entry {index} must be an object")
         slug = entry.get("slug")
         if not isinstance(slug, str) or not slug.strip():
-            raise ValueError(f"Exclude policy entry {index} must include a non-empty 'slug'")
+            raise ValueError(
+                f"Exclude policy entry {index} must include a non-empty 'slug'"
+            )
         reason = _normalize_exclude_reason(entry, slug=slug)
         if reason is None:
-            raise ValueError(f"Exclude policy entry '{slug}' must include a non-empty 'reason'")
+            raise ValueError(
+                f"Exclude policy entry '{slug}' must include a non-empty 'reason'"
+            )
         policy[slug.strip()] = reason
     return policy
 
@@ -162,7 +173,9 @@ def _normalize_exclude_reason(raw_reason: object, *, slug: str) -> str | None:
             raise ValueError(f"Exclude reason for '{slug}' must be a string")
         normalized = reason.strip()
         return normalized or None
-    raise ValueError(f"Exclude policy entry for '{slug}' must be a string, object, or null")
+    raise ValueError(
+        f"Exclude policy entry for '{slug}' must be a string, object, or null"
+    )
 
 
 def _iter_layouts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -173,10 +186,14 @@ def _iter_layouts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
         layouts: list[dict[str, Any]] = []
         for master_index, master in enumerate(slide_masters):
             if not isinstance(master, dict):
-                raise ValueError(f"Manifest slide_masters[{master_index}] must be an object")
+                raise ValueError(
+                    f"Manifest slide_masters[{master_index}] must be an object"
+                )
             master_layouts = master.get("layouts", [])
             if not isinstance(master_layouts, list):
-                raise ValueError(f"Manifest slide_masters[{master_index}].layouts must be a list")
+                raise ValueError(
+                    f"Manifest slide_masters[{master_index}].layouts must be a list"
+                )
             for layout in master_layouts:
                 if not isinstance(layout, dict):
                     raise ValueError("Manifest layouts must be objects")
@@ -226,7 +243,9 @@ def _placeholders_by_idx(layout: dict[str, Any]) -> dict[int, dict[str, float]]:
     if placeholders is None:
         return {}
     if not isinstance(placeholders, list):
-        raise ValueError(f"Layout '{layout.get('slug', '<unknown>')}' placeholders must be a list")
+        raise ValueError(
+            f"Layout '{layout.get('slug', '<unknown>')}' placeholders must be a list"
+        )
 
     resolved: dict[int, dict[str, float]] = {}
     for placeholder in placeholders:
@@ -242,17 +261,103 @@ def _placeholders_by_idx(layout: dict[str, Any]) -> dict[int, dict[str, float]]:
     return resolved
 
 
-def _resolve_slot_bounds(slot_name: str, raw_slot: object, *, placeholders_by_idx: dict[int, dict[str, float]]) -> dict[str, float]:
+def _resolve_slot_bounds(
+    slot_name: str,
+    raw_slot: object,
+    *,
+    placeholders_by_idx: dict[int, dict[str, float]],
+) -> dict[str, float]:
     if isinstance(raw_slot, bool):
         raise ValueError(f"slot_mapping[{slot_name!r}] must not be a boolean")
     if isinstance(raw_slot, int):
         try:
             return dict(placeholders_by_idx[raw_slot])
         except KeyError as exc:
-            raise ValueError(f"slot_mapping[{slot_name!r}] references missing placeholder idx {raw_slot}") from exc
+            raise ValueError(
+                f"slot_mapping[{slot_name!r}] references missing placeholder idx {raw_slot}"
+            ) from exc
     if not isinstance(raw_slot, dict):
         raise ValueError(f"slot_mapping[{slot_name!r}] must be an integer or object")
-    return _normalize_bounds(raw_slot.get("bounds", raw_slot), context=f"slot_mapping[{slot_name!r}] bounds")
+    return _normalize_bounds(
+        raw_slot.get("bounds", raw_slot), context=f"slot_mapping[{slot_name!r}] bounds"
+    )
+
+
+def _resolve_slot_mapping(
+    slot_name: str,
+    raw_slot: object,
+    *,
+    placeholders_by_idx: dict[int, dict[str, float]],
+) -> dict[str, Any]:
+    if isinstance(raw_slot, bool):
+        raise ValueError(f"slot_mapping[{slot_name!r}] must not be a boolean")
+    if isinstance(raw_slot, int):
+        try:
+            return dict(placeholders_by_idx[raw_slot])
+        except KeyError as exc:
+            raise ValueError(
+                f"slot_mapping[{slot_name!r}] references missing placeholder idx {raw_slot}"
+            ) from exc
+    if not isinstance(raw_slot, dict):
+        raise ValueError(f"slot_mapping[{slot_name!r}] must be an integer or object")
+    return dict(raw_slot)
+
+
+def _theme_spacing(manifest: dict[str, Any]) -> tuple[float, float]:
+    theme = manifest.get("theme", {})
+    if not isinstance(theme, dict):
+        return (48.0, 18.0)
+    spacing = theme.get("spacing", {})
+    if not isinstance(spacing, dict):
+        return (48.0, 18.0)
+
+    margin = spacing.get("margin", 48.0)
+    gutter = spacing.get("gutter", 18.0)
+    if isinstance(margin, bool) or not isinstance(margin, int | float):
+        margin = 48.0
+    if isinstance(gutter, bool) or not isinstance(gutter, int | float):
+        gutter = 18.0
+    return (float(margin), float(gutter))
+
+
+def _virtual_body_bounds(
+    layout: dict[str, Any],
+    *,
+    manifest: dict[str, Any],
+    placeholders_by_idx: dict[int, dict[str, float]],
+) -> dict[str, float] | None:
+    slot_mapping = layout.get("slot_mapping", {})
+    if not isinstance(slot_mapping, dict):
+        raise ValueError(
+            f"Layout '{layout.get('slug', '<unknown>')}' slot_mapping must be an object"
+        )
+    if "heading" not in slot_mapping or "body" in slot_mapping:
+        return None
+
+    for slot_name, raw_slot in slot_mapping.items():
+        if slot_name == "heading":
+            continue
+        resolved_slot = _resolve_slot_mapping(
+            slot_name,
+            raw_slot,
+            placeholders_by_idx=placeholders_by_idx,
+        )
+        if infer_template_slot_role(slot_name, resolved_slot) == "body":
+            return None
+
+    heading_bounds = _resolve_slot_bounds(
+        "heading",
+        slot_mapping["heading"],
+        placeholders_by_idx=placeholders_by_idx,
+    )
+    margin, gutter = _theme_spacing(manifest)
+    left = max(heading_bounds["x"], margin)
+    top = heading_bounds["y"] + heading_bounds["h"] + gutter
+    right = STANDARD_SLIDE_WIDTH_PT - margin
+    bottom = STANDARD_SLIDE_HEIGHT_PT - margin
+    if top >= bottom or left >= right:
+        return None
+    return {"x": left, "y": top, "w": right - left, "h": bottom - top}
 
 
 def _classify_slot_structure(fillable_slots: list[str]) -> str:
@@ -262,9 +367,13 @@ def _classify_slot_structure(fillable_slots: list[str]) -> str:
 
     if "heading" in slot_names and slot_names.issubset({"heading", "subheading"}):
         return "heading_only"
-    if {"heading", "body"}.issubset(slot_names) and slot_names.issubset({"heading", "subheading", "body"}):
+    if {"heading", "body"}.issubset(slot_names) and slot_names.issubset(
+        {"heading", "subheading", "body"}
+    ):
         return "heading_body"
-    if {"heading", "image"}.issubset(slot_names) and slot_names.issubset({"heading", "subheading", "image"}):
+    if {"heading", "image"}.issubset(slot_names) and slot_names.issubset(
+        {"heading", "subheading", "image"}
+    ):
         return "heading_image"
     if {"heading", "body", "image"}.issubset(slot_names) and slot_names.issubset(
         {"heading", "subheading", "body", "image"}
@@ -285,7 +394,9 @@ def _is_testable(
     return True
 
 
-def build_inventory(manifest: dict[str, Any], *, exclude_policy: dict[str, str] | None = None) -> dict[str, Any]:
+def build_inventory(
+    manifest: dict[str, Any], *, exclude_policy: dict[str, str] | None = None
+) -> dict[str, Any]:
     policy = exclude_policy or {}
     layouts = _iter_layouts(manifest)
     entries: list[dict[str, Any]] = []
@@ -298,12 +409,25 @@ def build_inventory(manifest: dict[str, Any], *, exclude_policy: dict[str, str] 
         if not isinstance(slot_mapping, dict):
             raise ValueError(f"Layout '{slug}' slot_mapping must be an object")
 
-        fillable_slots = sorted((str(slot_name) for slot_name in slot_mapping), key=_slot_sort_key)
         placeholder_idx_map = _placeholders_by_idx(layout)
+        fillable_slots = {str(slot_name) for slot_name in slot_mapping}
         placeholder_bounds = {
-            slot_name: _resolve_slot_bounds(slot_name, slot_mapping[slot_name], placeholders_by_idx=placeholder_idx_map)
+            slot_name: _resolve_slot_bounds(
+                slot_name,
+                slot_mapping[slot_name],
+                placeholders_by_idx=placeholder_idx_map,
+            )
             for slot_name in fillable_slots
         }
+        virtual_body = _virtual_body_bounds(
+            layout,
+            manifest=manifest,
+            placeholders_by_idx=placeholder_idx_map,
+        )
+        if virtual_body is not None:
+            fillable_slots.add("body")
+            placeholder_bounds["body"] = virtual_body
+        ordered_fillable_slots = sorted(fillable_slots, key=_slot_sort_key)
         usable = bool(layout.get("usable", bool(fillable_slots)))
         exclude_reason = policy.get(slug)
         is_disclaimer_duplicate = slug.startswith("d_")
@@ -313,8 +437,8 @@ def build_inventory(manifest: dict[str, Any], *, exclude_policy: dict[str, str] 
             "usable": usable,
             "requires_image": "image" in slot_mapping,
             "is_disclaimer_duplicate": is_disclaimer_duplicate,
-            "slot_structure": _classify_slot_structure(fillable_slots),
-            "fillable_slots": fillable_slots,
+            "slot_structure": _classify_slot_structure(ordered_fillable_slots),
+            "fillable_slots": ordered_fillable_slots,
             "placeholder_bounds": placeholder_bounds,
             "testable": _is_testable(
                 usable=usable,

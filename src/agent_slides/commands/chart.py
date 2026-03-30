@@ -30,13 +30,17 @@ def _parse_chart_json(raw: str, *, option_name: str) -> dict[str, Any]:
         ) from exc
 
     if not isinstance(payload, dict):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Argument '{option_name}' must be a JSON object")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Argument '{option_name}' must be a JSON object"
+        )
     return payload
 
 
 def _load_chart_data(data_json: str | None, data_file: str | None) -> dict[str, Any]:
     if (data_json is None) == (data_file is None):
-        raise AgentSlidesError(SCHEMA_ERROR, "Exactly one of '--data' or '--data-file' is required")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Exactly one of '--data' or '--data-file' is required"
+        )
 
     if data_json is not None:
         return _parse_chart_json(data_json, option_name="--data")
@@ -46,7 +50,9 @@ def _load_chart_data(data_json: str | None, data_file: str | None) -> dict[str, 
     try:
         payload = data_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Chart data file not found: {data_path}") from exc
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Chart data file not found: {data_path}"
+        ) from exc
     except OSError as exc:
         raise AgentSlidesError(
             SCHEMA_ERROR,

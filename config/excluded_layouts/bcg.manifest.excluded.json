@@ -1,0 +1,10 @@
+[
+  {"slug": "disclaimer", "reason": "Template has baked-in disclaimer text; filling body overlaps with native content"},
+  {"slug": "d_disclaimer", "reason": "Disclaimer duplicate (d_ prefix)"},
+  {"slug": "layout_guide", "reason": "Reference/guide layout, not meant for presentation content"},
+  {"slug": "d_layout_guide", "reason": "Layout guide duplicate (d_ prefix)"},
+  {"slug": "blank", "reason": "Empty layout with no fillable slots"},
+  {"slug": "d_blank", "reason": "Blank duplicate (d_ prefix)"},
+  {"slug": "blank_green", "reason": "Empty green layout with no fillable content area"},
+  {"slug": "d_blank_green", "reason": "Blank green duplicate (d_ prefix)"}
+]

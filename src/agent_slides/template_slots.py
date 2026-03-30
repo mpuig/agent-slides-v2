@@ -32,8 +32,12 @@ def normalize_template_slot_mapping(
     normalized = dict(slot_mapping)
 
     for primary_role, secondary_role in _ROLE_SIZE_VALIDATIONS:
-        primary_slot_names = _slots_for_role(normalized, placeholders_by_idx, primary_role)
-        secondary_slot_names = _slots_for_role(normalized, placeholders_by_idx, secondary_role)
+        primary_slot_names = _slots_for_role(
+            normalized, placeholders_by_idx, primary_role
+        )
+        secondary_slot_names = _slots_for_role(
+            normalized, placeholders_by_idx, secondary_role
+        )
         if len(primary_slot_names) != 1 or len(secondary_slot_names) != 1:
             continue
 
@@ -59,7 +63,12 @@ def _slots_for_role(
 ) -> list[str]:
     slot_names: list[str] = []
     for slot_name, raw_slot in slot_mapping.items():
-        if infer_template_slot_role(slot_name, _resolve_slot_mapping(raw_slot, placeholders_by_idx)) == role:
+        if (
+            infer_template_slot_role(
+                slot_name, _resolve_slot_mapping(raw_slot, placeholders_by_idx)
+            )
+            == role
+        ):
             slot_names.append(slot_name)
     return slot_names
 
@@ -78,7 +87,9 @@ def _resolve_slot_mapping(
     return {}
 
 
-def _slot_area(raw_slot: Any, placeholders_by_idx: Mapping[int, Mapping[str, Any]]) -> float | None:
+def _slot_area(
+    raw_slot: Any, placeholders_by_idx: Mapping[int, Mapping[str, Any]]
+) -> float | None:
     slot_mapping = _resolve_slot_mapping(raw_slot, placeholders_by_idx)
     bounds = slot_mapping.get("bounds", slot_mapping)
     if not isinstance(bounds, Mapping):

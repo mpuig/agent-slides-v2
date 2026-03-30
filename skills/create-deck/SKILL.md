@@ -26,9 +26,8 @@ Repo-relative reference paths:
 - `references/common-mistakes.md`
 
 - Phase 0: no extra references required beyond asking the questions cleanly
-- Before Phase 1, read `${CLAUDE_SKILL_DIR}/references/storytelling.md`
-- Before locking or overriding layouts in Phase 1 or Phase 2, read `${CLAUDE_SKILL_DIR}/references/layout-selection.md`
-- Before Phase 2, read `${CLAUDE_SKILL_DIR}/references/content-density.md`
+- Before Phase 1, read `${CLAUDE_SKILL_DIR}/references/storytelling.md` and `${CLAUDE_SKILL_DIR}/references/layout-selection.md` (required: contains the full layout catalog with slot mappings and width limits)
+- Before Phase 2, read `${CLAUDE_SKILL_DIR}/references/layout-selection.md` (re-read) and `${CLAUDE_SKILL_DIR}/references/content-density.md`
 - Before adding a chart in Phase 2, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md`
 - Before Phase 3, read `${CLAUDE_SKILL_DIR}/references/common-mistakes.md`
 
@@ -262,35 +261,58 @@ Read `${CLAUDE_SKILL_DIR}/references/content-density.md` before building so the 
 
 ### Build rules
 
-- Initialize the deck with a built-in theme.
+- Initialize the deck with `--template` when specified in the brief, otherwise use `--theme`.
 - Use `slide add`, `slot set`, `slot clear`, `slot bind`, `chart add`, and `batch` as appropriate.
-- Use `--auto-layout` where the content shape is clear from the payload and the layout does not need to be predetermined.
-- Use explicit layouts for fixed-role slides such as `title`, `closing`, or when the structure is known in advance.
+- Use explicit `--layout` for every slide when working with a template. Auto-layout does not know template slot structures.
 - Follow the layout variety rule from `${CLAUDE_SKILL_DIR}/references/layout-selection.md`.
 - Fill all planned content, including charts, images, and sources.
 - Do not leave placeholder thinking in the deck. Finish the slide content fully.
 
+### Template slot awareness (CRITICAL for template decks)
+
+Before building with a template, run `uv run agent-slides inspect <manifest>` and read `${CLAUDE_SKILL_DIR}/references/layout-selection.md` which contains the full slot table.
+
+Key rules:
+
+- **Set body on every layout that supports it.** Layouts with body (native or virtual): `title_slide`, `title_and_text`, `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`, `disclaimer`, agenda layouts. Do NOT set body on other layouts.
+- **Scale body density to layout width.** Full-width: 4-6 bullets. Medium (493pt): 2-3 bullets. Medium-narrow (368pt): 2 short bullets. Narrow (272pt): 1-2 very short bullets.
+- **Short headings on narrow layouts (MAX 5 WORDS).** Arrow one-third, green one-third, white one-third, green highlight, left arrow, green left arrow. Examples: "3x cost reduction", "Phase 2: scale".
+- **Source lines go FIRST in body content.** Place `Source: ...` as the FIRST text block in the body, before bullet points. The scoring system checks if a node's text starts with "Source:" — if bullets come first, the source line is not detected. Example: `[{"type":"paragraph","text":"Source: McKinsey, 2025"},{"type":"bullet","text":"Key finding 1"},...]`
+- **Plan source lines in Phase 1.** Mark which slides get source lines. Use layouts with body slots (native or virtual).
+- **BAN topic-label titles.** Every title must be an action statement. NEVER: "Market Overview". ALWAYS: "Market share fell 15% after competitor undercut pricing".
+- **Keep headings under ~50 characters** to avoid overflow in the heading placeholder.
+- **Word count limits for body:** max 100 words full-width, aim for 40-60. Use 3-5 short bullets.
+
 ### Practical build sequence
 
-1. `uv run agent-slides init deck.json --theme <theme> --rules default`
-2. Start preview before content build so the user can watch the deck appear live: `uv run agent-slides preview deck.json --background`
-3. Read the returned JSON, extract the `url`, and open that URL for the user immediately.
-4. Add the opener and closer with explicit layouts.
-5. Add content slides with `--auto-layout` or explicit `--layout` according to the approved plan.
-6. Prefer one atomic `batch` payload for multi-slide creation and cleanup when possible.
-7. If a slide needs a chart, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md` first, then use `uv run agent-slides chart add ...`.
-8. Build only after the deck content is complete and validated.
+1. If template: `uv run agent-slides init deck.json --template <pptx_or_manifest> --rules default`
+   If theme: `uv run agent-slides init deck.json --theme <theme> --rules default`
+2. Run `uv run agent-slides inspect <manifest>` to confirm slot structures.
+3. Add each slide with explicit `--layout`.
+4. Set slot content matching each layout's slot structure.
+5. For image layouts, use real images from `examples/images/` (check `index.json` for tags).
+6. Prefer `batch` for multi-slide creation when possible.
+7. If a slide needs a chart, read `${CLAUDE_SKILL_DIR}/references/chart-guide.md` first.
+8. Build only after validation passes.
 
-### Layout guidance during build
+### Layout guidance for template decks
 
-- `title` for the opener
-- `closing` for the final recommendation or call to action
-- `title_content` for a single claim with one supporting body area
-- `two_col` or `comparison` for before/after, option A vs B, or trade-offs
-- `three_col` for three pillars, steps, or lenses
-- `quote` only for a genuinely important voice-of-customer or executive statement
+Refer to the slot table in `${CLAUDE_SKILL_DIR}/references/layout-selection.md` for every layout. All layouts now accept body content via virtual body slots.
 
-If auto-layout chooses a weak structure, correct it with `slide set-layout`, then repair any unbound content.
+- **title_slide** for the opener (heading + subheading + body + image)
+- **end** for the closer (no fillable slots)
+- **title_and_text** for dense body content (heading + native body, 4-6 bullets)
+- **title_only** for action titles with supporting evidence (heading + virtual body, 3-5 bullets)
+- **green_half** or **green_two_third** for image slides (heading + image, no body)
+- **big_statement_green** or **big_statement_icon** for bold emphasis (heading only, no body)
+- **section_header_box** or **section_header_line** for section breaks (heading only, no body)
+- **green_highlight** for highlighted insight (heading + virtual body, 2-3 bullets)
+- **arrow_half** / **green_arrow_half** for directional callouts (heading + virtual body, 2 bullets)
+- **arrow_two_third** / **green_arrow_two_third** for wider directional (heading + virtual body, 2-3 bullets)
+- **arrow_one_third** / **green_arrow_one_third** for narrow directional (heading only, no body)
+- **left_arrow** / **green_left_arrow** for 2-3 word labels (heading only, no body)
+- **agenda_*** for agenda slides (body only)
+- **disclaimer** for legal text (body only)
 
 ## Phase 3: QA Review
 
@@ -310,6 +332,7 @@ Before QA, read `${CLAUDE_SKILL_DIR}/references/common-mistakes.md`.
 3. Fix any issues.
 4. Run `uv run agent-slides validate deck.json` again.
 5. Only then build the `.pptx`.
+6. When the user wants live review, run `uv run agent-slides preview deck.json --background` and open that URL for the user immediately.
 
 If validation passes but the storytelling checklist fails, the deck is not done.
 

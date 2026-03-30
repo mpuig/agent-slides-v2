@@ -33,7 +33,9 @@ def read_slide_xml(path: Path, *, index: int = 1) -> ET.Element:
         return ET.fromstring(archive.read(f"ppt/slides/slide{index}.xml"))
 
 
-def invoke(runner: CliRunner, args: list[str], *, input_text: str | None = None) -> tuple[int, dict[str, object], str]:
+def invoke(
+    runner: CliRunner, args: list[str], *, input_text: str | None = None
+) -> tuple[int, dict[str, object], str]:
     result = runner.invoke(cli, args, input=input_text)
     payload = json.loads(result.stdout) if result.stdout else {}
     return result.exit_code, payload, result.stderr
@@ -44,12 +46,16 @@ def test_full_demo_flow(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "output.pptx"
 
-    exit_code, payload, _ = invoke(runner, ["init", str(deck_path), "--theme", "default"])
+    exit_code, payload, _ = invoke(
+        runner, ["init", str(deck_path), "--theme", "default"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
     for layout in ["title", "two_col", "quote"]:
-        exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", layout])
+        exit_code, payload, _ = invoke(
+            runner, ["slide", "add", str(deck_path), "--layout", layout]
+        )
         assert exit_code == 0
         assert payload["ok"] is True
 
@@ -81,7 +87,9 @@ def test_full_demo_flow(tmp_path: Path) -> None:
         assert exit_code == 0
         assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -98,16 +106,22 @@ def test_full_demo_flow(tmp_path: Path) -> None:
     assert "Alan Kay" in all_text
 
 
-def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_path: Path) -> None:
+def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "output.pptx"
 
-    exit_code, payload, _ = invoke(runner, ["init", str(deck_path), "--theme", "default"])
+    exit_code, payload, _ = invoke(
+        runner, ["init", str(deck_path), "--theme", "default"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "title_content"])
+    exit_code, payload, _ = invoke(
+        runner, ["slide", "add", str(deck_path), "--layout", "title_content"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -128,7 +142,9 @@ def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_pat
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
@@ -136,12 +152,14 @@ def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_pat
     text_frame = next(
         shape.text_frame
         for shape in presentation.slides[0].shapes
-        if shape.has_text_frame and shape.text_frame.text == "Key points:\nFirst item\nSecond item"
+        if shape.has_text_frame
+        and shape.text_frame.text == "Key points:\nFirst item\nSecond item"
     )
     body_shape = next(
         shape
         for shape in read_slide_xml(pptx_path).findall(".//p:sp", DRAWING_NS)
-        if [text.text for text in shape.findall(".//a:t", DRAWING_NS)] == ["Key points:", "First item", "Second item"]
+        if [text.text for text in shape.findall(".//a:t", DRAWING_NS)]
+        == ["Key points:", "First item", "Second item"]
     )
     paragraphs = body_shape.findall(".//a:p", DRAWING_NS)
 
@@ -155,7 +173,9 @@ def test_build_renders_auto_detected_text_bullets_as_native_pptx_bullets(tmp_pat
     assert paragraphs[2].find("./a:pPr/a:buChar", DRAWING_NS) is not None
 
 
-def test_build_succeeds_after_slot_set_normalizes_absolute_image_paths(tmp_path: Path) -> None:
+def test_build_succeeds_after_slot_set_normalizes_absolute_image_paths(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     deck_path = tmp_path / "deck.json"
     pptx_path = tmp_path / "output.pptx"
@@ -163,22 +183,38 @@ def test_build_succeeds_after_slot_set_normalizes_absolute_image_paths(tmp_path:
     image_dir.mkdir()
     image_path = write_png(image_dir / "photo.png", width=30, height=20)
 
-    exit_code, payload, _ = invoke(runner, ["init", str(deck_path), "--theme", "default"])
+    exit_code, payload, _ = invoke(
+        runner, ["init", str(deck_path), "--theme", "default"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "image_right"])
+    exit_code, payload, _ = invoke(
+        runner, ["slide", "add", str(deck_path), "--layout", "image_right"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
     exit_code, payload, _ = invoke(
         runner,
-        ["slot", "set", str(deck_path), "--slide", "0", "--slot", "image", "--image", str(image_path)],
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "image",
+            "--image",
+            str(image_path),
+        ],
     )
     assert exit_code == 0
     assert payload["data"]["image_path"] == "assets/photo.png"
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
     assert pptx_path.is_file()
@@ -192,11 +228,17 @@ def test_layout_switch_content_migration(tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["slide", "add", str(deck_path), "--layout", "three_col"])
+    exit_code, payload, _ = invoke(
+        runner, ["slide", "add", str(deck_path), "--layout", "three_col"]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
-    for slot_name, text in [("col1", "Column 1"), ("col2", "Column 2"), ("col3", "Column 3")]:
+    for slot_name, text in [
+        ("col1", "Column 1"),
+        ("col2", "Column 2"),
+        ("col3", "Column 3"),
+    ]:
         exit_code, payload, _ = invoke(
             runner,
             [
@@ -231,14 +273,17 @@ def test_layout_switch_content_migration(tmp_path: Path) -> None:
     slide = deck_data["slides"][0]
     assert slide["layout"] == "two_col"
 
-    bound_slots = {node["slot_binding"] for node in slide["nodes"] if node["slot_binding"]}
+    bound_slots = {
+        node["slot_binding"] for node in slide["nodes"] if node["slot_binding"]
+    }
     assert "col1" in bound_slots
     assert "col2" in bound_slots
 
     unbound = [node for node in slide["nodes"] if node["slot_binding"] is None]
     assert len(unbound) >= 1
     assert any(
-        node["content"]["blocks"] == [{"type": "paragraph", "text": "Column 3", "level": 0}]
+        node["content"]["blocks"]
+        == [{"type": "paragraph", "text": "Column 3", "level": 0}]
         for node in unbound
     )
 
@@ -255,20 +300,31 @@ def test_batch_creates_full_deck(tmp_path: Path) -> None:
     batch_input = json.dumps(
         [
             {"command": "slide_add", "args": {"layout": "title"}},
-            {"command": "slot_set", "args": {"slide": 0, "slot": "title", "text": "Batch Created"}},
+            {
+                "command": "slot_set",
+                "args": {"slide": 0, "slot": "title", "text": "Batch Created"},
+            },
             {"command": "slide_add", "args": {"layout": "quote"}},
             {
                 "command": "slot_set",
-                "args": {"slide": 1, "slot": "quote", "text": "Efficiency is doing things right."},
+                "args": {
+                    "slide": 1,
+                    "slot": "quote",
+                    "text": "Efficiency is doing things right.",
+                },
             },
         ]
     )
 
-    exit_code, payload, _ = invoke(runner, ["batch", str(deck_path)], input_text=batch_input)
+    exit_code, payload, _ = invoke(
+        runner, ["batch", str(deck_path)], input_text=batch_input
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 
-    exit_code, payload, _ = invoke(runner, ["build", str(deck_path), "-o", str(pptx_path)])
+    exit_code, payload, _ = invoke(
+        runner, ["build", str(deck_path), "-o", str(pptx_path)]
+    )
     assert exit_code == 0
     assert payload["ok"] is True
 

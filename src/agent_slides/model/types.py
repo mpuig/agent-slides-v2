@@ -7,7 +7,14 @@ from math import isclose
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from agent_slides.errors import (
@@ -23,14 +30,37 @@ STANDARD_SLIDE_WIDTH_PT = 720.0
 STANDARD_SLIDE_HEIGHT_PT = 540.0
 EMU_PER_POINT = 12_700
 CHART_TYPE_VALUES = ("bar", "column", "line", "pie", "scatter", "area", "doughnut")
-SHAPE_TYPE_VALUES = ("rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron")
+SHAPE_TYPE_VALUES = (
+    "rectangle",
+    "rounded_rectangle",
+    "line",
+    "oval",
+    "arrow",
+    "chevron",
+)
 SHAPE_DASH_VALUES = ("dash", "dot", "dashDot")
-PATTERN_TYPE_VALUES = ("kpi-row", "card-grid", "process-flow", "chevron-flow", "comparison-cards", "icon-row")
+PATTERN_TYPE_VALUES = (
+    "kpi-row",
+    "card-grid",
+    "process-flow",
+    "chevron-flow",
+    "comparison-cards",
+    "icon-row",
+)
 
 ChartType = Literal["bar", "column", "line", "pie", "scatter", "area", "doughnut"]
-ShapeType = Literal["rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron"]
+ShapeType = Literal[
+    "rectangle", "rounded_rectangle", "line", "oval", "arrow", "chevron"
+]
 ShapeDash = Literal["dash", "dot", "dashDot"]
-PatternType = Literal["kpi-row", "card-grid", "process-flow", "chevron-flow", "comparison-cards", "icon-row"]
+PatternType = Literal[
+    "kpi-row",
+    "card-grid",
+    "process-flow",
+    "chevron-flow",
+    "comparison-cards",
+    "icon-row",
+]
 PatternElementKind = Literal["shape", "text"]
 TableAlign = Literal["left", "center", "right"]
 NodeType = Literal["text", "image", "chart", "table", "icon", "shape", "pattern"]
@@ -52,7 +82,9 @@ _NUMERIC_TABLE_VALUE_PATTERN = re.compile(
 
 def _normalize_hex_color(value: str, *, field_name: str = "color") -> str:
     normalized = value.strip().lstrip("#")
-    if len(normalized) != 6 or any(char not in _HEX_COLOR_DIGITS for char in normalized):
+    if len(normalized) != 6 or any(
+        char not in _HEX_COLOR_DIGITS for char in normalized
+    ):
         raise ValueError(f"{field_name} must use #RRGGBB or RRGGBB format")
     return f"#{normalized.upper()}"
 
@@ -114,7 +146,9 @@ class ComputedPatternElement(AgentSlidesModel):
         if value is None:
             return None
         if not isinstance(value, str) or value not in SHAPE_TYPE_VALUES:
-            raise ValueError(f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}")
+            raise ValueError(
+                f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}"
+            )
         return value
 
     @field_validator("fill_color", "line_color", "color")
@@ -190,7 +224,9 @@ class TextRun(AgentSlidesModel):
     bold: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     italic: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     color: str | None = Field(default=None, exclude_if=lambda value: value is None)
-    font_size: float | None = Field(default=None, exclude_if=lambda value: value is None)
+    font_size: float | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     underline: bool = Field(default=False, exclude_if=lambda value: value is False)
     strikethrough: bool = Field(default=False, exclude_if=lambda value: value is False)
 
@@ -215,7 +251,9 @@ class TextBlock(AgentSlidesModel):
     type: Literal["paragraph", "bullet", "heading"]
     text: str = ""
     level: int = 0
-    runs: list[TextRun] | None = Field(default=None, exclude_if=lambda value: value is None)
+    runs: list[TextRun] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     icon: str | None = None
 
     @field_validator("level")
@@ -277,7 +315,12 @@ class NodeContent(AgentSlidesModel):
         return value
 
     @classmethod
-    def from_text(cls, text: str, *, block_type: Literal["paragraph", "bullet", "heading"] = "paragraph") -> NodeContent:
+    def from_text(
+        cls,
+        text: str,
+        *,
+        block_type: Literal["paragraph", "bullet", "heading"] = "paragraph",
+    ) -> NodeContent:
         if text == "":
             return cls()
         if block_type != "paragraph":
@@ -462,7 +505,9 @@ class ChartSeries(AgentSlidesModel):
     @classmethod
     def validate_values(cls, value: list[float]) -> list[float]:
         if not value:
-            raise PydanticCustomError(CHART_DATA_ERROR, "chart series values cannot be empty")
+            raise PydanticCustomError(
+                CHART_DATA_ERROR, "chart series values cannot be empty"
+            )
         return value
 
 
@@ -479,7 +524,9 @@ class ScatterSeries(AgentSlidesModel):
     @classmethod
     def validate_points(cls, value: list[ScatterPoint]) -> list[ScatterPoint]:
         if not value:
-            raise PydanticCustomError(CHART_DATA_ERROR, "scatter series points cannot be empty")
+            raise PydanticCustomError(
+                CHART_DATA_ERROR, "scatter series points cannot be empty"
+            )
         return value
 
 
@@ -501,7 +548,9 @@ class ChartStyle(AgentSlidesModel):
             try:
                 _normalize_run_color(value)
             except ValueError as exc:
-                raise ValueError("series_colors entries must use #RRGGBB or RRGGBB format") from exc
+                raise ValueError(
+                    "series_colors entries must use #RRGGBB or RRGGBB format"
+                ) from exc
         return values
 
     @field_validator("highlight_color", "muted_color")
@@ -533,16 +582,24 @@ class ChartSpec(AgentSlidesModel):
     @classmethod
     def validate_chart_type(cls, value: object) -> object:
         if not isinstance(value, str) or value not in CHART_TYPE_VALUES:
-            raise PydanticCustomError(INVALID_CHART_TYPE, "unknown chart type: {chart_type}", {"chart_type": value})
+            raise PydanticCustomError(
+                INVALID_CHART_TYPE,
+                "unknown chart type: {chart_type}",
+                {"chart_type": value},
+            )
         return value
 
     @model_validator(mode="after")
     def validate_chart_data(self) -> ChartSpec:
         if self.chart_type == "scatter":
             if self.categories or self.series:
-                raise PydanticCustomError(CHART_DATA_ERROR, "scatter charts only support scatter_series")
+                raise PydanticCustomError(
+                    CHART_DATA_ERROR, "scatter charts only support scatter_series"
+                )
             if not self.scatter_series:
-                raise PydanticCustomError(CHART_DATA_ERROR, "scatter charts require scatter_series")
+                raise PydanticCustomError(
+                    CHART_DATA_ERROR, "scatter charts require scatter_series"
+                )
             if len(self.scatter_series) > 10:
                 warnings.warn(
                     "Chart spec contains more than 10 series and may be difficult to read.",
@@ -552,11 +609,17 @@ class ChartSpec(AgentSlidesModel):
             return self
 
         if self.scatter_series:
-            raise PydanticCustomError(CHART_DATA_ERROR, "category charts cannot define scatter_series")
+            raise PydanticCustomError(
+                CHART_DATA_ERROR, "category charts cannot define scatter_series"
+            )
         if not self.categories:
-            raise PydanticCustomError(CHART_DATA_ERROR, "category charts require categories")
+            raise PydanticCustomError(
+                CHART_DATA_ERROR, "category charts require categories"
+            )
         if not self.series:
-            raise PydanticCustomError(CHART_DATA_ERROR, "category charts require series")
+            raise PydanticCustomError(
+                CHART_DATA_ERROR, "category charts require series"
+            )
 
         category_count = len(self.categories)
         for series in self.series:
@@ -573,7 +636,9 @@ class ChartSpec(AgentSlidesModel):
 
         if self.chart_type == "pie":
             if len(self.series) > 1:
-                raise PydanticCustomError(CHART_DATA_ERROR, "pie charts support exactly one series")
+                raise PydanticCustomError(
+                    CHART_DATA_ERROR, "pie charts support exactly one series"
+                )
             if any(value < 0 for value in self.series[0].values):
                 warnings.warn(
                     "Pie charts contain negative values; PowerPoint may render them unexpectedly.",
@@ -604,7 +669,9 @@ class ShapeSpec(AgentSlidesModel):
     @classmethod
     def validate_shape_type(cls, value: object) -> object:
         if not isinstance(value, str) or value not in SHAPE_TYPE_VALUES:
-            raise ValueError(f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}")
+            raise ValueError(
+                f"shape_type must be one of: {', '.join(SHAPE_TYPE_VALUES)}"
+            )
         return value
 
     @field_validator("fill_color", "line_color")
@@ -671,7 +738,9 @@ class TableSpec(AgentSlidesModel):
 
     @field_validator("col_align")
     @classmethod
-    def validate_col_align(cls, value: list[TableAlign] | None) -> list[TableAlign] | None:
+    def validate_col_align(
+        cls, value: list[TableAlign] | None
+    ) -> list[TableAlign] | None:
         if value is None:
             return value
         return [alignment.strip().lower() for alignment in value]
@@ -707,8 +776,13 @@ class TableSpec(AgentSlidesModel):
     def infer_numeric_columns(self) -> list[bool]:
         inferred: list[bool] = []
         for column_index in range(len(self.headers)):
-            values = [row[column_index] for row in self.rows if row[column_index].strip()]
-            inferred.append(bool(values) and all(_looks_numeric_table_value(value) for value in values))
+            values = [
+                row[column_index] for row in self.rows if row[column_index].strip()
+            ]
+            inferred.append(
+                bool(values)
+                and all(_looks_numeric_table_value(value) for value in values)
+            )
         return inferred
 
     def resolved_col_align(self) -> list[TableAlign]:
@@ -725,7 +799,9 @@ class TableSpec(AgentSlidesModel):
         numeric_columns = self.infer_numeric_columns()
         for column_index, header in enumerate(self.headers):
             values = [header, *(row[column_index] for row in self.rows)]
-            max_length = max(len(value.strip()) for value in values if value is not None)
+            max_length = max(
+                len(value.strip()) for value in values if value is not None
+            )
             weight = max(1.0, float(max_length))
             if not numeric_columns[column_index]:
                 weight += 2.0
@@ -742,12 +818,16 @@ class PatternSpec(AgentSlidesModel):
     @classmethod
     def validate_pattern_type(cls, value: object) -> object:
         if not isinstance(value, str) or value not in PATTERN_TYPE_VALUES:
-            raise ValueError(f"pattern_type must be one of: {', '.join(PATTERN_TYPE_VALUES)}")
+            raise ValueError(
+                f"pattern_type must be one of: {', '.join(PATTERN_TYPE_VALUES)}"
+            )
         return value
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, value: dict[str, Any] | list[Any]) -> dict[str, Any] | list[Any]:
+    def validate_data(
+        cls, value: dict[str, Any] | list[Any]
+    ) -> dict[str, Any] | list[Any]:
         if not isinstance(value, dict | list):
             raise ValueError("data must be a JSON object or array")
         return value
@@ -793,7 +873,11 @@ class Node(AgentSlidesModel):
         if node_type == "text":
             data["content"] = NodeContent.model_validate(content)
         elif node_type == "chart":
-            if data.get("chart_spec") is None and content not in (None, "", {"blocks": []}):
+            if data.get("chart_spec") is None and content not in (
+                None,
+                "",
+                {"blocks": []},
+            ):
                 raw_chart_spec = content
                 if isinstance(raw_chart_spec, str):
                     raw_chart_spec = ChartSpec.model_validate_json(raw_chart_spec)
@@ -808,17 +892,27 @@ class Node(AgentSlidesModel):
             else:
                 data["content"] = NodeContent.model_validate(content)
             if data.get("chart_spec") is not None:
-                data["chart_spec"] = ChartSpec.model_validate(data["chart_spec"]).model_dump(mode="json")
+                data["chart_spec"] = ChartSpec.model_validate(
+                    data["chart_spec"]
+                ).model_dump(mode="json")
         elif node_type == "shape":
             data["content"] = NodeContent.model_validate(content)
             if data.get("shape_spec") is not None:
-                data["shape_spec"] = ShapeSpec.model_validate(data["shape_spec"]).model_dump(mode="json")
+                data["shape_spec"] = ShapeSpec.model_validate(
+                    data["shape_spec"]
+                ).model_dump(mode="json")
         elif node_type == "pattern":
             data["content"] = NodeContent.model_validate(content)
             if data.get("pattern_spec") is not None:
-                data["pattern_spec"] = PatternSpec.model_validate(data["pattern_spec"]).model_dump(mode="json")
+                data["pattern_spec"] = PatternSpec.model_validate(
+                    data["pattern_spec"]
+                ).model_dump(mode="json")
         elif node_type == "table":
-            if data.get("table_spec") is None and content not in (None, "", {"blocks": []}):
+            if data.get("table_spec") is None and content not in (
+                None,
+                "",
+                {"blocks": []},
+            ):
                 raw_table_spec = content
                 if isinstance(raw_table_spec, str):
                     raw_table_spec = TableSpec.model_validate_json(raw_table_spec)
@@ -833,7 +927,9 @@ class Node(AgentSlidesModel):
             else:
                 data["content"] = NodeContent.model_validate(content)
             if data.get("table_spec") is not None:
-                data["table_spec"] = TableSpec.model_validate(data["table_spec"]).model_dump(mode="json")
+                data["table_spec"] = TableSpec.model_validate(
+                    data["table_spec"]
+                ).model_dump(mode="json")
         elif node_type == "icon":
             data["content"] = NodeContent.model_validate(content)
         else:
@@ -937,10 +1033,16 @@ class Node(AgentSlidesModel):
             for key in ("x", "y", "width", "height"):
                 value = self.style_overrides.get(key)
                 if isinstance(value, bool) or not isinstance(value, int | float):
-                    raise ValueError(f"shape nodes require numeric style_overrides['{key}']")
+                    raise ValueError(
+                        f"shape nodes require numeric style_overrides['{key}']"
+                    )
             z_index = self.style_overrides.get("z_index")
-            if z_index is not None and (isinstance(z_index, bool) or not isinstance(z_index, int)):
-                raise ValueError("shape nodes require integer style_overrides['z_index'] when provided")
+            if z_index is not None and (
+                isinstance(z_index, bool) or not isinstance(z_index, int)
+            ):
+                raise ValueError(
+                    "shape nodes require integer style_overrides['z_index'] when provided"
+                )
             return self
 
         if self.type == "chart":
@@ -1056,7 +1158,9 @@ class SlotDef(AgentSlidesModel):
     alignment_group: str | None = None
     reading_order: int = 0
     size_policy: str = "fixed"
-    allowed_content: list[str] = Field(default_factory=lambda: ["text", "image", "chart", "table", "icon", "pattern"])
+    allowed_content: list[str] = Field(
+        default_factory=lambda: ["text", "image", "chart", "table", "icon", "pattern"]
+    )
     min_font: float | None = None
     max_font: float | None = None
     preferred_font: float | None = None

@@ -36,14 +36,22 @@ def _layouts_by_slug(coverage: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def _variants_passed(layout: dict[str, Any]) -> int:
     value = layout.get("variants_passed", 0)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("Coverage layouts must include integer 'variants_passed' values")
+        raise ValueError(
+            "Coverage layouts must include integer 'variants_passed' values"
+        )
     return value
 
 
-def compare_coverage_payloads(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+def compare_coverage_payloads(
+    before: dict[str, Any], after: dict[str, Any]
+) -> dict[str, Any]:
     before_template = before.get("template")
     after_template = after.get("template")
-    if isinstance(before_template, str) and isinstance(after_template, str) and before_template != after_template:
+    if (
+        isinstance(before_template, str)
+        and isinstance(after_template, str)
+        and before_template != after_template
+    ):
         raise ValueError(
             f"Coverage templates do not match: before={before_template!r}, after={after_template!r}"
         )
@@ -60,11 +68,17 @@ def compare_coverage_payloads(before: dict[str, Any], after: dict[str, Any]) -> 
         after_passed = _variants_passed(after_layouts[slug])
         before_layout = before_layouts.get(slug)
         if before_layout is None:
-            new_layouts.append({"slug": slug, "before_passed": 0, "after_passed": after_passed})
+            new_layouts.append(
+                {"slug": slug, "before_passed": 0, "after_passed": after_passed}
+            )
             continue
 
         before_passed = _variants_passed(before_layout)
-        entry = {"slug": slug, "before_passed": before_passed, "after_passed": after_passed}
+        entry = {
+            "slug": slug,
+            "before_passed": before_passed,
+            "after_passed": after_passed,
+        }
         if after_passed < before_passed:
             regressions.append(entry)
         elif after_passed > before_passed:
@@ -80,11 +94,15 @@ def compare_coverage_payloads(before: dict[str, Any], after: dict[str, Any]) -> 
         else:
             unchanged.append(entry)
 
-    def _sort_entries(entries: list[dict[str, int | str]]) -> list[dict[str, int | str]]:
+    def _sort_entries(
+        entries: list[dict[str, int | str]],
+    ) -> list[dict[str, int | str]]:
         return sorted(entries, key=lambda entry: str(entry["slug"]))
 
     return {
-        "template": after_template if isinstance(after_template, str) else before_template,
+        "template": after_template
+        if isinstance(after_template, str)
+        else before_template,
         "regressions": _sort_entries(regressions),
         "improvements": _sort_entries(improvements),
         "unchanged": _sort_entries(unchanged),
@@ -93,13 +111,21 @@ def compare_coverage_payloads(before: dict[str, Any], after: dict[str, Any]) -> 
 
 
 def compare_coverage_files(*, before_path: Path, after_path: Path) -> dict[str, Any]:
-    return compare_coverage_payloads(_load_coverage(before_path), _load_coverage(after_path))
+    return compare_coverage_payloads(
+        _load_coverage(before_path), _load_coverage(after_path)
+    )
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compare per-layout coverage between two runs")
-    parser.add_argument("--before", required=True, type=Path, help="Previous best coverage.json")
-    parser.add_argument("--after", required=True, type=Path, help="Current run coverage.json")
+    parser = argparse.ArgumentParser(
+        description="Compare per-layout coverage between two runs"
+    )
+    parser.add_argument(
+        "--before", required=True, type=Path, help="Previous best coverage.json"
+    )
+    parser.add_argument(
+        "--after", required=True, type=Path, help="Current run coverage.json"
+    )
     return parser.parse_args(argv)
 
 

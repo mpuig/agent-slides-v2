@@ -26,7 +26,12 @@ from agent_slides.engine.conditional_formatting import (
     resolve_table_cell_style,
     resolved_text_runs,
 )
-from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR, TEMPLATE_CHANGED
+from agent_slides.errors import (
+    AgentSlidesError,
+    FILE_NOT_FOUND,
+    SCHEMA_ERROR,
+    TEMPLATE_CHANGED,
+)
 from agent_slides.icons import ICON_VIEWBOX, require_icon, svg_path_subpaths
 from agent_slides.io.assets import resolve_image_path
 from agent_slides.model.types import (
@@ -122,7 +127,9 @@ def hex_to_rgb(value: str) -> RGBColor:
     return RGBColor.from_string(normalized)
 
 
-def _block_font_size(computed: ComputedNode, block: TextBlock, *, default_font_size: float | None = None) -> float:
+def _block_font_size(
+    computed: ComputedNode, block: TextBlock, *, default_font_size: float | None = None
+) -> float:
     if default_font_size is not None:
         return default_font_size
     if block.type == "heading":
@@ -134,7 +141,9 @@ def _block_line_runs(
     block: TextBlock,
     conditional_formatting: ConditionalFormatting | None = None,
 ) -> list[list[TextRun]]:
-    formatted_block = block.model_copy(update={"runs": resolved_text_runs(block, conditional_formatting)})
+    formatted_block = block.model_copy(
+        update={"runs": resolved_text_runs(block, conditional_formatting)}
+    )
     return split_text_runs_by_line(formatted_block)
 
 
@@ -147,7 +156,9 @@ def _block_line_height(computed: ComputedNode, block: TextBlock) -> float:
     return _block_font_size(computed, block) * LINE_HEIGHT_FACTOR
 
 
-def _icon_bullet_indent(block: TextBlock, computed: ComputedNode | None = None) -> float:
+def _icon_bullet_indent(
+    block: TextBlock, computed: ComputedNode | None = None
+) -> float:
     font_size = computed.font_size_pt if computed is not None else 14.0
     icon_size = font_size * ICON_BULLET_SIZE_FACTOR
     icon_gap = font_size * ICON_BULLET_GAP_FACTOR
@@ -207,7 +218,9 @@ def _apply_text_run_defaults(
     default_font_size: float | None = None,
 ) -> None:
     run.font.name = computed.font_family
-    run.font.size = Pt(_run_font_size(computed, block, run_spec, default_font_size=default_font_size))
+    run.font.size = Pt(
+        _run_font_size(computed, block, run_spec, default_font_size=default_font_size)
+    )
     run.font.bold = computed.font_bold if run_spec.bold is None else run_spec.bold
     if block.type == "heading" and run_spec.bold is None:
         run.font.bold = True
@@ -220,7 +233,9 @@ def _apply_text_run_defaults(
 
 def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
     base_rgb = [int(base.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
-    overlay_rgb = [int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    overlay_rgb = [
+        int(overlay.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)
+    ]
     blended = [
         int(round((1.0 - ratio) * base_channel + ratio * overlay_channel))
         for base_channel, overlay_channel in zip(base_rgb, overlay_rgb, strict=True)
@@ -229,7 +244,9 @@ def _mix_hex_colors(base: str, overlay: str, ratio: float) -> str:
 
 
 def _is_dark_color(value: str) -> bool:
-    red, green, blue = [int(value.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)]
+    red, green, blue = [
+        int(value.lstrip("#")[index : index + 2], 16) for index in (0, 2, 4)
+    ]
     luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
     return luminance < 160.0
 
@@ -242,7 +259,9 @@ def _table_alignment(value: str) -> PP_ALIGN:
     return PP_ALIGN.LEFT
 
 
-def _fit_image_to_slot(computed: ComputedNode, image_size_px: tuple[int, int]) -> tuple[float, float, float, float]:
+def _fit_image_to_slot(
+    computed: ComputedNode, image_size_px: tuple[int, int]
+) -> tuple[float, float, float, float]:
     slot_x = computed.x
     slot_y = computed.y
     slot_width = computed.width
@@ -270,14 +289,20 @@ def _read_manifest_payload(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Manifest file not found: {path}") from exc
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Manifest file not found: {path}"
+        ) from exc
     except OSError as exc:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Failed to read manifest file {path}: {exc}") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Failed to read manifest file {path}: {exc}"
+        ) from exc
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest file is not valid JSON: {path}") from exc
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest file is not valid JSON: {path}"
+        ) from exc
 
     if not isinstance(payload, dict):
         raise AgentSlidesError(SCHEMA_ERROR, "Manifest root must be a JSON object.")
@@ -287,28 +312,36 @@ def _read_manifest_payload(path: Path) -> dict[str, Any]:
 def _require_string(payload: dict[str, Any], field: str) -> str:
     value = payload.get(field)
     if not isinstance(value, str) or not value:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be a non-empty string.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be a non-empty string."
+        )
     return value
 
 
 def _require_list(payload: dict[str, Any], field: str) -> list[Any]:
     value = payload.get(field)
     if not isinstance(value, list):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be an array.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be an array."
+        )
     return value
 
 
 def _require_dict(payload: dict[str, Any], field: str) -> dict[str, Any]:
     value = payload.get(field)
     if not isinstance(value, dict):
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be an object.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be an object."
+        )
     return value
 
 
 def _require_int(payload: dict[str, Any], field: str) -> int:
     value = payload.get(field)
     if not isinstance(value, int) or value < 0:
-        raise AgentSlidesError(SCHEMA_ERROR, f"Manifest field '{field}' must be a non-negative integer.")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"Manifest field '{field}' must be a non-negative integer."
+        )
     return value
 
 
@@ -317,7 +350,10 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
 
     for master_position, master in enumerate(_require_list(payload, "slide_masters")):
         if not isinstance(master, dict):
-            raise AgentSlidesError(SCHEMA_ERROR, f"Manifest slide_masters[{master_position}] must be an object.")
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                f"Manifest slide_masters[{master_position}] must be an object.",
+            )
 
         for layout_position, layout in enumerate(_require_list(master, "layouts")):
             if not isinstance(layout, dict):
@@ -330,16 +366,24 @@ def _read_layout_bindings(payload: dict[str, Any]) -> dict[str, TemplateLayoutBi
             slot_mapping = _require_dict(layout, "slot_mapping")
             slot_mapping = normalize_template_slot_mapping(
                 slot_mapping,
-                placeholders_by_idx=_index_layout_placeholders(layout.get("placeholders")),
+                placeholders_by_idx=_index_layout_placeholders(
+                    layout.get("placeholders")
+                ),
             )
             binding = TemplateLayoutBinding(
                 master_index=layout.get("master_index", master_position),
                 layout_index=layout.get("index", layout_position),
-                slot_mapping={slot: _require_int(slot_mapping, slot) for slot in slot_mapping},
-                placeholders_by_idx=_index_layout_placeholders(layout.get("placeholders")),
+                slot_mapping={
+                    slot: _require_int(slot_mapping, slot) for slot in slot_mapping
+                },
+                placeholders_by_idx=_index_layout_placeholders(
+                    layout.get("placeholders")
+                ),
             )
             if slug in bindings:
-                raise AgentSlidesError(SCHEMA_ERROR, f"Manifest layout slug '{slug}' must be unique.")
+                raise AgentSlidesError(
+                    SCHEMA_ERROR, f"Manifest layout slug '{slug}' must be unique."
+                )
             bindings[slug] = binding
 
     return bindings
@@ -366,22 +410,32 @@ def _node_paragraphs(
 ) -> list[tuple[int, TextBlock, list[TextRun]]]:
     if isinstance(node.content, str):
         block = TextBlock(type="paragraph", text=node.content)
-        return [(0, block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting)]
+        return [
+            (0, block, line_runs)
+            for line_runs in _block_line_runs(block, conditional_formatting)
+        ]
 
     paragraphs: list[tuple[int, TextBlock, list[TextRun]]] = []
     for block_index, block in enumerate(node.content.blocks):
-        paragraphs.extend((block_index, block, line_runs) for line_runs in _block_line_runs(block, conditional_formatting))
+        paragraphs.extend(
+            (block_index, block, line_runs)
+            for line_runs in _block_line_runs(block, conditional_formatting)
+        )
     return paragraphs or [(0, TextBlock(type="paragraph", text=""), [TextRun(text="")])]
 
 
-def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: ComputedNode | None = None) -> None:
+def _configure_paragraph_bullets(
+    paragraph, block: TextBlock, *, computed: ComputedNode | None = None
+) -> None:
     pPr = paragraph._p.get_or_add_pPr()
     pPr.remove_all("a:buNone", "a:buAutoNum", "a:buChar", "a:buBlip")
 
     if block.type == "bullet":
         pPr.lvl = block.level
         if block.icon:
-            pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
+            pPr.insert_element_before(
+                OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst"
+            )
             pPr.set("marL", str(Pt(_icon_bullet_indent(block, computed))))
             pPr.set("indent", "0")
             return
@@ -396,7 +450,9 @@ def _configure_paragraph_bullets(paragraph, block: TextBlock, *, computed: Compu
     for attr_name in ("marL", "indent"):
         if attr_name in pPr.attrib:
             del pPr.attrib[attr_name]
-    pPr.insert_element_before(OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst")
+    pPr.insert_element_before(
+        OxmlElement("a:buNone"), "a:tabLst", "a:defRPr", "a:extLst"
+    )
 
 
 def _configure_text_frame(text_frame) -> None:
@@ -410,7 +466,9 @@ def _configure_text_frame(text_frame) -> None:
     text_frame.margin_bottom = 0
 
 
-def _apply_run_style(run, *, font_family: str, font_size_pt: float, bold: bool, color: str) -> None:
+def _apply_run_style(
+    run, *, font_family: str, font_size_pt: float, bold: bool, color: str
+) -> None:
     run.font.name = font_family
     run.font.size = Pt(font_size_pt)
     run.font.bold = bold
@@ -514,7 +572,9 @@ def _apply_shape_line(shape, node: Node) -> None:
         shape.line.dash_style = DASH_STYLE_MAP[spec.dash]
 
 
-def _render_shape_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_shape_node(
+    slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode
+) -> None:
     spec = node.shape_spec
     if spec is None:
         return
@@ -550,8 +610,16 @@ def _render_shape_node(slide_shape_collection: SlideShapes, node: Node, computed
 
     _apply_shape_line(shape, node)
 
-    if spec.shape_type == "rounded_rectangle" and len(shape.adjustments) > 0 and computed.height > 0 and computed.width > 0:
-        shape.adjustments[0] = min(1.0, max(0.0, (spec.corner_radius * 2.0) / min(computed.width, computed.height)))
+    if (
+        spec.shape_type == "rounded_rectangle"
+        and len(shape.adjustments) > 0
+        and computed.height > 0
+        and computed.width > 0
+    ):
+        shape.adjustments[0] = min(
+            1.0,
+            max(0.0, (spec.corner_radius * 2.0) / min(computed.width, computed.height)),
+        )
 
     if spec.shadow:
         _apply_shape_shadow(shape)
@@ -565,7 +633,9 @@ def _pattern_vertical_anchor(value: str) -> MSO_ANCHOR:
     return MSO_ANCHOR.TOP
 
 
-def _render_pattern_shape_element(slide_shape_collection: SlideShapes, element: ComputedPatternElement) -> None:
+def _render_pattern_shape_element(
+    slide_shape_collection: SlideShapes, element: ComputedPatternElement
+) -> None:
     node = Node(
         node_id="pattern-shape",
         type="shape",
@@ -598,7 +668,9 @@ def _render_pattern_shape_element(slide_shape_collection: SlideShapes, element: 
     _render_shape_node(slide_shape_collection, node, computed)
 
 
-def _render_pattern_text_element(slide_shape_collection: SlideShapes, element: ComputedPatternElement) -> None:
+def _render_pattern_text_element(
+    slide_shape_collection: SlideShapes, element: ComputedPatternElement
+) -> None:
     shape = slide_shape_collection.add_textbox(
         points_to_emu(element.x),
         points_to_emu(element.y),
@@ -625,7 +697,9 @@ def _render_pattern_text_element(slide_shape_collection: SlideShapes, element: C
     )
 
 
-def _render_pattern_node(slide_shape_collection: SlideShapes, computed: ComputedNode) -> None:
+def _render_pattern_node(
+    slide_shape_collection: SlideShapes, computed: ComputedNode
+) -> None:
     for element in sorted(computed.pattern_elements, key=lambda item: item.z_index):
         if element.kind == "shape":
             _render_pattern_shape_element(slide_shape_collection, element)
@@ -642,7 +716,9 @@ def _delete_all_slides(prs: Presentation) -> None:
         prs.part.drop_rel(slide_id.rId)
 
 
-def _resolve_layout(prs: Presentation, slide_layout: str, binding: TemplateLayoutBinding):
+def _resolve_layout(
+    prs: Presentation, slide_layout: str, binding: TemplateLayoutBinding
+):
     try:
         slide_master = prs.slide_masters[binding.master_index]
     except IndexError as exc:
@@ -676,6 +752,38 @@ def _resolve_layout(prs: Presentation, slide_layout: str, binding: TemplateLayou
         ) from exc
 
 
+def _fill_image_placeholder(
+    node: Node,
+    slot_mapping: dict[str, int],
+    slide,
+    *,
+    asset_base_dir: str | Path | None = None,
+) -> None:
+    """Insert an image into a PICTURE placeholder in template mode."""
+    if node.slot_binding is None or node.type != "image":
+        return
+    if node.image_path is None:
+        return
+
+    placeholder_idx = slot_mapping.get(node.slot_binding)
+    if placeholder_idx is None:
+        return
+
+    try:
+        placeholder = slide.placeholders[placeholder_idx]
+    except KeyError:
+        return
+
+    # Only fill PICTURE-type placeholders
+    from pptx.enum.shapes import PP_PLACEHOLDER
+
+    if placeholder.placeholder_format.type != PP_PLACEHOLDER.PICTURE:
+        return
+
+    image_path = resolve_image_path(node.image_path, base_dir=asset_base_dir)
+    placeholder.insert_picture(str(image_path))
+
+
 def _fill_placeholder(
     node: Node,
     binding: TemplateLayoutBinding,
@@ -683,19 +791,24 @@ def _fill_placeholder(
     *,
     computed: ComputedNode | None = None,
     conditional_formatting: ConditionalFormatting | None = None,
-) -> None:
+) -> bool:
     if node.slot_binding is None or node.type != "text":
-        return
+        return False
 
     placeholder_idx = binding.slot_mapping.get(node.slot_binding)
     if placeholder_idx is None:
-        return
+        return False
 
-    target = binding.placeholders_by_idx.get(placeholder_idx, {"idx": placeholder_idx, "type": "BODY"})
+    target = binding.placeholders_by_idx.get(
+        placeholder_idx, {"idx": placeholder_idx, "type": "BODY"}
+    )
     target_type = str(target.get("type", "BODY")).upper()
     if target_type == "TEXT_BOX":
         text_frame = _text_box_frame_for_slot(slide, target)
         _saved_pPr = None
+    elif target_type == "GROUP":
+        # Group shapes cannot be filled with text; skip silently.
+        return True
     else:
         placeholder = slide.placeholders[placeholder_idx]
         text_frame = placeholder.text_frame
@@ -724,12 +837,17 @@ def _fill_placeholder(
     )
 
     for paragraph_index, (block_index, block, line_runs) in enumerate(paragraphs):
-        paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+        paragraph = (
+            text_frame.paragraphs[0]
+            if paragraph_index == 0
+            else text_frame.add_paragraph()
+        )
 
         # Restore captured template paragraph formatting before bullet config
         # overwrites only the bullet-related attributes it needs.
         if _saved_pPr is not None:
             from copy import deepcopy
+
             restored = deepcopy(_saved_pPr)
             p_elem = paragraph._p
             old_pPr = p_elem.find(
@@ -749,8 +867,11 @@ def _fill_placeholder(
                 run_spec,
                 computed=computed,
                 block=block,
-                default_font_size=position.font_size_pt if position is not None else None,
+                default_font_size=position.font_size_pt
+                if position is not None
+                else None,
             )
+    return True
 
 
 def _text_box_frame_for_slot(slide, target: dict[str, Any]):
@@ -763,7 +884,9 @@ def _text_box_frame_for_slot(slide, target: dict[str, Any]):
 
     bounds = target.get("bounds", {})
     if not isinstance(bounds, dict):
-        raise AgentSlidesError(SCHEMA_ERROR, "Template text-box slot is missing bounds metadata")
+        raise AgentSlidesError(
+            SCHEMA_ERROR, "Template text-box slot is missing bounds metadata"
+        )
 
     text_box = slide.shapes.add_textbox(
         points_to_emu(float(bounds.get("x", 0.0))),
@@ -780,13 +903,17 @@ def _text_box_frame_for_slot(slide, target: dict[str, Any]):
     return text_frame
 
 
-def _write_template_pptx(deck: Deck, output_path: str) -> None:
+def _write_template_pptx(
+    deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None
+) -> None:
     registry = TemplateLayoutRegistry(deck.template_manifest)
     template_path = registry.source_path
     conditional_formatting = load_design_rules(deck.design_rules).conditional_formatting
 
     if not template_path.exists():
-        raise AgentSlidesError(FILE_NOT_FOUND, f"Template file not found: {template_path}")
+        raise AgentSlidesError(
+            FILE_NOT_FOUND, f"Template file not found: {template_path}"
+        )
 
     _warn_if_template_changed(template_path, registry.source_hash)
     presentation = Presentation(template_path)
@@ -794,7 +921,9 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
 
     for slide in deck.slides:
         binding = registry.binding_for(slide.layout)
-        pptx_slide = presentation.slides.add_slide(_resolve_layout(presentation, slide.layout, binding))
+        pptx_slide = presentation.slides.add_slide(
+            _resolve_layout(presentation, slide.layout, binding)
+        )
         for node in _iter_rendered_nodes(slide.nodes):
             if node.type in {"shape", "pattern"}:
                 computed = slide.computed.get(node.node_id)
@@ -804,17 +933,35 @@ def _write_template_pptx(deck: Deck, output_path: str) -> None:
                     else:
                         _render_pattern_node(pptx_slide.shapes, computed)
         for node in slide.nodes:
+            computed = slide.computed.get(node.node_id)
             if node.type == "icon":
-                computed = slide.computed.get(node.node_id)
                 if computed is not None:
                     _render_icon_node(pptx_slide.shapes, node, computed)
                 continue
-            _fill_placeholder(
+            handled_text = _fill_placeholder(
                 node,
                 binding,
                 pptx_slide,
-                computed=slide.computed.get(node.node_id),
+                computed=computed,
                 conditional_formatting=conditional_formatting,
+            )
+            if (
+                not handled_text
+                and node.type == "text"
+                and node.slot_binding is not None
+                and computed is not None
+            ):
+                _render_text_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    conditional_formatting=conditional_formatting,
+                )
+            _fill_image_placeholder(
+                node,
+                binding.slot_mapping,
+                pptx_slide,
+                asset_base_dir=asset_base_dir,
             )
 
     presentation.save(Path(output_path))
@@ -848,13 +995,21 @@ def _render_text_node(
     _configure_text_frame(text_frame)
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
     if computed.block_positions:
-        positions_by_index = {position.block_index: position for position in computed.block_positions}
+        positions_by_index = {
+            position.block_index: position for position in computed.block_positions
+        }
         first_position = computed.block_positions[0]
         last_position = computed.block_positions[-1]
         left_margin = max(first_position.x - computed.x, 0.0)
         top_margin = max(first_position.y - computed.y, 0.0)
-        right_margin = max((computed.x + computed.width) - (first_position.x + first_position.width), 0.0)
-        bottom_margin = max((computed.y + computed.height) - (last_position.y + last_position.height), 0.0)
+        right_margin = max(
+            (computed.x + computed.width) - (first_position.x + first_position.width),
+            0.0,
+        )
+        bottom_margin = max(
+            (computed.y + computed.height) - (last_position.y + last_position.height),
+            0.0,
+        )
 
         text_frame.margin_left = points_to_emu(left_margin)
         text_frame.margin_right = points_to_emu(right_margin)
@@ -867,11 +1022,19 @@ def _render_text_node(
             if position is None:
                 continue
 
-            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+            paragraph = (
+                text_frame.paragraphs[0]
+                if paragraph_index == 0
+                else text_frame.add_paragraph()
+            )
             _configure_paragraph_bullets(paragraph, block)
             paragraph.space_before = Pt(0)
             next_position = positions_by_index.get(index + 1)
-            gap_after = 0.0 if next_position is None else max(next_position.y - (position.y + position.height), 0.0)
+            gap_after = (
+                0.0
+                if next_position is None
+                else max(next_position.y - (position.y + position.height), 0.0)
+            )
             paragraph.space_after = Pt(gap_after)
 
             for run_spec in block.resolved_runs():
@@ -890,7 +1053,11 @@ def _render_text_node(
     paragraph_index = 0
     for block in blocks:
         for line_runs in _block_line_runs(block, conditional_formatting):
-            paragraph = text_frame.paragraphs[0] if paragraph_index == 0 else text_frame.add_paragraph()
+            paragraph = (
+                text_frame.paragraphs[0]
+                if paragraph_index == 0
+                else text_frame.add_paragraph()
+            )
             _configure_paragraph_bullets(paragraph, block, computed=computed)
             paragraph.space_before = Pt(0)
             paragraph.space_after = Pt(0)
@@ -934,7 +1101,9 @@ def _render_icon_shape(
         shape.line.fill.background()
 
 
-def _render_text_block_icons(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_text_block_icons(
+    slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode
+) -> None:
     blocks = node.content.blocks or [TextBlock(type="paragraph", text="")]
     current_y = computed.y
     for index, block in enumerate(blocks):
@@ -971,7 +1140,9 @@ def _render_image_node(
 
     image_path = resolve_image_path(node.image_path, base_dir=asset_base_dir)
     image = Image.from_file(str(image_path))
-    left, top, width, height = _fit_image_to_slot(computed, cast(tuple[int, int], image.size))
+    left, top, width, height = _fit_image_to_slot(
+        computed, cast(tuple[int, int], image.size)
+    )
     slide_shape_collection.add_picture(
         str(image_path),
         points_to_emu(left),
@@ -979,6 +1150,8 @@ def _render_image_node(
         width=points_to_emu(width),
         height=points_to_emu(height),
     )
+
+
 def _render_chart_node(
     slide_shape_collection: SlideShapes,
     node: Node,
@@ -1143,7 +1316,11 @@ def _render_table_node(
         )
 
     for row_index, row in enumerate(spec.rows, start=1):
-        fill_color = stripe_fill if spec.stripe and row_index % 2 == 0 else theme.colors.background
+        fill_color = (
+            stripe_fill
+            if spec.stripe and row_index % 2 == 0
+            else theme.colors.background
+        )
         for column_index, value in enumerate(row):
             cell_fill, cell_text_color, cell_bold = resolve_table_cell_style(
                 value,
@@ -1163,7 +1340,9 @@ def _render_table_node(
             )
 
 
-def _render_icon_node(slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode) -> None:
+def _render_icon_node(
+    slide_shape_collection: SlideShapes, node: Node, computed: ComputedNode
+) -> None:
     path_data = computed.icon_svg_path or require_icon(str(node.icon_name))
     _render_icon_shape(
         slide_shape_collection,
@@ -1180,7 +1359,9 @@ render_image_node = _render_image_node
 render_icon_node = _render_icon_node
 
 
-def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
+def _write_v0_pptx(
+    deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None
+) -> None:
     presentation = Presentation()
     presentation.slide_width = Inches(10)
     presentation.slide_height = Inches(7.5)
@@ -1237,11 +1418,13 @@ def _write_v0_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path |
     presentation.save(Path(output_path))
 
 
-def write_pptx(deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None) -> None:
+def write_pptx(
+    deck: Deck, output_path: str, *, asset_base_dir: str | Path | None = None
+) -> None:
     """Write a deck to PowerPoint using either the v0 or template-backed writer."""
 
     if deck.template_manifest:
-        _write_template_pptx(deck, output_path)
+        _write_template_pptx(deck, output_path, asset_base_dir=asset_base_dir)
         return
 
     _write_v0_pptx(deck, output_path, asset_base_dir=asset_base_dir)

@@ -1,85 +1,146 @@
-# Layout Selection
+# Layout Selection (BCG Template)
 
-Choose layouts by the relationship you need the audience to see, not by the raw item count.
+This reference is the authoritative catalog of usable BCG template layouts.
+Read it before Phase 1 (storyline) and Phase 2 (build) to pick layouts correctly.
 
-## The Isomorphism Principle
+## Key Facts
 
-The visual structure should mirror the conceptual structure.
+- 24 usable primary layouts (non-d\_ duplicates, non-agenda)
+- 12 layouts have a body slot (native or virtual). Use body on every content slide that supports it.
+- Heading widths vary from 195pt (very narrow) to 861pt (full width). Word count must match.
+- Native body: `title_slide`, `title_and_text`, `disclaimer`
+- Virtual body (free-floating text box below heading): `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`
+- No body (heading vertically centered or large placeholder): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`
+- No body (image layouts): `green_half`, `green_two_third` (heading + image only)
+- Image slot: `title_slide`, `green_half`, `green_two_third`
 
-If the content presents equal peers, use equal visual weight. If it presents contrast, use side-by-side contrast. If it presents a single narrative, keep the reading path linear. If it presents a visual artifact plus explanation, split the slide into image and narrative zones.
+## Complete Layout Catalog
 
-This is the core rule:
+### Opening and Closing
 
-- equal ideas should look equal
-- contrasted ideas should sit in tension
-- hierarchy should look hierarchical
-- sequence should look sequential
-- emphasis should claim the center or the full frame
+| Slug | Slots | Heading Width | Use For |
+|------|-------|--------------|---------|
+| `title_slide` | heading, subheading, body, image | 541pt | Deck opener. Set heading, subheading, and optionally body. |
+| `end` | (none) | -- | Closing slide. No editable slots; use as-is. |
 
-Examples:
+### Full-Width Content (heading w=861pt)
 
-- Three equally important themes should use `three_col`, because three equal columns signal equal weight.
-- Two alternative strategies with distinct labels should use `comparison`, because headers plus paired bodies make the contrast explicit.
-- One claim with supporting detail should use `title_content`, because a full-width reading path reinforces a single narrative.
-- A single image with explanation should use `image_left` or `image_right`, because the split composition tells the viewer to connect the visual and the text.
+| Slug | Slots | Use For |
+|------|-------|---------|
+| `title_and_text` | heading, body (native) | Primary content slide with native body placeholder. Best for dense body text (4-6 bullets). |
+| `title_only` | heading, body (virtual) | Action title + supporting bullets via virtual body (3-5 bullets). |
+| `section_header_line` | heading | Section divider with a line accent. Heading-only -- no body. |
+| `big_statement_green` | heading | Bold statement on green background. Heading IS the message -- no body. |
+| `big_statement_icon` | heading | Bold statement with icon accent. Heading IS the message -- no body. |
+| `special_gray` | heading, body (virtual) | Statement on gray background. Add 2-3 supporting points in virtual body. |
 
-Anti-example:
+### Medium-Width Layouts (heading w=320-541pt)
 
-- If one item clearly matters more than the others, do not force it into `two_col` or `three_col`. Equal columns falsely imply equal importance.
+| Slug | Slots | Heading Width | Use For |
+|------|-------|--------------|---------|
+| `section_header_box` | heading | 758pt | Section divider with box accent. Heading-only -- no body. |
+| `green_highlight` | heading, body (virtual) | 493pt | Highlighted takeaway on green band. Add 2-3 short bullets in body. |
+| `green_two_third` | heading, image | 492pt | Heading plus image, two-thirds text. No body. |
+| `arrow_two_third` | heading, body (virtual) | 493pt | Directional takeaway, wide arrow. Add 2-3 bullets in body. |
+| `green_arrow_two_third` | heading, body (virtual) | 493pt | Green directional takeaway. Add 2-3 bullets in body. |
+| `arrow_half` | heading, body (virtual) | 368pt | Directional takeaway, half-width. Add 2 short bullets in body. |
+| `green_arrow_half` | heading, body (virtual) | 368pt | Green directional half-width. Add 2 short bullets in body. |
+| `green_half` | heading, image | 346pt | Half-and-half image split. No body. |
+| `arrow_one_third` | heading | 320pt | Narrow directional takeaway. Heading-only -- no body. |
+| `green_arrow_one_third` | heading | 320pt | Narrow green directional. Heading-only -- no body. |
 
-## Layout Selection Table
+### Narrow Layouts (heading w=195-272pt)
 
-| If the content shows... | Use Layout | Why | Current auto-layout behavior |
-| --- | --- | --- | --- |
-| Opening/title, talk name, or section opener with a short subtitle | `title` | Centered heading and subtitle create a simple opening beat. | Suggested when content is one heading plus one short paragraph. |
-| Single narrative with detail, explanation, or a short bullet list | `title_content` | Full width supports linear reading and one dominant idea. | Suggested for one heading plus one longer paragraph, short bullet lists, and generic text fallback. |
-| Two equal pillars, themes, or balanced options | `two_col` | Side-by-side columns signal equal weight and invite comparison. | Suggested for one heading plus two balanced paragraphs, or long bullet lists split for scanning. |
-| Three equal pillars, themes, or balanced lenses | `three_col` | Three equal columns make peer relationships explicit. | Suggested for one heading plus three balanced paragraphs. |
-| Two contrasted approaches with their own headers and bodies | `comparison` | Header-body pairs create structured contrast instead of generic columns. | Suggested when the content forms two headed groups after a lead heading. |
-| Key quote or statement with attribution | `quote` | Centered treatment turns the slide into emphasis, not explanation. | Not auto-suggested; choose it deliberately when emphasis matters more than structure. |
-| Image plus explanation, with the image leading the read | `image_left` | Split layout connects the visual to the narrative while letting the image anchor the slide. | Suggested for `image_count == 1` with non-empty text content. |
-| Image plus explanation, with the text leading the read | `image_right` | Same relationship as `image_left`, but mirrored for reading flow or composition. | Not auto-suggested directly; today the engine picks `image_left` for the split image-text pattern. |
-| Full-impact visual, poster frame, or immersive scene | `hero_image` | Full-bleed image tells the viewer the visual is the message. | Suggested for `image_count == 1` with empty text content. |
-| Multiple images, references, or a collection | `gallery` | A grid reads as a set of related visual items. | Suggested for `image_count >= 2` with non-empty text content. |
-| Section break, closing thought, or deliberate pause in the narrative | `closing` | Minimal content creates a stop, transition, or ending beat. | Not auto-suggested; validator guidance separately recommends ending decks with a closing slide. |
-| Nothing yet, placeholder slide, or intentional empty canvas | `blank` | A clean slate avoids implying structure that does not exist yet. | Suggested when the structured content is empty. |
+| Slug | Slots | Heading Width | Use For |
+|------|-------|--------------|---------|
+| `gray_slice_heading` | heading, body (virtual) | 272pt | Narrow slice heading. Max ~5 words. Add 1-2 very short bullets in body. |
+| `white_one_third` | heading | 246pt | Narrow white panel. Max ~5 words. Heading-only -- no body. |
+| `green_one_third` | heading | 246pt | Narrow green panel. Max ~5 words. Heading-only -- no body. |
+| `left_arrow` | heading | 195pt | Very narrow arrow callout. Max ~3 words. Heading-only -- no body. |
+| `green_left_arrow` | heading | 195pt | Very narrow green arrow. Max ~3 words. Heading-only -- no body. |
+
+### Agenda Layouts
+
+These layouts have baked-in template titles (e.g., "Agenda", "Strategy").
+Fill the `body` slot ONLY with actual agenda items (numbered topic list
+with page references), not titles or descriptions. If the deck has no
+real agenda, skip these layouts entirely.
+
+| Slug | Slots | Use For |
+|------|-------|---------|
+| `agenda_full_width_overview` | body | Full-width agenda with items |
+| `agenda_section_header_overview` | body | Section-specific agenda |
+| `agenda_two_thirds` | body | Two-thirds width agenda |
+
+### Do Not Use (excluded)
+
+These layouts have baked-in template content or serve no content purpose.
+Do NOT include them in decks — they will produce visual artifacts.
+
+| Slug | Reason |
+|------|--------|
+| `disclaimer` | Template has full legal text baked in; adding body overlaps |
+| `layout_guide` | Reference/guide layout, not for presentations |
+| `blank` | No fillable slots |
+| `blank_green` | No fillable content area |
+| `end` | Pre-designed closing graphic; use as-is with no content |
+
+## Quick Slot Lookup
+
+| Slot | Available On |
+|------|-------------|
+| heading | All layouts except `blank`, `end`, `disclaimer`, `layout_guide` |
+| subheading | `title_slide` only |
+| body (native) | `title_slide`, `title_and_text`, `disclaimer`, `layout_guide` |
+| body (virtual) | `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
+| image | `title_slide`, `green_half`, `green_two_third` |
+
+**Use body on every layout that supports it.** For heading-only layouts (no body), the heading IS the entire message -- make it a strong action title.
+
+## Width Classes and Word Limits
+
+| Width Class | Points | Max Words in Heading | Layouts |
+|-------------|--------|---------------------|---------|
+| Very narrow | 195pt | 3 words | `left_arrow`, `green_left_arrow` |
+| Narrow | 246-272pt | 5 words | `white_one_third`, `green_one_third`, `gray_slice_heading` |
+| Medium-narrow | 320-368pt | 8 words | `arrow_one_third`, `green_arrow_one_third`, `arrow_half`, `green_arrow_half`, `green_half` |
+| Medium | 493-541pt | 12 words | `green_highlight`, `arrow_two_third`, `green_arrow_two_third`, `green_two_third`, `title_slide` |
+| Wide | 758pt | 18 words | `section_header_box` |
+| Full | 861pt | 20+ words | `title_only`, `title_and_text`, `section_header_line`, `big_statement_green`, `big_statement_icon`, `special_gray` |
+
+## Content-Type-to-Layout Mapping
+
+| Content Type | Best Layout | Why |
+|-------------|-------------|-----|
+| Deck title with subtitle | `title_slide` | Has heading + subheading + body + image slots |
+| Single narrative with body text | `title_and_text` | Native body placeholder, best for dense text (4-6 bullets) |
+| Action title + supporting evidence | `title_only` | Full-width heading + virtual body for 3-5 bullets |
+| Bold key takeaway | `big_statement_green` or `big_statement_icon` | Full-width, high-contrast emphasis. Heading IS the message (no body). |
+| Section divider | `section_header_box` or `section_header_line` | Structural break. Heading-only. |
+| Data slide with source | `title_and_text` or `title_only` | Heading states insight; body has source line + bullets |
+| Highlighted insight | `green_highlight` | Green band emphasis + virtual body for 2-3 supporting bullets |
+| Image with explanation | `green_half` or `green_two_third` | Heading + image (no body). Make heading the full message. |
+| Directional callout / arrow | `arrow_half` or `green_arrow_half` | Arrow implies momentum + virtual body for 2 supporting points |
+| Short label or tag | `left_arrow` or `green_left_arrow` | Very narrow, 2-3 word heading only. No body. |
+| Agenda overview | `agenda_full_width_overview` | Body slot for numbered topic list |
+| Closing | `big_statement_green` | Call-to-action heading (no body). Make heading compelling. |
 
 ## Anti-Patterns
 
-- Do not use equal columns for unequal items. Size and span should reflect importance.
-- Do not use grids for hierarchies. A grid implies peers, not parent-child structure.
-- Do not imply a flow or process for content that is not sequential.
-- Do not stack truly equal peers vertically if the main point is parity rather than order.
-- Do not repeat the same layout for 3 or more consecutive content slides unless repetition is itself the message.
+- **Long headings on narrow layouts.** A 15-word heading on `left_arrow` (195pt) will overflow or become unreadable.
+- **Skipping body on layouts that support it.** If a layout has body (native or virtual), fill it with supporting content.
+- **Setting body on layouts without it.** `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third` do NOT have body. Do not attempt `slot set --slot body` on these.
+- **Overloading narrow layout bodies.** `gray_slice_heading` body should have at most 1-2 very short bullets.
+- **Using `title_and_text` for everything.** With virtual body slots on 8+ layouts, mix layout types for variety.
+- **Repeating the same layout 3+ times consecutively.** Breaks visual rhythm. Alternate between layout categories.
+- **Ignoring the green/white variants.** Green variants add visual weight and color. Alternate them to create contrast.
+- **Using arrow layouts for non-directional content.** Arrow shapes imply momentum, transition, or direction. Do not use them for static facts.
+- **Adding content to disclaimer/layout_guide/blank layouts.** These have baked-in template content or no content areas. Adding text creates visual artifacts.
+- **Adding titles to agenda layouts.** Agenda layouts have their own template titles. Fill body with agenda items only, not headings.
 
 ## Layout Variety Rule
 
-In any deck longer than 6 slides, use at least 2 to 3 different layouts.
-
-Never repeat the same layout for 3 or more consecutive slides. Variety preserves attention and helps each idea feel intentionally framed. The point is not novelty for its own sake; the point is to keep the deck visually aligned with changing relationships from slide to slide.
-
-## Integration with Auto-Layout
-
-`suggest-layout` and `slide add --auto-layout` already implement part of this principle in `src/agent_slides/engine/layout_suggest.py`.
-
-The current engine maps relationship cues to layout choices like this:
-
-- balanced 2-way content becomes `two_col`
-- balanced 3-way content becomes `three_col`
-- two headed groups become `comparison`
-- one heading plus one short paragraph becomes `title`
-- one heading plus one longer paragraph becomes `title_content`
-- one image plus text becomes `image_left`
-- one image without text becomes `hero_image`
-- multiple images plus text become `gallery`
-- empty content becomes `blank`
-
-That means the engine already applies isomorphism for common patterns: equality, contrast, title/subtitle openings, image-plus-narrative, image-only immersion, and empty-state slides.
-
-Current intentional limits:
-
-- `quote` and `closing` are excluded from auto-suggestion, so agents should select them deliberately when emphasis or pacing matters more than content shape.
-- `image_right` is the mirrored manual variant of the split image-text relationship. The current auto-layout engine suggests `image_left`, and authors can flip to `image_right` when the composition reads better that way.
-- The variety rule is design guidance, not an enforced validator or `suggest-layout` rule today.
-
-Use the engine as the default heuristic, then override it when the conceptual relationship, reading flow, or deck rhythm calls for a different layout.
+In any deck longer than 6 slides, use at least 3 different layouts.
+Never repeat the same layout for 3 or more consecutive content slides.
+Alternate between full-width, medium, and narrow layouts to create visual rhythm.
+Mix green and white variants to maintain color contrast.

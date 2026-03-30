@@ -13,7 +13,9 @@ SCRIPT_PATH = ROOT / "scripts" / "generate_coverage_matrix.py"
 
 
 def _load_script_module():
-    spec = importlib.util.spec_from_file_location("generate_coverage_matrix", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "generate_coverage_matrix", SCRIPT_PATH
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -41,12 +43,16 @@ def _write_deck(path: Path, deck: Deck) -> None:
 
 def _write_computed_sidecar(path: Path, deck: Deck) -> None:
     computed_path = path.with_name(f"{path.stem}.computed{path.suffix}")
-    computed_path.write_text(ComputedDeck.from_deck(deck).model_dump_json(indent=2, exclude_none=True) + "\n")
+    computed_path.write_text(
+        ComputedDeck.from_deck(deck).model_dump_json(indent=2, exclude_none=True) + "\n"
+    )
 
 
 def _write_scores(path: Path, *, build_success: float) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"build_success": build_success}, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps({"build_success": build_success}, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _write_results_suite(path: Path) -> None:
@@ -137,7 +143,9 @@ def test_generate_coverage_matrix_supports_results_json_inputs(tmp_path: Path) -
     assert payload["total_layouts"] == 3
     assert payload["usable"] == 3
     assert payload["testable"] == 2
-    assert payload["excluded"] == [{"slug": "agenda_table", "reason": "unsupported table structure"}]
+    assert payload["excluded"] == [
+        {"slug": "agenda_table", "reason": "unsupported table structure"}
+    ]
     assert payload["passed"] == 1
     assert payload["failed"] == 1
     assert payload["coverage_pct"] == 50.0
@@ -152,7 +160,9 @@ def test_generate_coverage_matrix_supports_results_json_inputs(tmp_path: Path) -
     assert layouts["agenda_table"]["failure_reasons"] == []
 
 
-def test_generate_coverage_matrix_exits_zero_when_all_testable_layouts_pass(tmp_path: Path) -> None:
+def test_generate_coverage_matrix_exits_zero_when_all_testable_layouts_pass(
+    tmp_path: Path,
+) -> None:
     suite_dir = tmp_path / "cert-suite" / "brand-template"
     output_path = tmp_path / "runs" / "run-002" / "coverage.json"
     _write_results_suite(suite_dir)
@@ -181,7 +191,9 @@ def test_generate_coverage_matrix_exits_zero_when_all_testable_layouts_pass(tmp_
     assert payload["coverage_pct"] == 100.0
 
 
-def test_build_coverage_matrix_flags_missing_variants_for_testable_layouts(tmp_path: Path) -> None:
+def test_build_coverage_matrix_flags_missing_variants_for_testable_layouts(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
     suite_dir = tmp_path / "cert-suite" / "sparse-template"
     suite_dir.mkdir(parents=True)
@@ -216,7 +228,9 @@ def test_build_coverage_matrix_flags_missing_variants_for_testable_layouts(tmp_p
     assert payload["layouts"][0]["failure_reasons"] == ["no_variants_found"]
 
 
-def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifacts(tmp_path: Path) -> None:
+def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifacts(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
     suite_dir = tmp_path / "cert-suite" / "brand-template"
     run_dir = tmp_path / "runs" / "run-004"
@@ -254,7 +268,9 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
         ]
     }
     suite_dir.mkdir(parents=True, exist_ok=True)
-    (suite_dir / "inventory.json").write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+    (suite_dir / "inventory.json").write_text(
+        json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
+    )
 
     image_pass_deck = Deck(
         deck_id="image-pass",
@@ -263,9 +279,22 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
                 slide_id="s-1",
                 layout="image_left",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
-                    Node(node_id="n-3", slot_binding="image", type="image", content={"blocks": []}, image_path="hero.png"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Heading",
+                    ),
+                    Node(
+                        node_id="n-2", slot_binding="body", type="text", content="Body"
+                    ),
+                    Node(
+                        node_id="n-3",
+                        slot_binding="image",
+                        type="image",
+                        content={"blocks": []},
+                        image_path="hero.png",
+                    ),
                 ],
             )
         ],
@@ -278,8 +307,15 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
                 slide_id="s-1",
                 layout="image_left",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Heading",
+                    ),
+                    Node(
+                        node_id="n-2", slot_binding="body", type="text", content="Body"
+                    ),
                 ],
             )
         ],
@@ -292,8 +328,15 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
                 slide_id="s-1",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Heading",
+                    ),
+                    Node(
+                        node_id="n-2", slot_binding="body", type="text", content="Body"
+                    ),
                 ],
                 computed={
                     "n-1": ComputedNode(
@@ -329,9 +372,18 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
     _write_deck(text_fail_path, text_fail_deck)
     _write_computed_sidecar(text_fail_path, text_fail_deck)
 
-    _write_scores(run_dir / "brand-template" / "image_left" / "nominal" / "scores.json", build_success=1.0)
-    _write_scores(run_dir / "brand-template" / "image_left" / "image_missing" / "scores.json", build_success=1.0)
-    _write_scores(run_dir / "brand-template" / "title_content" / "overflow" / "scores.json", build_success=1.0)
+    _write_scores(
+        run_dir / "brand-template" / "image_left" / "nominal" / "scores.json",
+        build_success=1.0,
+    )
+    _write_scores(
+        run_dir / "brand-template" / "image_left" / "image_missing" / "scores.json",
+        build_success=1.0,
+    )
+    _write_scores(
+        run_dir / "brand-template" / "title_content" / "overflow" / "scores.json",
+        build_success=1.0,
+    )
 
     payload = module.build_coverage_matrix(suite_dir=suite_dir, output_path=output_path)
 
@@ -351,9 +403,15 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
     assert layouts["image_left"]["variants_tested"] == 2
     assert layouts["image_left"]["variants_passed"] == 1
     assert layouts["image_left"]["variants_failed"] == 1
-    assert layouts["image_left"]["failure_reasons"] == ["image_missing", "placeholder_empty"]
+    assert layouts["image_left"]["failure_reasons"] == [
+        "image_missing",
+        "placeholder_empty",
+    ]
 
-    image_variants = {variant["variant_name"]: variant for variant in layouts["image_left"]["variants"]}
+    image_variants = {
+        variant["variant_name"]: variant
+        for variant in layouts["image_left"]["variants"]
+    }
     assert image_variants["nominal"]["pass"] is True
     assert image_variants["image_missing"]["placeholder_empty"] is True
     assert image_variants["image_missing"]["image_missing"] is True
@@ -365,7 +423,9 @@ def test_generate_coverage_matrix_reports_pass_fail_and_exclusions_from_artifact
     assert layouts["title_content"]["variants"][0]["font_too_small"] is True
 
 
-def test_generate_coverage_matrix_prefers_render_oracle_signals_when_available(tmp_path: Path) -> None:
+def test_generate_coverage_matrix_prefers_render_oracle_signals_when_available(
+    tmp_path: Path,
+) -> None:
     module = _load_script_module()
     suite_dir = tmp_path / "cert-suite" / "brand-template"
     run_dir = tmp_path / "runs" / "run-005"
@@ -385,7 +445,9 @@ def test_generate_coverage_matrix_prefers_render_oracle_signals_when_available(t
         ]
     }
     suite_dir.mkdir(parents=True, exist_ok=True)
-    (suite_dir / "inventory.json").write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+    (suite_dir / "inventory.json").write_text(
+        json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
+    )
 
     deck = Deck(
         deck_id="oracle-wins",
@@ -394,8 +456,15 @@ def test_generate_coverage_matrix_prefers_render_oracle_signals_when_available(t
                 slide_id="s-1",
                 layout="title_content",
                 nodes=[
-                    Node(node_id="n-1", slot_binding="heading", type="text", content="Heading"),
-                    Node(node_id="n-2", slot_binding="body", type="text", content="Body"),
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Heading",
+                    ),
+                    Node(
+                        node_id="n-2", slot_binding="body", type="text", content="Body"
+                    ),
                 ],
                 computed={
                     "n-1": ComputedNode(
@@ -447,7 +516,10 @@ def test_generate_coverage_matrix_prefers_render_oracle_signals_when_available(t
         + "\n",
         encoding="utf-8",
     )
-    _write_scores(run_dir / "brand-template" / "title_content" / "nominal" / "scores.json", build_success=1.0)
+    _write_scores(
+        run_dir / "brand-template" / "title_content" / "nominal" / "scores.json",
+        build_success=1.0,
+    )
 
     payload = module.build_coverage_matrix(suite_dir=suite_dir, output_path=output_path)
 

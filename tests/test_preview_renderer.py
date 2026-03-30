@@ -65,10 +65,14 @@ def test_slide_renderer_renders_and_reuses_cached_png(
 
     calls: list[list[str]] = []
 
-    def fake_write_pptx(deck: Deck, output_path: str, *, asset_base_dir: Path | None = None) -> None:
+    def fake_write_pptx(
+        deck: Deck, output_path: str, *, asset_base_dir: Path | None = None
+    ) -> None:
         Path(output_path).write_bytes(b"pptx")
 
-    def fake_run(command: list[str], capture_output: bool, text: bool, check: bool) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], capture_output: bool, text: bool, check: bool
+    ) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if command[0] == "soffice":
             output_dir = Path(command[command.index("--outdir") + 1])
@@ -78,7 +82,11 @@ def test_slide_renderer_renders_and_reuses_cached_png(
 
         output_prefix = Path(command[-1])
         page_number = command[command.index("-f") + 1]
-        write_png(output_prefix.with_name(f"{output_prefix.name}-{page_number}.png"), width=32, height=24)
+        write_png(
+            output_prefix.with_name(f"{output_prefix.name}-{page_number}.png"),
+            width=32,
+            height=24,
+        )
         return subprocess.CompletedProcess(command, 0, stdout="png", stderr="")
 
     monkeypatch.setattr("agent_slides.preview.renderer.write_pptx", fake_write_pptx)

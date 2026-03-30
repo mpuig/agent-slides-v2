@@ -15,7 +15,9 @@ from agent_slides.model import (
     Slide,
     TemplateLayoutRegistry,
 )
-from agent_slides.model.template_layouts import TemplateLayoutRegistry as TemplateLayoutRegistryImpl
+from agent_slides.model.template_layouts import (
+    TemplateLayoutRegistry as TemplateLayoutRegistryImpl,
+)
 
 
 def _build_manifest(base_dir: Path) -> Path:
@@ -57,11 +59,21 @@ def _build_manifest(base_dir: Path) -> Path:
                         "slot_mapping": {
                             "heading": {
                                 "role": "heading",
-                                "bounds": {"x": 72, "y": 64, "width": 560, "height": 96},
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 64,
+                                    "width": 560,
+                                    "height": 96,
+                                },
                             },
                             "body": {
                                 "role": "body",
-                                "bounds": {"x": 72, "y": 180, "width": 560, "height": 220},
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 180,
+                                    "width": 560,
+                                    "height": 220,
+                                },
                             },
                         },
                     },
@@ -71,10 +83,72 @@ def _build_manifest(base_dir: Path) -> Path:
                         "slot_mapping": {
                             "body": {
                                 "role": "body",
-                                "bounds": {"x": 10, "y": 10, "width": 100, "height": 100},
+                                "bounds": {
+                                    "x": 10,
+                                    "y": 10,
+                                    "width": 100,
+                                    "height": 100,
+                                },
                             }
                         },
                     },
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _build_heading_only_manifest(base_dir: Path) -> Path:
+    template_path = base_dir / "templates" / "heading-only" / "template.pptx"
+    manifest_path = base_dir / "templates" / "heading-only" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "heading-only-template",
+                "source": "template.pptx",
+                "source_hash": "heading123",
+                "theme": {
+                    "name": "heading-only-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                        "heading_text": "#111111",
+                        "subtle_text": "#666666",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 12,
+                        "margin": 48,
+                        "gutter": 18,
+                    },
+                },
+                "layouts": [
+                    {
+                        "slug": "green_highlight",
+                        "usable": True,
+                        "slot_mapping": {
+                            "heading": {
+                                "role": "heading",
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 64,
+                                    "width": 560,
+                                    "height": 72,
+                                },
+                            }
+                        },
+                    }
                 ],
             },
             indent=2,
@@ -113,7 +187,9 @@ def _write_deck(path: Path, deck: Deck) -> None:
     path.write_text(f"{deck.model_dump_json(indent=2)}\n", encoding="utf-8")
 
 
-def _build_variant_manifest(base_dir: Path, *, body_bounds: list[dict[str, float]]) -> Path:
+def _build_variant_manifest(
+    base_dir: Path, *, body_bounds: list[dict[str, float]]
+) -> Path:
     template_path = base_dir / "templates" / "variant" / "variant-template.pptx"
     manifest_path = base_dir / "templates" / "variant" / "manifest.json"
     template_path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +245,10 @@ def _build_variant_manifest(base_dir: Path, *, body_bounds: list[dict[str, float
                         "placeholders": placeholders,
                         "slot_mapping": {
                             "heading": 0,
-                            **{f"body_{index}": index for index in range(1, len(body_bounds) + 1)},
+                            **{
+                                f"body_{index}": index
+                                for index in range(1, len(body_bounds) + 1)
+                            },
                         },
                     }
                 ],
@@ -181,7 +260,9 @@ def _build_variant_manifest(base_dir: Path, *, body_bounds: list[dict[str, float
     return manifest_path
 
 
-def test_template_layout_registry_loads_manifest_and_exposes_theme(tmp_path: Path) -> None:
+def test_template_layout_registry_loads_manifest_and_exposes_theme(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_manifest(tmp_path)
 
     registry = TemplateLayoutRegistry(str(manifest_path))
@@ -209,7 +290,9 @@ def test_template_layout_registry_returns_bounds_backed_layout(tmp_path: Path) -
     assert layout.slots["body"].role == "body"
 
 
-def test_template_layout_registry_invalid_layout_raises_invalid_layout(tmp_path: Path) -> None:
+def test_template_layout_registry_invalid_layout_raises_invalid_layout(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_manifest(tmp_path)
     registry = TemplateLayoutRegistry(str(manifest_path))
 
@@ -232,7 +315,27 @@ def test_template_layout_registry_uses_default_text_fitting(tmp_path: Path) -> N
     assert body_fit.min_size == 10.0
 
 
-def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology(tmp_path: Path) -> None:
+def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only_layout(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_heading_only_manifest(tmp_path)
+
+    registry = TemplateLayoutRegistry(str(manifest_path))
+    layout = registry.get_layout("green_highlight")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert registry.get_slot_names("green_highlight") == ["heading", "body"]
+    assert "body" not in manifest["layouts"][0]["slot_mapping"]
+    assert layout.slots["body"].role == "body"
+    assert layout.slots["body"].x == 72.0
+    assert layout.slots["body"].y == 262.0
+    assert layout.slots["body"].width == 600.0
+    assert layout.slots["body"].height == 230.0
+
+
+def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
         body_bounds=[
@@ -253,7 +356,9 @@ def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology
     assert layout.slots["body_3"].peer_group == "columns"
 
 
-def test_template_layout_registry_generates_semantic_variants_for_peer_bodies(tmp_path: Path) -> None:
+def test_template_layout_registry_generates_semantic_variants_for_peer_bodies(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
         body_bounds=[
@@ -272,7 +377,9 @@ def test_template_layout_registry_generates_semantic_variants_for_peer_bodies(tm
     assert list(variants[1].slots) == ["heading", "col1", "col2", "col3"]
 
 
-def test_template_layout_registry_generates_four_column_variant_for_peer_bodies(tmp_path: Path) -> None:
+def test_template_layout_registry_generates_four_column_variant_for_peer_bodies(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
         body_bounds=[
@@ -286,12 +393,21 @@ def test_template_layout_registry_generates_four_column_variant_for_peer_bodies(
 
     variants = registry.get_variants("peer_bodies")
 
-    assert [variant.name for variant in variants] == ["two_col", "three_col", "four_col"]
+    assert [variant.name for variant in variants] == [
+        "two_col",
+        "three_col",
+        "four_col",
+    ]
     assert list(variants[-1].slots) == ["heading", "col1", "col2", "col3", "col4"]
-    assert all(variants[-1].slots[f"col{index}"].peer_group == "columns" for index in range(1, 5))
+    assert all(
+        variants[-1].slots[f"col{index}"].peer_group == "columns"
+        for index in range(1, 5)
+    )
 
 
-def test_template_layout_registry_skips_variants_when_peer_invariants_fail(tmp_path: Path) -> None:
+def test_template_layout_registry_skips_variants_when_peer_invariants_fail(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
         body_bounds=[
@@ -305,7 +421,9 @@ def test_template_layout_registry_skips_variants_when_peer_invariants_fail(tmp_p
     assert registry.get_variants("peer_bodies") == []
 
 
-def test_template_layout_registry_skips_variants_when_solved_widths_differ(tmp_path: Path) -> None:
+def test_template_layout_registry_skips_variants_when_solved_widths_differ(
+    tmp_path: Path,
+) -> None:
     manifest_path = _build_variant_manifest(
         tmp_path,
         body_bounds=[
@@ -330,8 +448,13 @@ def test_layout_providers_expose_get_variants_consistently(tmp_path: Path) -> No
     builtin = BuiltinLayoutProvider()
     template = TemplateLayoutRegistry(str(manifest_path))
 
-    assert [variant.name for variant in builtin.get_variants("two_col")] == ["title_content"]
-    assert [variant.name for variant in template.get_variants("peer_bodies")] == ["title_content", "two_col"]
+    assert [variant.name for variant in builtin.get_variants("two_col")] == [
+        "title_content"
+    ]
+    assert [variant.name for variant in template.get_variants("peer_bodies")] == [
+        "title_content",
+        "two_col",
+    ]
 
 
 def _build_mixed_text_image_manifest(base_dir: Path) -> Path:
@@ -363,9 +486,24 @@ def _build_mixed_text_image_manifest(base_dir: Path) -> Path:
                         "slug": "intro_with_image",
                         "usable": True,
                         "placeholders": [
-                            {"idx": 0, "type": "TITLE", "name": "Title", "bounds": {"x": 72, "y": 48, "w": 576, "h": 72}},
-                            {"idx": 1, "type": "BODY", "name": "Body", "bounds": {"x": 72, "y": 156, "w": 270, "h": 300}},
-                            {"idx": 2, "type": "PICTURE", "name": "Image", "bounds": {"x": 360, "y": 156, "w": 288, "h": 300}},
+                            {
+                                "idx": 0,
+                                "type": "TITLE",
+                                "name": "Title",
+                                "bounds": {"x": 72, "y": 48, "w": 576, "h": 72},
+                            },
+                            {
+                                "idx": 1,
+                                "type": "BODY",
+                                "name": "Body",
+                                "bounds": {"x": 72, "y": 156, "w": 270, "h": 300},
+                            },
+                            {
+                                "idx": 2,
+                                "type": "PICTURE",
+                                "name": "Image",
+                                "bounds": {"x": 360, "y": 156, "w": 288, "h": 300},
+                            },
                         ],
                         "slot_mapping": {"heading": 0, "body": 1, "image": 2},
                     }
@@ -416,7 +554,10 @@ def test_mutate_deck_uses_template_layout_registry_when_manifest_is_present(
 
     updated_deck, result = mutate_deck(
         str(deck_path),
-        lambda current_deck, provider: ("ok", provider.get_layout(current_deck.slides[0].layout).name),
+        lambda current_deck, provider: (
+            "ok",
+            provider.get_layout(current_deck.slides[0].layout).name,
+        ),
     )
 
     assert updated_deck.revision == 5
