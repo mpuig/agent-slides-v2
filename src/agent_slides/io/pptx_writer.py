@@ -806,6 +806,9 @@ def _fill_placeholder(
     if target_type == "TEXT_BOX":
         text_frame = _text_box_frame_for_slot(slide, target)
         _saved_pPr = None
+    elif target_type == "GROUP":
+        # Group shapes cannot be filled with text; skip silently.
+        return
     else:
         placeholder = slide.placeholders[placeholder_idx]
         text_frame = placeholder.text_frame

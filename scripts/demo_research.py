@@ -678,6 +678,62 @@ def ensure_symlinks(bench_dir: Path) -> None:
         artifacts_link.symlink_to(ROOT / ".artifacts")
 
 
+def stage_deck_images(deck_path: Path) -> None:
+    """Copy images referenced in a deck into the deck's directory tree.
+
+    The build command's path traversal guard requires images to resolve
+    inside the deck's parent directory. When agents use relative paths
+    that traverse out (e.g., ../../../examples/images/), or when symlinks
+    resolve outside the deck dir, the build fails. This function copies
+    referenced images into deck_dir/_assets/ and rewrites the paths.
+    """
+    import hashlib
+    import shutil
+
+    deck_dir = deck_path.parent
+    text = deck_path.read_text(encoding="utf-8")
+    data = _parse_json(text)
+    if data is None:
+        return
+
+    changed = False
+    for slide in data.get("slides", []):
+        for node in slide.get("nodes", []):
+            image_path = node.get("image_path")
+            if not image_path:
+                continue
+            source = Path(image_path)
+            if source.is_absolute():
+                resolved = source
+            else:
+                resolved = (deck_dir / source).resolve(strict=False)
+            if not resolved.is_file():
+                continue
+            # Check if the image is already inside the deck dir
+            try:
+                resolved.relative_to(deck_dir.resolve(strict=False))
+                continue  # Already inside, no action needed
+            except ValueError:
+                pass
+            # Copy into _assets/ with hash-based name
+            asset_dir = deck_dir / "_assets"
+            asset_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                stable_key = str(resolved.relative_to(ROOT.resolve(strict=False)))
+            except ValueError:
+                stable_key = str(resolved)
+            path_hash = hashlib.sha256(stable_key.encode()).hexdigest()[:12]
+            local_copy = asset_dir / f"{path_hash}_{resolved.name}"
+            shutil.copy2(resolved, local_copy)
+            node["image_path"] = str(local_copy.relative_to(deck_dir))
+            changed = True
+
+    if changed:
+        import json
+
+        deck_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def run_benchmark(
     brief_path: Path, run_dir: Path, manifest_path: Path | None = None
 ) -> dict:
@@ -688,6 +744,10 @@ def run_benchmark(
     ensure_symlinks(bench_dir)
 
     deck_path = bench_dir / "deck.json"
+
+    # Stage images into the deck directory so the build command's traversal guard accepts them
+    if deck_path.exists():
+        stage_deck_images(deck_path)
 
     # If a pre-built deck.json exists (created by the experiment cycle agent), score it directly
     if deck_path.exists():
@@ -710,7 +770,7 @@ def main():
     parser = argparse.ArgumentParser(description="Demo research runner")
     parser.add_argument(
         "--benchmarks",
-        default="bcg-strategy,bcg-update,minimal-title-body",
+        default="minimal-title-body,quarterly-update,strategy-deck,layout-showcase",
         help="Comma-separated benchmark names",
     )
     parser.add_argument("--run-id", default=None, help="Run ID (default: timestamp)")
