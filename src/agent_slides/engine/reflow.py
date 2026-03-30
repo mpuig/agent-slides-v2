@@ -950,6 +950,7 @@ def _reflow_slide(
             continue
 
         style = resolve_style(theme, slot.role)
+        text_color = slot.text_color or str(style["color"])
         text_fitting = _block_text_fitting(layout_def, active_provider, slot.role)
         # Apply slot-level font hints from template placeholders
         text_fitting = {
@@ -993,7 +994,7 @@ def _reflow_slide(
             height=height,
             font_size_pt=block_positions[0].font_size_pt if block_positions else 0.0,
             font_family=str(style["font_family"]),
-            color=str(style["color"]),
+            color=text_color,
             bg_color=slot.bg_color
             if slot.bg_color is not None
             else theme.colors.background,

@@ -52,6 +52,32 @@ class _PlaceholderStyle:
     vertical_align: str | None = None
 
 
+@dataclass(frozen=True)
+class _EditableRegion:
+    left: float
+    top: float
+    width: float
+    height: float
+    name: str | None = None
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class _ColorZone:
+    left: float
+    width: float
+    bg_color: str | None = None
+    text_color: str | None = None
+    editable_above: _EditableRegion | None = None
+    editable_below: _EditableRegion | None = None
+
+
+@dataclass(frozen=True)
+class _LayoutColorContext:
+    color_zones: tuple[_ColorZone, ...] = ()
+    editable_regions: tuple[_EditableRegion, ...] = ()
+
+
 def _as_dict(value: object, *, context: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AgentSlidesError(SCHEMA_ERROR, f"{context} must be an object")
@@ -102,6 +128,122 @@ def _optional_string(mapping: dict[str, Any], *keys: str) -> str | None:
         normalized = value.strip()
         return normalized or None
     return None
+
+
+def _coerce_color_zones(raw_color_zones: object, *, slug: str) -> tuple[_ColorZone, ...]:
+    if raw_color_zones is None:
+        return ()
+    if not isinstance(raw_color_zones, list):
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"layout[{slug!r}].color_zones must be an array"
+        )
+
+    zones: list[_ColorZone] = []
+    for index, raw_zone in enumerate(raw_color_zones):
+        zone = _as_dict(raw_zone, context=f"layout[{slug!r}].color_zones[{index}]")
+        left = _optional_number(zone, "left")
+        width = _optional_number(zone, "width")
+        if left is None or width is None:
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                (
+                    f"layout[{slug!r}].color_zones[{index}] must include numeric "
+                    "'left' and 'width' fields"
+                ),
+            )
+        zones.append(
+            _ColorZone(
+                left=left,
+                width=width,
+                bg_color=_optional_string(zone, "bg_color"),
+                text_color=_optional_string(zone, "text_color"),
+                editable_above=_coerce_optional_manifest_region(
+                    zone.get("editable_above"),
+                    context=f"layout[{slug!r}].color_zones[{index}].editable_above",
+                ),
+                editable_below=_coerce_optional_manifest_region(
+                    zone.get("editable_below"),
+                    context=f"layout[{slug!r}].color_zones[{index}].editable_below",
+                ),
+            )
+        )
+    return tuple(zones)
+
+
+def _coerce_editable_regions(
+    raw_editable_regions: object, *, slug: str
+) -> tuple[_EditableRegion, ...]:
+    if raw_editable_regions is None:
+        return ()
+    if not isinstance(raw_editable_regions, list):
+        raise AgentSlidesError(
+            SCHEMA_ERROR, f"layout[{slug!r}].editable_regions must be an array"
+        )
+
+    regions: list[_EditableRegion] = []
+    for index, raw_region in enumerate(raw_editable_regions):
+        region = _as_dict(
+            raw_region, context=f"layout[{slug!r}].editable_regions[{index}]"
+        )
+        left = _optional_number(region, "left")
+        top = _optional_number(region, "top")
+        width = _optional_number(region, "width")
+        height = _optional_number(region, "height")
+        if None in {left, top, width, height}:
+            raise AgentSlidesError(
+                SCHEMA_ERROR,
+                (
+                    f"layout[{slug!r}].editable_regions[{index}] must include numeric "
+                    "'left', 'top', 'width', and 'height' fields"
+                ),
+            )
+        regions.append(
+            _EditableRegion(
+                left=float(left),
+                top=float(top),
+                width=float(width),
+                height=float(height),
+                name=_optional_string(region, "name"),
+                source=_optional_string(region, "source"),
+            )
+        )
+    return tuple(regions)
+
+
+def _coerce_optional_manifest_region(
+    value: object, *, context: str
+) -> _EditableRegion | None:
+    if value is None:
+        return None
+    bounds = _coerce_manifest_bounds(value, context=context)
+    region = _as_dict(value, context=context)
+    return _EditableRegion(
+        left=bounds["x"],
+        top=bounds["y"],
+        width=bounds["width"],
+        height=bounds["height"],
+        name=_optional_string(region, "name"),
+        source=_optional_string(region, "source"),
+    )
+
+
+def _resolve_color_zone(
+    color_zones: tuple[_ColorZone, ...],
+    *,
+    slot_x: float | None,
+    slot_width: float | None,
+) -> _ColorZone | None:
+    if not color_zones:
+        return None
+    if slot_x is None or slot_width is None:
+        return color_zones[0]
+
+    center = float(slot_x) + (float(slot_width) / 2.0)
+    for zone in color_zones:
+        zone_right = zone.left + zone.width
+        if zone.left <= center <= zone_right:
+            return zone
+    return color_zones[0]
 
 
 def _optional_string_list(mapping: dict[str, Any], *keys: str) -> list[str] | None:
@@ -163,6 +305,7 @@ def _build_slot(
     placeholders_by_idx: dict[int, dict[str, Any]],
     placeholder_styles: dict[tuple[int, int, int], _PlaceholderStyle],
     layout_ref: tuple[int, int],
+    color_zones: tuple[_ColorZone, ...] = (),
 ) -> SlotDef:
     slot_mapping = _coerce_slot_mapping(
         slot_name,
@@ -180,6 +323,9 @@ def _build_slot(
     )
     text_align = _optional_string(slot_mapping, "text_align")
     vertical_align = _optional_string(slot_mapping, "vertical_align")
+    x = _optional_number(bounds, "x", "left")
+    width = _optional_number(bounds, "width", "w")
+    zone = _resolve_color_zone(color_zones, slot_x=x, slot_width=width)
 
     return SlotDef(
         grid_row=1,
@@ -218,11 +364,16 @@ def _build_slot(
         padding=_optional_number(slot_mapping, "padding")
         if _optional_number(slot_mapping, "padding") is not None
         else 0.0,
-        x=_optional_number(bounds, "x", "left"),
+        x=x,
         y=_optional_number(bounds, "y", "top"),
-        width=_optional_number(bounds, "width", "w"),
+        width=width,
         height=_optional_number(bounds, "height", "h"),
-        bg_color=slot_mapping.get("bg_color"),
+        bg_color=zone.bg_color
+        if zone is not None and zone.bg_color is not None
+        else _optional_string(slot_mapping, "bg_color"),
+        text_color=zone.text_color
+        if zone is not None and zone.text_color is not None
+        else _optional_string(slot_mapping, "text_color"),
         bg_transparency=float(slot_mapping.get("bg_transparency", 0.0)),
         full_bleed=bool(slot_mapping.get("full_bleed", False)),
         height_mode=str(slot_mapping.get("height_mode", "fixed")),
@@ -404,8 +555,8 @@ def _build_virtual_body_slot(
     *,
     placeholders_by_idx: dict[int, dict[str, Any]],
     theme: Theme,
-    color_zones: list[dict[str, Any]] | None = None,
-    editable_regions: list[dict[str, Any]] | None = None,
+    editable_regions: tuple[_EditableRegion, ...] = (),
+    color_zones: tuple[_ColorZone, ...] = (),
 ) -> dict[str, Any] | None:
     if "heading" not in slot_mapping or "body" in slot_mapping:
         return None
@@ -441,9 +592,6 @@ def _build_virtual_body_slot(
     ):
         return None
 
-    margin = float(theme.spacing.margin)
-    gutter = float(theme.spacing.gutter)
-    left = max(float(heading_x), margin)
     heading_midpoint_x = float(heading_x) + (float(heading_width) / 2.0)
     heading_midpoint_y = float(heading_y) + (float(heading_height) / 2.0)
 
@@ -454,22 +602,27 @@ def _build_virtual_body_slot(
         editable_regions=editable_regions,
     )
     if manifest_bounds is not None:
-        return {
-            "role": "body",
-            "virtual": True,
-            "bounds": manifest_bounds,
-        }
-
-    # Heading text often wraps beyond the placeholder height, so start the
-    # virtual body well below the heading bottom edge. Use at least 2x the
-    # heading height or heading height + 40pt, whichever is larger.
-    heading_h = float(heading_height)
-    body_offset = max(heading_h * 2.5, heading_h + 40)
-    top = float(heading_y) + body_offset + gutter
-    right = STANDARD_SLIDE_WIDTH_PT - margin
-    bottom = STANDARD_SLIDE_HEIGHT_PT - margin
+        left = float(manifest_bounds["x"])
+        top = float(manifest_bounds["y"])
+        right = left + float(manifest_bounds["width"])
+        bottom = top + float(manifest_bounds["height"])
+    else:
+        margin = float(theme.spacing.margin)
+        gutter = float(theme.spacing.gutter)
+        left = max(float(heading_x), margin)
+        # Heading text often wraps beyond the placeholder height, so start the
+        # virtual body well below the heading bottom edge. Use at least 2x the
+        # heading height or heading height + 40pt, whichever is larger.
+        heading_h = float(heading_height)
+        body_offset = max(heading_h * 2.5, heading_h + 40)
+        top = float(heading_y) + body_offset + gutter
+        right = STANDARD_SLIDE_WIDTH_PT - margin
+        bottom = STANDARD_SLIDE_HEIGHT_PT - margin
     if top >= bottom or left >= right:
         return None
+
+    width = right - left
+    zone = _resolve_color_zone(color_zones, slot_x=left, slot_width=width)
 
     return {
         "role": "body",
@@ -477,9 +630,11 @@ def _build_virtual_body_slot(
         "bounds": {
             "x": left,
             "y": top,
-            "width": right - left,
+            "width": width,
             "height": bottom - top,
         },
+        "bg_color": zone.bg_color if zone is not None else None,
+        "text_color": zone.text_color if zone is not None else None,
     }
 
 
@@ -487,8 +642,8 @@ def _select_virtual_body_bounds_from_manifest(
     *,
     heading_midpoint_x: float,
     heading_midpoint_y: float,
-    color_zones: list[dict[str, Any]] | None,
-    editable_regions: list[dict[str, Any]] | None,
+    color_zones: tuple[_ColorZone, ...],
+    editable_regions: tuple[_EditableRegion, ...],
 ) -> dict[str, float] | None:
     zone_bounds = _select_color_zone_editable_below(
         heading_midpoint_x=heading_midpoint_x,
@@ -505,55 +660,29 @@ def _select_virtual_body_bounds_from_manifest(
 def _select_color_zone_editable_below(
     *,
     heading_midpoint_x: float,
-    color_zones: list[dict[str, Any]] | None,
+    color_zones: tuple[_ColorZone, ...],
 ) -> dict[str, float] | None:
-    if color_zones is None:
-        return None
-    if not isinstance(color_zones, list):
-        raise AgentSlidesError(SCHEMA_ERROR, "layout.color_zones must be an array")
-
-    for index, raw_zone in enumerate(color_zones):
-        zone = _as_dict(raw_zone, context=f"color_zones[{index}]")
-        zone_left = _optional_number(zone, "left", "x")
-        zone_width = _optional_number(zone, "width", "w")
-        if zone_left is None or zone_width is None:
+    for zone in color_zones:
+        zone_right = zone.left + zone.width
+        if not (zone.left <= heading_midpoint_x <= zone_right):
             continue
-        zone_right = float(zone_left) + float(zone_width)
-        if not (float(zone_left) <= heading_midpoint_x <= zone_right):
-            continue
-        editable_below = zone.get("editable_below")
-        if editable_below is None:
+        if zone.editable_below is None:
             return None
-        bounds = _coerce_manifest_bounds(
-            editable_below,
-            context=f"color_zones[{index}].editable_below",
-        )
-        return bounds
+        return _region_to_bounds(zone.editable_below)
     return None
 
 
 def _select_editable_region_below_heading(
     *,
     heading_midpoint_y: float,
-    editable_regions: list[dict[str, Any]] | None,
+    editable_regions: tuple[_EditableRegion, ...],
 ) -> dict[str, float] | None:
-    if editable_regions is None:
-        return None
-    if not isinstance(editable_regions, list):
-        raise AgentSlidesError(
-            SCHEMA_ERROR, "layout.editable_regions must be an array"
-        )
-
     best_region: dict[str, float] | None = None
     best_area = -1.0
-    for index, raw_region in enumerate(editable_regions):
-        region = _as_dict(raw_region, context=f"editable_regions[{index}]")
-        if (
-            _optional_string(region, "source")
-            != "visual_inference_no_placeholders"
-        ):
+    for region in editable_regions:
+        if region.source != "visual_inference_no_placeholders":
             continue
-        bounds = _coerce_manifest_bounds(region, context=f"editable_regions[{index}]")
+        bounds = _region_to_bounds(region)
         if bounds["y"] < heading_midpoint_y:
             continue
         area = bounds["width"] * bounds["height"]
@@ -562,6 +691,15 @@ def _select_editable_region_below_heading(
         best_area = area
         best_region = bounds
     return best_region
+
+
+def _region_to_bounds(region: _EditableRegion) -> dict[str, float]:
+    return {
+        "x": region.left,
+        "y": region.top,
+        "width": region.width,
+        "height": region.height,
+    }
 
 
 def _coerce_manifest_bounds(value: object, *, context: str) -> dict[str, float]:
@@ -586,15 +724,15 @@ def _augment_virtual_slots(
     *,
     placeholders_by_idx: dict[int, dict[str, Any]],
     theme: Theme,
-    color_zones: list[dict[str, Any]] | None = None,
-    editable_regions: list[dict[str, Any]] | None = None,
+    editable_regions: tuple[_EditableRegion, ...] = (),
+    color_zones: tuple[_ColorZone, ...] = (),
 ) -> dict[str, Any]:
     virtual_body = _build_virtual_body_slot(
         slot_mapping,
         placeholders_by_idx=placeholders_by_idx,
         theme=theme,
-        color_zones=color_zones,
         editable_regions=editable_regions,
+        color_zones=color_zones,
     )
     if virtual_body is None:
         return slot_mapping
@@ -969,6 +1107,7 @@ class TemplateLayoutRegistry:
         self._layouts: dict[str, LayoutDef] = {}
         self._slot_names: dict[str, list[str]] = {}
         self._layout_refs: dict[str, tuple[int, int]] = {}
+        self._layout_color_contexts: dict[str, _LayoutColorContext] = {}
         self._variants: dict[str, list[LayoutDef]] = {}
         self._usable_layouts: list[str] = []
         self._load_layouts(manifest)
@@ -983,6 +1122,12 @@ class TemplateLayoutRegistry:
             placeholders_by_idx = _coerce_placeholder_index(
                 raw_layout.get("placeholders"), slug=slug
             )
+            color_context = _LayoutColorContext(
+                color_zones=_coerce_color_zones(raw_layout.get("color_zones"), slug=slug),
+                editable_regions=_coerce_editable_regions(
+                    raw_layout.get("editable_regions"), slug=slug
+                ),
+            )
             slot_mapping = normalize_template_slot_mapping(
                 slot_mapping, placeholders_by_idx=placeholders_by_idx
             )
@@ -990,8 +1135,8 @@ class TemplateLayoutRegistry:
                 slot_mapping,
                 placeholders_by_idx=placeholders_by_idx,
                 theme=self._theme,
-                color_zones=raw_layout.get("color_zones"),
-                editable_regions=raw_layout.get("editable_regions"),
+                editable_regions=color_context.editable_regions,
+                color_zones=color_context.color_zones,
             )
             master_index = raw_layout.get("master_index", 0)
             layout_index = raw_layout.get("index", 0)
@@ -1010,6 +1155,7 @@ class TemplateLayoutRegistry:
                     placeholders_by_idx=placeholders_by_idx,
                     placeholder_styles=self._placeholder_styles,
                     layout_ref=(master_index, layout_index),
+                    color_zones=color_context.color_zones,
                 )
                 for slot_name, slot_value in slot_mapping.items()
             }
@@ -1027,6 +1173,7 @@ class TemplateLayoutRegistry:
             )
             self._slot_names[slug] = list(slot_mapping)
             self._layout_refs[slug] = (master_index, layout_index)
+            self._layout_color_contexts[slug] = color_context
             self._variants[slug] = _generate_variants(self._layouts[slug], self._theme)
             if bool(raw_layout.get("usable", raw_layout.get("is_usable", True))):
                 self._usable_layouts.append(slug)

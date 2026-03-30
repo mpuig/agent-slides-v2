@@ -139,6 +139,76 @@ def make_heading_only_manifest(
     }
 
 
+def make_color_zone_manifest() -> dict[str, object]:
+    return {
+        "name": "template",
+        "source": "template.pptx",
+        "source_hash": "abc123",
+        "layouts": [
+            {
+                "slug": "two_panel_story",
+                "usable": True,
+                "color_zones": [
+                    {
+                        "region": "panel_0",
+                        "left": 0.0,
+                        "width": 360.0,
+                        "bg_color": "FFFFFF",
+                        "text_color": "333333",
+                    },
+                    {
+                        "region": "panel_1",
+                        "left": 360.0,
+                        "width": 360.0,
+                        "bg_color": "00A651",
+                        "text_color": "FFFFFF",
+                    },
+                ],
+                "slot_mapping": {
+                    "heading": {
+                        "role": "heading",
+                        "bounds": {
+                            "x": 12.0,
+                            "y": 18.0,
+                            "width": 280.0,
+                            "height": 48.0,
+                        },
+                    },
+                    "body": {
+                        "role": "body",
+                        "bounds": {
+                            "x": 420.0,
+                            "y": 96.0,
+                            "width": 220.0,
+                            "height": 160.0,
+                        },
+                    },
+                },
+            }
+        ],
+        "theme": {
+            "colors": {
+                "primary": "#112233",
+                "secondary": "#445566",
+                "accent": "#778899",
+                "text": "#101010",
+                "heading_text": "#202020",
+                "subtle_text": "#606060",
+                "background": "#FAFAFA",
+            },
+            "fonts": {
+                "heading": "Aptos Display",
+                "body": "Aptos",
+            },
+            "spacing": {
+                "base_unit": 10.0,
+                "margin": 60.0,
+                "gutter": 20.0,
+            },
+        },
+    }
+
+
 def test_reflow_deck_uses_manifest_bounds_theme_and_text_fitting(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -320,6 +390,71 @@ def test_mutate_deck_reflows_template_manifests_with_unified_reflow(
     assert reflow_calls == [(3, str((tmp_path / "template.pptx").resolve()))]
 
 
+def test_reflow_deck_prefers_zone_text_colors_over_theme_colors(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manifest_path = tmp_path / "template.manifest.json"
+    (tmp_path / "template.pptx").write_bytes(b"pptx")
+    write_json(manifest_path, make_color_zone_manifest())
+
+    def fake_fit_text(
+        *,
+        text,
+        width: float,
+        height: float,
+        default_size: float,
+        min_size: float,
+        role: str,
+        font_family: str | None = None,
+        ladder: list[float] | None = None,
+        use_precise: bool = False,
+    ):
+        return (26.0, False) if role == "heading" else (14.0, False)
+
+    monkeypatch.setattr("agent_slides.engine.reflow.fit_text", fake_fit_text)
+
+    deck = Deck(
+        deck_id="deck-template",
+        revision=8,
+        theme="default",
+        design_rules="default",
+        template_manifest="template.manifest.json",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="two_panel_story",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Long heading",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="body",
+                        type="text",
+                        content="Long body copy",
+                    ),
+                ],
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    registry = TemplateLayoutRegistry(manifest_path)
+
+    reflow_deck(deck, registry)
+
+    heading = deck.slides[0].computed["n-1"]
+    body = deck.slides[0].computed["n-2"]
+
+    assert heading.color == "#333333"
+    assert heading.bg_color == "#FFFFFF"
+    assert body.color == "#FFFFFF"
+    assert body.bg_color == "#00A651"
+
+
 def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -434,7 +569,8 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert (body.x, body.y, body.width, body.height) == (0.0, 90.0, 420.0, 450.0)
     assert body.font_size_pt == 14.0
     assert body.font_family == "Aptos"
-    assert body.color == "#101010"
+    assert body.color == "#333333"
+    assert body.bg_color == "#FFFFFF"
     assert body.text_overflow is False
 
     body_call = fit_calls[1]
