@@ -71,7 +71,12 @@ def write_deck(path: Path, deck: Deck) -> None:
     write_computed_deck(str(path), deck)
 
 
-def write_heading_only_template_manifest(path: Path, template_path: Path) -> None:
+def write_heading_only_template_manifest(
+    path: Path,
+    template_path: Path,
+    *,
+    editable_regions: list[dict[str, object]] | None = None,
+) -> None:
     template_path.parent.mkdir(parents=True, exist_ok=True)
     template_path.write_bytes(b"pptx")
     write_json(
@@ -96,6 +101,11 @@ def write_heading_only_template_manifest(path: Path, template_path: Path) -> Non
                 {
                     "slug": "green_highlight",
                     "usable": True,
+                    **(
+                        {"editable_regions": editable_regions}
+                        if editable_regions is not None
+                        else {}
+                    ),
                     "slot_mapping": {
                         "heading": {
                             "role": "heading",
@@ -1563,6 +1573,70 @@ def test_chart_add_supports_data_file(tmp_path: Path) -> None:
     assert chart_node.chart_spec.series[0].values == [5.0, 9.0]
 
 
+def test_chart_add_accepts_virtual_content_slot_on_template_layout(
+    tmp_path: Path,
+) -> None:
+    template_dir = tmp_path / "templates"
+    template_path = template_dir / "brand-template.pptx"
+    manifest_path = template_dir / "brand-template.manifest.json"
+    deck_path = tmp_path / "deck.json"
+
+    write_heading_only_template_manifest(
+        manifest_path,
+        template_path,
+        editable_regions=[
+            {
+                "name": "content_area",
+                "left": 540.0,
+                "top": 170.0,
+                "width": 420.0,
+                "height": 320.0,
+                "source": "visual_inference_no_placeholders",
+            }
+        ],
+    )
+    assert invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code == 0
+    assert (
+        invoke_cli(["slide", "add", str(deck_path), "--layout", "green_highlight"]).exit_code
+        == 0
+    )
+
+    result = invoke_cli(
+        [
+            "chart",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "content",
+            "--type",
+            "bar",
+            "--data",
+            json.dumps(make_bar_chart_data()),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    chart_node = next(node for node in updated.slides[0].nodes if node.type == "chart")
+    chart_computed = updated.slides[0].computed[chart_node.node_id]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "content",
+            "node_id": chart_node.node_id,
+            "chart_type": "bar",
+        },
+    }
+    assert chart_node.type == "chart"
+    assert chart_computed.content_type == "chart"
+    assert (chart_computed.x, chart_computed.y) == (540.0, 170.0)
+    assert (chart_computed.width, chart_computed.height) == (420.0, 320.0)
+
+
 def test_chart_update_updates_existing_chart_data(tmp_path: Path) -> None:
     deck_path = tmp_path / "deck.json"
     deck = Deck(
@@ -1944,6 +2018,69 @@ def test_table_add_creates_table_node_with_inline_data(tmp_path: Path) -> None:
     assert table_node.table_spec is not None
     assert table_node.table_spec.headers == ["Metric", "Q1", "Q2"]
     assert table_node.table_spec.rows[1] == ["Users", "1000", "1500"]
+
+
+def test_table_add_accepts_virtual_content_slot_on_template_layout(
+    tmp_path: Path,
+) -> None:
+    template_dir = tmp_path / "templates"
+    template_path = template_dir / "brand-template.pptx"
+    manifest_path = template_dir / "brand-template.manifest.json"
+    deck_path = tmp_path / "deck.json"
+
+    write_heading_only_template_manifest(
+        manifest_path,
+        template_path,
+        editable_regions=[
+            {
+                "name": "content_area",
+                "left": 540.0,
+                "top": 170.0,
+                "width": 420.0,
+                "height": 320.0,
+                "source": "visual_inference_no_placeholders",
+            }
+        ],
+    )
+    assert invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code == 0
+    assert (
+        invoke_cli(["slide", "add", str(deck_path), "--layout", "green_highlight"]).exit_code
+        == 0
+    )
+
+    result = invoke_cli(
+        [
+            "table",
+            "add",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "content",
+            "--data",
+            json.dumps(make_table_data()),
+        ]
+    )
+    payload = json.loads(result.stdout)
+    updated = read_deck(str(deck_path))
+    table_node = next(node for node in updated.slides[0].nodes if node.type == "table")
+    table_computed = updated.slides[0].computed[table_node.node_id]
+
+    assert result.exit_code == 0
+    assert payload == {
+        "ok": True,
+        "data": {
+            "slide_id": "s-1",
+            "slot": "content",
+            "node_id": table_node.node_id,
+            "column_count": 3,
+            "row_count": 2,
+        },
+    }
+    assert table_node.type == "table"
+    assert table_computed.content_type == "table"
+    assert (table_computed.x, table_computed.y) == (540.0, 170.0)
+    assert (table_computed.width, table_computed.height) == (420.0, 320.0)
 
 
 def test_pattern_add_creates_slot_bound_pattern_node(tmp_path: Path) -> None:

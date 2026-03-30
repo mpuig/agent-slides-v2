@@ -1929,6 +1929,203 @@ def test_write_pptx_renders_virtual_body_slots_as_positioned_text_boxes(
     assert body_shape.height == int(220.0 * EMU_PER_POINT)
 
 
+def test_write_pptx_renders_template_chart_nodes_in_virtual_content_slots(
+    tmp_path: Path,
+) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-virtual-chart-output.pptx"
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["slide_masters"][0]["layouts"] = [
+        {
+            "index": title_layout["index"],
+            "master_index": title_layout["master_index"],
+            "name": title_layout["name"],
+            "slug": "green_highlight",
+            "usable": True,
+            "placeholders": title_layout["placeholders"],
+            "editable_regions": [
+                {
+                    "name": "content_area",
+                    "left": 96.0,
+                    "top": 164.0,
+                    "width": 520.0,
+                    "height": 240.0,
+                    "source": "visual_inference_no_placeholders",
+                }
+            ],
+            "slot_mapping": {"heading": title_layout["slot_mapping"]["heading"]},
+        }
+    ]
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="template-virtual-chart",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="green_highlight",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Updated title",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="content",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type="column",
+                            title="Revenue",
+                            categories=["Q1", "Q2"],
+                            series=[
+                                ChartSeries(name="Revenue", values=[12.0, 18.0]),
+                            ],
+                        ),
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=36.0,
+                        width=576.0,
+                        height=72.0,
+                        font_size_pt=28.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=True,
+                        revision=1,
+                    ),
+                    "n-2": chart_computed(
+                        x=96.0,
+                        y=164.0,
+                        width=520.0,
+                        height=240.0,
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    chart_shape = first_chart_shape(presentation)
+
+    assert slide.slide_layout.name == title_layout["name"]
+    assert chart_shape.left == int(96.0 * EMU_PER_POINT)
+    assert chart_shape.top == int(164.0 * EMU_PER_POINT)
+    assert chart_shape.width == int(520.0 * EMU_PER_POINT)
+    assert chart_shape.height == int(240.0 * EMU_PER_POINT)
+
+
+def test_write_pptx_renders_template_table_nodes_in_virtual_content_slots(
+    tmp_path: Path,
+) -> None:
+    _, manifest_path, manifest = create_template_manifest(tmp_path)
+    output_path = tmp_path / "template-virtual-table-output.pptx"
+    title_layout = find_layout(manifest, {"heading", "subheading"})
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["slide_masters"][0]["layouts"] = [
+        {
+            "index": title_layout["index"],
+            "master_index": title_layout["master_index"],
+            "name": title_layout["name"],
+            "slug": "green_highlight",
+            "usable": True,
+            "placeholders": title_layout["placeholders"],
+            "editable_regions": [
+                {
+                    "name": "content_area",
+                    "left": 84.0,
+                    "top": 172.0,
+                    "width": 540.0,
+                    "height": 208.0,
+                    "source": "visual_inference_no_placeholders",
+                }
+            ],
+            "slot_mapping": {"heading": title_layout["slot_mapping"]["heading"]},
+        }
+    ]
+    manifest_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+
+    deck = Deck(
+        deck_id="template-virtual-table",
+        template_manifest=str(manifest_path),
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="green_highlight",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Updated title",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="content",
+                        type="table",
+                        table_spec=TableSpec(
+                            headers=["Metric", "Value"],
+                            rows=[["Revenue", "$12M"], ["Margin", "42%"]],
+                        ),
+                    ),
+                ],
+                computed={
+                    "n-1": ComputedNode(
+                        x=72.0,
+                        y=36.0,
+                        width=576.0,
+                        height=72.0,
+                        font_size_pt=28.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=True,
+                        revision=1,
+                    ),
+                    "n-2": ComputedNode(
+                        x=84.0,
+                        y=172.0,
+                        width=540.0,
+                        height=208.0,
+                        font_size_pt=0.0,
+                        font_family="Aptos",
+                        color="#112233",
+                        bg_color=None,
+                        font_bold=False,
+                        revision=1,
+                        content_type="table",
+                    ),
+                },
+            )
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    write_pptx(deck, str(output_path))
+
+    presentation = open_presentation(output_path)
+    slide = presentation.slides[0]
+    table_shape = first_table_shape(presentation)
+
+    assert slide.slide_layout.name == title_layout["name"]
+    assert table_shape.left == int(84.0 * EMU_PER_POINT)
+    assert table_shape.top == int(172.0 * EMU_PER_POINT)
+    assert table_shape.width == int(540.0 * EMU_PER_POINT)
+    assert table_shape.height == int(208.0 * EMU_PER_POINT)
+
+
 def test_write_pptx_warns_when_template_hash_changes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

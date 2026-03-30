@@ -45,6 +45,9 @@ from agent_slides.model.types import (
     split_text_runs_by_line,
 )
 from agent_slides.model.design_rules import ConditionalFormatting, load_design_rules
+from agent_slides.model.template_layouts import (
+    TemplateLayoutRegistry as ManifestTemplateLayoutRegistry,
+)
 from agent_slides.model.themes import load_theme
 from agent_slides.template_slots import normalize_template_slot_mapping
 
@@ -909,6 +912,7 @@ def _write_template_pptx(
     registry = TemplateLayoutRegistry(deck.template_manifest)
     template_path = registry.source_path
     conditional_formatting = load_design_rules(deck.design_rules).conditional_formatting
+    table_theme = None
 
     if not template_path.exists():
         raise AgentSlidesError(
@@ -937,6 +941,29 @@ def _write_template_pptx(
             if node.type == "icon":
                 if computed is not None:
                     _render_icon_node(pptx_slide.shapes, node, computed)
+                continue
+            if node.type == "chart":
+                if computed is not None:
+                    _render_chart_node(
+                        pptx_slide.shapes,
+                        node,
+                        computed,
+                        conditional_formatting=conditional_formatting,
+                    )
+                continue
+            if node.type == "table":
+                if computed is not None:
+                    if table_theme is None:
+                        table_theme = ManifestTemplateLayoutRegistry(
+                            deck.template_manifest
+                        ).theme
+                    _render_table_node(
+                        pptx_slide.shapes,
+                        node,
+                        computed,
+                        theme=table_theme,
+                        conditional_formatting=conditional_formatting,
+                    )
                 continue
             handled_text = _fill_placeholder(
                 node,
