@@ -3,6 +3,28 @@
 This file is the evolving research policy for the demo quality loop.
 It controls what the experiment cycle agent does on each run.
 
+## Two-layer architecture
+
+The benchmark system now has two independent layers:
+
+1. **Certification layer**
+   - Runs deterministic certification across every `examples/*.pptx` template.
+   - Produces per-template `coverage.json` artifacts plus `layers.certification` in `runs/<run_id>/summary.json`.
+   - Owns the per-layout regression gate.
+
+2. **Demo layer**
+   - Scores the realistic benchmark briefs (`minimal-title-body`, `bcg-update`, `bcg-strategy`).
+   - Produces `runs/<run_id>/demo-summary.json` plus `layers.demo` in `runs/<run_id>/summary.json`.
+   - Owns the mean-composite and `review_quality` gate.
+
+These layers run independently. Certification failures do not block demo execution.
+
+## Generalization rule
+
+Engine fixes must improve certification across multiple templates. If a change only improves one
+template, it belongs in template manifests, learned metadata, or benchmark setup rather than in
+shared engine code.
+
 ## Current lane
 
 **skill** — improve content quality in create-deck to raise review_quality scores across all layouts.

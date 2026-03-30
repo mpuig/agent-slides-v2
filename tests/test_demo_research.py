@@ -84,9 +84,12 @@ examples/bcg.pptx
 20
 
 ## Layout variety
-- Use **title**, **hero_image**, **comparison**, and **closing** exactly once.
-- For **hero_image** and **image_right**, fill the image slot with a real image.
-- For **comparison** and **two_col**, keep headings short because the columns are narrow.
+1. **title** — use exactly once as opener.
+2. **hero_image** — fill the image slot with a real image.
+3. **comparison** — keep headings short because the columns are narrow.
+4. **closing** — use exactly once as closer.
+5. **image_right** — fill the image slot with a real image.
+6. **two_col** — keep headings short because the columns are narrow.
 - At least 3 slides should include a source line.
 """,
         encoding="utf-8",
@@ -602,6 +605,8 @@ def test_build_summary_rejects_review_regressions_even_when_composite_improves(
     assert len(summary["reject_reasons"]) == 2
     assert "alpha: review_quality regressed" in summary["reject_reasons"][0]
     assert "beta: review_quality regressed" in summary["reject_reasons"][1]
+    assert summary["layers"]["demo"]["mean_composite"] == 82.5
+    assert summary["layers"]["demo"]["review_quality"] == 0.82
 
 
 def test_build_summary_rejects_composite_regression_even_when_review_improves(
@@ -641,17 +646,19 @@ def test_build_summary_rejects_composite_regression_even_when_review_improves(
 
     assert summary["decision"] == "reject"
     assert summary["reject_reasons"] == ["composite regressed from 81.0 to 79.0"]
+    assert summary["layers"]["demo"]["decision"] == "reject"
 
 
-def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_build_summary_uses_layered_demo_baseline(monkeypatch) -> None:
     module = _load_script_module()
-    runs_dir = tmp_path / "runs"
     previous = {
         "run_id": "baseline",
-        "mean_composite": 75.0,
+        "layers": {
+            "demo": {
+                "mean_composite": 75.0,
+                "decision": "accept",
+            }
+        },
         "benchmarks": [
             {
                 "benchmark": "alpha",
@@ -673,49 +680,15 @@ def test_build_summary_rejects_layout_regressions_from_previous_best_coverage(
             },
         }
     ]
-    (runs_dir / "baseline").mkdir(parents=True)
-    (runs_dir / "candidate").mkdir(parents=True)
-    (runs_dir / "baseline" / "coverage.json").write_text(
-        json.dumps(
-            {
-                "template": "bcg",
-                "layouts": [
-                    {"slug": "hero_image", "variants_passed": 1},
-                    {"slug": "title_only", "variants_passed": 0},
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (runs_dir / "candidate" / "coverage.json").write_text(
-        json.dumps(
-            {
-                "template": "bcg",
-                "layouts": [
-                    {"slug": "hero_image", "variants_passed": 0},
-                    {"slug": "title_only", "variants_passed": 1},
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
     monkeypatch.setattr(
         module, "previous_best_summary", lambda current_run_id: previous
     )
 
     summary = module.build_summary(run_id="candidate", results=results)
 
-    assert summary["decision"] == "reject"
-    assert "layout regressions: hero_image" in summary["reject_reasons"]
-    assert summary["coverage_diff"]["regressions"] == [
-        {"slug": "hero_image", "before_passed": 1, "after_passed": 0}
-    ]
+    assert summary["decision"] == "accept"
+    assert summary["previous_best_mean_composite"] == 75.0
+    assert summary["layers"]["demo"]["decision"] == "accept"
 
 
 def test_build_summary_rejects_when_baseline_had_review_but_current_does_not(
@@ -757,12 +730,10 @@ def test_build_summary_rejects_when_baseline_had_review_but_current_does_not(
     assert any("review data lost" in r for r in summary["reject_reasons"])
 
 
-def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
-    tmp_path: Path,
+def test_build_summary_does_not_include_certification_regression_fields(
     monkeypatch,
 ) -> None:
     module = _load_script_module()
-    runs_dir = tmp_path / "runs"
     previous = {
         "run_id": "baseline",
         "mean_composite": 75.0,
@@ -787,20 +758,6 @@ def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
             },
         }
     ]
-    (runs_dir / "candidate").mkdir(parents=True)
-    (runs_dir / "candidate" / "coverage.json").write_text(
-        json.dumps(
-            {
-                "template": "bcg",
-                "layouts": [{"slug": "hero_image", "variants_passed": 0}],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(module, "RUNS_DIR", runs_dir)
     monkeypatch.setattr(
         module, "previous_best_summary", lambda current_run_id: previous
     )
@@ -810,3 +767,4 @@ def test_build_summary_skips_layout_regression_gate_without_previous_coverage(
     assert summary["decision"] == "accept"
     assert summary["reject_reasons"] == []
     assert "coverage_diff" not in summary
+    assert summary["layers"]["demo"]["review_quality"] == 0.92

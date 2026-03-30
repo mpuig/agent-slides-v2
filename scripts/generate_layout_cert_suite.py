@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -163,7 +164,6 @@ def _resolve_fixture_image_path(raw_path: str, *, deck_dir: Path) -> str:
     in sync with the current fixture set.
     """
     import hashlib
-    import shutil
 
     image_source = Path(raw_path)
     if not image_source.is_absolute():
