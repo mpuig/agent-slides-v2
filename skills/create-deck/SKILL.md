@@ -270,14 +270,15 @@ Read `${CLAUDE_SKILL_DIR}/references/content-density.md` before building so the 
 
 ### Template slot awareness (CRITICAL for template decks)
 
-Before building with a template, run `uv run agent-slides inspect <manifest>` and read `${CLAUDE_SKILL_DIR}/references/layout-selection.md` which contains the full slot table. Most template layouts have ONLY a `heading` slot.
+Before building with a template, run `uv run agent-slides inspect <manifest>` and read `${CLAUDE_SKILL_DIR}/references/layout-selection.md` which contains the full slot table.
 
 Key rules:
 
-- **Never set body on heading-only layouts.** Only `title_and_text` and `title_slide` have body slots.
+- **Set body on every layout that supports it.** Layouts with body (native or virtual): `title_slide`, `title_and_text`, `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`, `disclaimer`, agenda layouts. Do NOT set body on other layouts.
+- **Scale body density to layout width.** Full-width: 4-6 bullets. Medium (493pt): 2-3 bullets. Medium-narrow (368pt): 2 short bullets. Narrow (272pt): 1-2 very short bullets.
 - **Short headings on narrow layouts (MAX 5 WORDS).** Arrow one-third, green one-third, white one-third, green highlight, left arrow, green left arrow. Examples: "3x cost reduction", "Phase 2: scale".
 - **Source lines go FIRST in body content.** Place `Source: ...` as the FIRST text block in the body, before bullet points. The scoring system checks if a node's text starts with "Source:" — if bullets come first, the source line is not detected. Example: `[{"type":"paragraph","text":"Source: McKinsey, 2025"},{"type":"bullet","text":"Key finding 1"},...]`
-- **Plan source lines in Phase 1.** Mark which slides get source lines. Use `title_and_text` for those slides.
+- **Plan source lines in Phase 1.** Mark which slides get source lines. Use layouts with body slots (native or virtual).
 - **BAN topic-label titles.** Every title must be an action statement. NEVER: "Market Overview". ALWAYS: "Market share fell 15% after competitor undercut pricing".
 - **Keep headings under ~50 characters** to avoid overflow in the heading placeholder.
 - **Word count limits for body:** max 100 words full-width, aim for 40-60. Use 3-5 short bullets.
@@ -296,16 +297,20 @@ Key rules:
 
 ### Layout guidance for template decks
 
-Refer to the slot table in `${CLAUDE_SKILL_DIR}/references/layout-selection.md` for every layout.
+Refer to the slot table in `${CLAUDE_SKILL_DIR}/references/layout-selection.md` for every layout. All layouts now accept body content via virtual body slots.
 
 - **title_slide** for the opener (heading + subheading + body + image)
 - **end** for the closer (no fillable slots)
-- **title_and_text** for ALL content slides needing body detail or source lines (heading + body)
-- **green_half** or **green_two_third** for image slides (heading + image)
-- **big_statement_green** or **big_statement_icon** for bold emphasis (heading only)
-- **section_header_box** or **section_header_line** for section breaks (heading only)
-- **arrow variants** for step markers (heading only, 3-10 words)
-- **green variants** for accent slides (heading only, 3-10 words)
+- **title_and_text** for dense body content (heading + native body, 4-6 bullets)
+- **title_only** for action titles with supporting evidence (heading + virtual body, 3-5 bullets)
+- **green_half** or **green_two_third** for image slides (heading + image, no body)
+- **big_statement_green** or **big_statement_icon** for bold emphasis (heading only, no body)
+- **section_header_box** or **section_header_line** for section breaks (heading only, no body)
+- **green_highlight** for highlighted insight (heading + virtual body, 2-3 bullets)
+- **arrow_half** / **green_arrow_half** for directional callouts (heading + virtual body, 2 bullets)
+- **arrow_two_third** / **green_arrow_two_third** for wider directional (heading + virtual body, 2-3 bullets)
+- **arrow_one_third** / **green_arrow_one_third** for narrow directional (heading only, no body)
+- **left_arrow** / **green_left_arrow** for 2-3 word labels (heading only, no body)
 - **agenda_*** for agenda slides (body only)
 - **disclaimer** for legal text (body only)
 

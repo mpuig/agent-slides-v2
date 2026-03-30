@@ -6,10 +6,13 @@ Read it before Phase 1 (storyline) and Phase 2 (build) to pick layouts correctly
 ## Key Facts
 
 - 24 usable primary layouts (non-d\_ duplicates, non-agenda)
-- Most layouts are **heading-only**. Do not attempt to set body on them.
+- 12 layouts have a body slot (native or virtual). Use body on every content slide that supports it.
 - Heading widths vary from 195pt (very narrow) to 861pt (full width). Word count must match.
-- Only 3 layouts have a body slot: `title_slide`, `title_and_text`, `disclaimer`
-- Only 2 layouts have an image slot: `green_half`, `green_two_third`
+- Native body: `title_slide`, `title_and_text`, `disclaimer`
+- Virtual body (free-floating text box below heading): `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`
+- No body (heading vertically centered or large placeholder): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`
+- No body (image layouts): `green_half`, `green_two_third` (heading + image only)
+- Image slot: `title_slide`, `green_half`, `green_two_third`
 
 ## Complete Layout Catalog
 
@@ -24,37 +27,37 @@ Read it before Phase 1 (storyline) and Phase 2 (build) to pick layouts correctly
 
 | Slug | Slots | Use For |
 |------|-------|---------|
-| `title_and_text` | heading, body | Primary content slide. The only non-opener with a body slot. |
-| `title_only` | heading | Action title as the entire message. No body. |
-| `section_header_line` | heading | Section divider with a line accent. |
-| `big_statement_green` | heading | Bold statement on green background. High emphasis. |
-| `big_statement_icon` | heading | Bold statement with icon accent. |
-| `special_gray` | heading | Statement on gray background. Lower emphasis than green. |
+| `title_and_text` | heading, body (native) | Primary content slide with native body placeholder. Best for dense body text (4-6 bullets). |
+| `title_only` | heading, body (virtual) | Action title + supporting bullets via virtual body (3-5 bullets). |
+| `section_header_line` | heading | Section divider with a line accent. Heading-only -- no body. |
+| `big_statement_green` | heading | Bold statement on green background. Heading IS the message -- no body. |
+| `big_statement_icon` | heading | Bold statement with icon accent. Heading IS the message -- no body. |
+| `special_gray` | heading, body (virtual) | Statement on gray background. Add 2-3 supporting points in virtual body. |
 
 ### Medium-Width Layouts (heading w=320-541pt)
 
 | Slug | Slots | Heading Width | Use For |
 |------|-------|--------------|---------|
-| `section_header_box` | heading | 758pt | Section divider with box accent. |
-| `green_highlight` | heading | 493pt | Highlighted takeaway on green band. |
-| `green_two_third` | heading, image | 492pt | Heading plus image, two-thirds text. |
-| `arrow_two_third` | heading | 493pt | Directional takeaway, wide arrow. |
-| `green_arrow_two_third` | heading | 493pt | Green directional takeaway, wide arrow. |
-| `arrow_half` | heading | 368pt | Directional takeaway, half-width arrow. |
-| `green_arrow_half` | heading | 368pt | Green directional takeaway, half-width. |
-| `green_half` | heading, image | 346pt | Heading plus image, half-and-half split. |
-| `arrow_one_third` | heading | 320pt | Directional takeaway, narrow arrow. |
-| `green_arrow_one_third` | heading | 320pt | Green directional takeaway, narrow. |
+| `section_header_box` | heading | 758pt | Section divider with box accent. Heading-only -- no body. |
+| `green_highlight` | heading, body (virtual) | 493pt | Highlighted takeaway on green band. Add 2-3 short bullets in body. |
+| `green_two_third` | heading, image | 492pt | Heading plus image, two-thirds text. No body. |
+| `arrow_two_third` | heading, body (virtual) | 493pt | Directional takeaway, wide arrow. Add 2-3 bullets in body. |
+| `green_arrow_two_third` | heading, body (virtual) | 493pt | Green directional takeaway. Add 2-3 bullets in body. |
+| `arrow_half` | heading, body (virtual) | 368pt | Directional takeaway, half-width. Add 2 short bullets in body. |
+| `green_arrow_half` | heading, body (virtual) | 368pt | Green directional half-width. Add 2 short bullets in body. |
+| `green_half` | heading, image | 346pt | Half-and-half image split. No body. |
+| `arrow_one_third` | heading | 320pt | Narrow directional takeaway. Heading-only -- no body. |
+| `green_arrow_one_third` | heading | 320pt | Narrow green directional. Heading-only -- no body. |
 
 ### Narrow Layouts (heading w=195-272pt)
 
 | Slug | Slots | Heading Width | Use For |
 |------|-------|--------------|---------|
-| `gray_slice_heading` | heading | 272pt | Narrow slice heading. Max ~5 words. |
-| `white_one_third` | heading | 246pt | Narrow white panel. Max ~5 words. |
-| `green_one_third` | heading | 246pt | Narrow green panel. Max ~5 words. |
-| `left_arrow` | heading | 195pt | Very narrow arrow callout. Max ~3 words. |
-| `green_left_arrow` | heading | 195pt | Very narrow green arrow. Max ~3 words. |
+| `gray_slice_heading` | heading, body (virtual) | 272pt | Narrow slice heading. Max ~5 words. Add 1-2 very short bullets in body. |
+| `white_one_third` | heading | 246pt | Narrow white panel. Max ~5 words. Heading-only -- no body. |
+| `green_one_third` | heading | 246pt | Narrow green panel. Max ~5 words. Heading-only -- no body. |
+| `left_arrow` | heading | 195pt | Very narrow arrow callout. Max ~3 words. Heading-only -- no body. |
+| `green_left_arrow` | heading | 195pt | Very narrow green arrow. Max ~3 words. Heading-only -- no body. |
 
 ### Agenda Layouts
 
@@ -88,8 +91,11 @@ Do NOT include them in decks — they will produce visual artifacts.
 |------|-------------|
 | heading | All layouts except `blank`, `end`, `disclaimer`, `layout_guide` |
 | subheading | `title_slide` only |
-| body | `title_slide`, `title_and_text`, `disclaimer`, `layout_guide` |
+| body (native) | `title_slide`, `title_and_text`, `disclaimer`, `layout_guide` |
+| body (virtual) | `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
 | image | `title_slide`, `green_half`, `green_two_third` |
+
+**Use body on every layout that supports it.** For heading-only layouts (no body), the heading IS the entire message -- make it a strong action title.
 
 ## Width Classes and Word Limits
 
@@ -107,22 +113,25 @@ Do NOT include them in decks — they will produce visual artifacts.
 | Content Type | Best Layout | Why |
 |-------------|-------------|-----|
 | Deck title with subtitle | `title_slide` | Has heading + subheading + body + image slots |
-| Single narrative with body text | `title_and_text` | Only content layout with both heading and body |
-| Action title as entire message | `title_only` | Full-width heading, no body distraction |
-| Bold key takeaway | `big_statement_green` or `big_statement_icon` | Full-width, high-contrast emphasis |
-| Section divider | `section_header_box` or `section_header_line` | Designed as structural breaks |
-| Data slide with chart heading | `title_only` | Heading states the insight; chart is a separate element |
-| Image with explanation | `green_half` or `green_two_third` | Only layouts with heading + image |
-| Directional callout / arrow | `arrow_half` or `green_arrow_half` | Arrow shape implies direction/momentum |
-| Short label or tag | `left_arrow` or `green_left_arrow` | Very narrow, for 2-3 word labels |
+| Single narrative with body text | `title_and_text` | Native body placeholder, best for dense text (4-6 bullets) |
+| Action title + supporting evidence | `title_only` | Full-width heading + virtual body for 3-5 bullets |
+| Bold key takeaway | `big_statement_green` or `big_statement_icon` | Full-width, high-contrast emphasis. Heading IS the message (no body). |
+| Section divider | `section_header_box` or `section_header_line` | Structural break. Heading-only. |
+| Data slide with source | `title_and_text` or `title_only` | Heading states insight; body has source line + bullets |
+| Highlighted insight | `green_highlight` | Green band emphasis + virtual body for 2-3 supporting bullets |
+| Image with explanation | `green_half` or `green_two_third` | Heading + image (no body). Make heading the full message. |
+| Directional callout / arrow | `arrow_half` or `green_arrow_half` | Arrow implies momentum + virtual body for 2 supporting points |
+| Short label or tag | `left_arrow` or `green_left_arrow` | Very narrow, 2-3 word heading only. No body. |
 | Agenda overview | `agenda_full_width_overview` | Body slot for numbered topic list |
-| Closing | `big_statement_green` | Use as final call-to-action with heading |
+| Closing | `big_statement_green` | Call-to-action heading (no body). Make heading compelling. |
 
 ## Anti-Patterns
 
-- **Setting body on heading-only layouts.** 20 of 24 layouts have no body slot. `slot set` on body will fail silently or be ignored.
 - **Long headings on narrow layouts.** A 15-word heading on `left_arrow` (195pt) will overflow or become unreadable.
-- **Using `title_and_text` for everything.** It is the only layout with body, but overusing it makes the deck monotonous. Use heading-only layouts for variety.
+- **Skipping body on layouts that support it.** If a layout has body (native or virtual), fill it with supporting content.
+- **Setting body on layouts without it.** `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third` do NOT have body. Do not attempt `slot set --slot body` on these.
+- **Overloading narrow layout bodies.** `gray_slice_heading` body should have at most 1-2 very short bullets.
+- **Using `title_and_text` for everything.** With virtual body slots on 8+ layouts, mix layout types for variety.
 - **Repeating the same layout 3+ times consecutively.** Breaks visual rhythm. Alternate between layout categories.
 - **Ignoring the green/white variants.** Green variants add visual weight and color. Alternate them to create contrast.
 - **Using arrow layouts for non-directional content.** Arrow shapes imply momentum, transition, or direction. Do not use them for static facts.

@@ -45,7 +45,8 @@ WEIGHTS = {
     "review_quality": 20,  # visual review passed/total ratio when available
 }
 
-BOLD_SLUG_PATTERN = re.compile(r"\*\*([a-z0-9_]+)\*\*")
+# Match bold slugs only in numbered list items like "1. **title_slide** — ..."
+BOLD_SLUG_PATTERN = re.compile(r"^\s*\d+\.\s+\*\*([a-z0-9_]+)\*\*")
 SOURCE_LINE_PATTERN = re.compile(
     r"at least\s+(\d+)\s+slides?\s+should\s+include\s+a\s+source line", re.IGNORECASE
 )
@@ -427,7 +428,8 @@ def parse_brief(brief_path: Path) -> dict:
     in_layout_variety = False
     for line in text.splitlines():
         line_stripped = line.strip()
-        slugs = BOLD_SLUG_PATTERN.findall(line_stripped)
+        slug_match = BOLD_SLUG_PATTERN.match(line_stripped)
+        slugs = [slug_match.group(1)] if slug_match else []
         if slugs:
             fields["required_layouts"].extend(slugs)
             line_lower = line_stripped.casefold()

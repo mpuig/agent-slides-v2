@@ -108,19 +108,32 @@ Source line rules:
 - CRITICAL: Place the source line as the FIRST text block in the body content, not the last. The scoring system checks whether a node's full text starts with "Source:" — if bullets come before the source line, it will not be detected. Structure the body as: `[{"type":"paragraph","text":"Source: ..."},{"type":"bullet","text":"..."},...]`
 - Internal analysis should be labeled "Source: Internal analysis" or "Source: Company data, [year]".
 - External data needs publisher, report name, and year at minimum.
-- On heading-only layouts (no body slot), there is no place for a source line. If a slide needs a source line, use `title_and_text` instead.
-- When the brief requires a minimum number of source lines, plan which slides get them during Phase 1 and ensure those slides use `title_and_text` layout.
+- Source lines can be placed on any layout that has a body slot (native or virtual). You are no longer restricted to `title_and_text`.
+- For heading-only layouts without body, source lines cannot be added. Use a body-capable layout for data slides.
+- When the brief requires a minimum number of source lines, plan which slides get them during Phase 1 and ensure those slides use body-capable layouts.
 
-## 10. Heading-only layout discipline
+## 10. Virtual body slot usage
 
-Most BCG template layouts expose only a heading slot. Do not attempt to set body content on heading-only layouts -- the slot does not exist and the content will be lost.
+Several BCG template layouts now accept body content via virtual body slots. Setting `--slot body` creates a free-floating text box below the heading. Use this on every layout that supports it.
 
-Rules for heading-only layouts:
+Layouts with virtual body: `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`.
 
-- The heading IS the entire slide message. Write it as a complete, self-contained action title.
-- Do not try to cram body-level detail into the heading. If you need supporting text, use `title_and_text` instead.
-- For data slides that need both a heading and a source line, prefer `title_and_text` which has a body slot for the source.
-- Heading-only layouts work best for: key takeaways, section dividers, bold statements, and directional callouts.
+Layouts WITHOUT body (do not attempt `slot set --slot body`): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third`.
+
+Body density by layout width:
+
+- **Full-width with body** (`title_and_text`, `title_only`, `special_gray`): 4-6 bullets, up to 100 words.
+- **Medium with body** (`green_highlight`, `arrow_two_third`, `green_arrow_two_third`): 2-3 short bullets, 30-50 words.
+- **Medium-narrow with body** (`arrow_half`, `green_arrow_half`): 2 short bullets, 20-30 words.
+- **Narrow with body** (`gray_slice_heading`): 1-2 very short bullets, 10-15 words.
+
+Rules for body on virtual-body layouts:
+
+- The heading IS still the main message. Body provides supporting evidence, not a repeat.
+- On arrow layouts: add 1-2 directional next steps or supporting facts.
+- On `green_highlight`: add 2-3 bullets that explain why the highlight matters.
+- Source lines work on any layout with body. Place `Source:` as the first text block.
+- For heading-only layouts (no body), the heading must be a complete, self-contained action title.
 
 ## 11. Narrow layout word limits
 
