@@ -21,10 +21,14 @@ For each layout, create one slide with content appropriate to the layout's slot 
   action title and 4-6 bullet points or structured body with sub-headings.
 - **heading only** layouts: use a strong statement or action title. For narrow-placeholder
   layouts (green_left_arrow, green_arrow_half, arrow_half), keep headings to MAX 5 WORDS.
-- **body only** layouts (quote, blank, agenda, disclaimer, end): fill the body slot with
-  appropriate content — a quote attribution for quote layouts, agenda items for agenda layouts,
-  a disclaimer statement for disclaimer, etc.
-- **blank** layouts: skip or add minimal content.
+- **agenda** layouts (agenda_full_width_overview, agenda_section_header_overview,
+  agenda_two_thirds): fill body with numbered agenda items ONLY. Do NOT add titles — the
+  template has baked-in titles.
+- **quote** layout: fill body with a real attributed quote.
+
+**Do NOT use these layouts** — they have baked-in template content or no content areas:
+`disclaimer`, `layout_guide`, `blank`, `blank_green`, `end` (use as-is with no content
+if needed for closing).
 
 Group slides into a coherent narrative about digital transformation in manufacturing:
 1. Title and context (title_slide, section headers)
@@ -32,7 +36,7 @@ Group slides into a coherent narrative about digital transformation in manufactu
 3. Strategy options (arrow and comparison layouts)
 4. Key statements (big_statement, green highlight variants)
 5. Implementation (roadmap content, agenda layouts)
-6. Closing (end, quote, disclaimer)
+6. Closing (big_statement_green as call-to-action)
 
 Target audience: Manufacturing CEO and executive team
 Objective: Present a digital transformation roadmap for a mid-size manufacturer
@@ -48,7 +52,7 @@ Key recommendation: Invest EUR 8M over 3 years in IoT, AI-driven quality control
 - Agenda layouts should have structured agenda items
 
 ## Expected slide count
-30-37
+25-32
 
 ## Layout variety requirement
-At least 30 distinct layout types.
+At least 22 distinct layout types.

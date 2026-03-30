@@ -101,3 +101,33 @@ Use spacing rhythm deliberately:
 Every data slide needs a source line at the bottom of the slide. Set it in 9-10pt light gray and keep it inside the content margin, typically 12-18pt above the bottom edge.
 
 The source line should include enough provenance to establish trust, such as publisher or team name, dataset or report label, and date. Keep it short, left-aligned, and visually subordinate to the slide message.
+
+Source line rules:
+
+- Every data slide (charts, statistics, market figures) must have "Source: [attribution]" in the body slot.
+- CRITICAL: Place the source line as the FIRST text block in the body content, not the last. The scoring system checks whether a node's full text starts with "Source:" — if bullets come before the source line, it will not be detected. Structure the body as: `[{"type":"paragraph","text":"Source: ..."},{"type":"bullet","text":"..."},...]`
+- Internal analysis should be labeled "Source: Internal analysis" or "Source: Company data, [year]".
+- External data needs publisher, report name, and year at minimum.
+- On heading-only layouts (no body slot), there is no place for a source line. If a slide needs a source line, use `title_and_text` instead.
+- When the brief requires a minimum number of source lines, plan which slides get them during Phase 1 and ensure those slides use `title_and_text` layout.
+
+## 10. Heading-only layout discipline
+
+Most BCG template layouts expose only a heading slot. Do not attempt to set body content on heading-only layouts -- the slot does not exist and the content will be lost.
+
+Rules for heading-only layouts:
+
+- The heading IS the entire slide message. Write it as a complete, self-contained action title.
+- Do not try to cram body-level detail into the heading. If you need supporting text, use `title_and_text` instead.
+- For data slides that need both a heading and a source line, prefer `title_and_text` which has a body slot for the source.
+- Heading-only layouts work best for: key takeaways, section dividers, bold statements, and directional callouts.
+
+## 11. Narrow layout word limits
+
+Arrow and one-third layouts have heading widths as narrow as 195-272pt. Long text will overflow or become unreadable.
+
+- Very narrow (195pt): `left_arrow`, `green_left_arrow` -- max 3 words
+- Narrow (246-272pt): `white_one_third`, `green_one_third`, `gray_slice_heading` -- max 5 words
+- Medium-narrow (320-368pt): arrow half variants, `green_half` -- max 8 words
+
+If your message needs more words, choose a wider layout. Do not force long headings into narrow slots.
