@@ -16,6 +16,7 @@ from agent_slides.model.types import Counters, Deck, Node, Slide
 
 ROOT = Path(__file__).resolve().parents[1]
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
+_IGNORED_REGISTRY_ONLY_SLOTS = frozenset({"content"})
 _SLOT_PRIORITY = {
     "heading": 0,
     "subheading": 10,
@@ -257,7 +258,19 @@ def build_cert_suite(
         registry_slots = sorted(
             registry.get_slot_names(layout_slug), key=_slot_sort_key
         )
-        if registry_slots != fillable_slots:
+        missing_slots = sorted(
+            set(fillable_slots) - set(registry_slots), key=_slot_sort_key
+        )
+        unexpected_registry_slots = sorted(
+            {
+                slot
+                for slot in registry_slots
+                if slot not in fillable_slots
+                and slot not in _IGNORED_REGISTRY_ONLY_SLOTS
+            },
+            key=_slot_sort_key,
+        )
+        if missing_slots or unexpected_registry_slots:
             raise ValueError(
                 f"Inventory layout '{layout_slug}' fillable_slots do not match manifest slots: "
                 f"{fillable_slots} != {registry_slots}"

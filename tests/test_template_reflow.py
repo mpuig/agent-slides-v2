@@ -7,7 +7,15 @@ import pytest
 
 from agent_slides.engine.reflow import reflow_deck
 from agent_slides.io.sidecar import mutate_deck
-from agent_slides.model import Counters, Deck, Node, Slide, TemplateLayoutRegistry
+from agent_slides.model import (
+    ChartSeries,
+    ChartSpec,
+    Counters,
+    Deck,
+    Node,
+    Slide,
+    TemplateLayoutRegistry,
+)
 
 
 def write_json(path: Path, payload: dict[str, object]) -> None:
@@ -575,3 +583,72 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
 
     body_call = fit_calls[1]
     assert body_call[:6] == (420.0, 450.0, 18.0, 10.0, "body", "Aptos")
+
+
+def test_reflow_deck_places_template_chart_nodes_in_virtual_content_slot(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "template.manifest.json"
+    (tmp_path / "template.pptx").write_bytes(b"pptx")
+    write_json(
+        manifest_path,
+        make_heading_only_manifest(
+            editable_regions=[
+                {
+                    "name": "chart_area",
+                    "left": 540.0,
+                    "top": 170.0,
+                    "width": 420.0,
+                    "height": 320.0,
+                    "source": "visual_inference_no_placeholders",
+                }
+            ],
+        ),
+    )
+
+    deck = Deck(
+        deck_id="deck-template-chart",
+        revision=7,
+        theme="default",
+        design_rules="default",
+        template_manifest="template.manifest.json",
+        slides=[
+            Slide(
+                slide_id="s-1",
+                layout="green_highlight",
+                nodes=[
+                    Node(
+                        node_id="n-1",
+                        slot_binding="heading",
+                        type="text",
+                        content="Quarterly performance",
+                    ),
+                    Node(
+                        node_id="n-2",
+                        slot_binding="content",
+                        type="chart",
+                        chart_spec=ChartSpec(
+                            chart_type="bar",
+                            categories=["Q1", "Q2"],
+                            series=[
+                                ChartSeries(name="Revenue", values=[12.0, 18.0]),
+                            ],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+        counters=Counters(slides=1, nodes=2),
+    )
+
+    registry = TemplateLayoutRegistry(manifest_path)
+    reflow_deck(deck, registry)
+
+    computed = deck.slides[0].computed["n-2"]
+    assert computed.content_type == "chart"
+    assert (computed.x, computed.y, computed.width, computed.height) == (
+        540.0,
+        170.0,
+        420.0,
+        320.0,
+    )

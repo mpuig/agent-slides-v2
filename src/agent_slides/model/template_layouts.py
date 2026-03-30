@@ -43,6 +43,7 @@ _ALIGNMENT_EPSILON_PT = 8.0
 _PEER_Y_EPSILON_PT = 18.0
 _PEER_HEIGHT_RATIO = 0.1
 _CONTENT_TYPES = {"text", "image", "chart", "table", "icon", "pattern"}
+_MIN_VIRTUAL_CONTENT_REGION_AREA_PT2 = 60_000.0
 
 
 @dataclass(frozen=True)
@@ -702,6 +703,86 @@ def _region_to_bounds(region: _EditableRegion) -> dict[str, float]:
     }
 
 
+def _virtual_content_region_candidates(
+    *,
+    editable_regions: tuple[_EditableRegion, ...],
+    color_zones: tuple[_ColorZone, ...],
+) -> list[_EditableRegion]:
+    inferred_regions = [
+        region
+        for region in editable_regions
+        if region.source in {None, "visual_inference_no_placeholders"}
+    ]
+    if inferred_regions:
+        return inferred_regions
+
+    candidates: list[_EditableRegion] = []
+    for zone in color_zones:
+        if zone.editable_below is not None:
+            candidates.append(zone.editable_below)
+        if zone.editable_above is not None:
+            candidates.append(zone.editable_above)
+    return candidates
+
+
+def _build_virtual_content_slot(
+    slot_mapping: dict[str, Any],
+    *,
+    placeholders_by_idx: dict[int, dict[str, Any]],
+    editable_regions: tuple[_EditableRegion, ...] = (),
+    color_zones: tuple[_ColorZone, ...] = (),
+) -> dict[str, Any] | None:
+    if "content" in slot_mapping:
+        return None
+    if "heading" not in slot_mapping:
+        return None
+
+    has_body_slot = any(
+        _infer_role(
+            slot_name,
+            _coerce_slot_mapping(
+                slot_name,
+                raw_slot,
+                placeholders_by_idx=placeholders_by_idx,
+            ),
+        )
+        == "body"
+        for slot_name, raw_slot in slot_mapping.items()
+    )
+    if has_body_slot:
+        return None
+
+    best_region: _EditableRegion | None = None
+    best_area = -1.0
+    for region in _virtual_content_region_candidates(
+        editable_regions=editable_regions,
+        color_zones=color_zones,
+    ):
+        area = region.width * region.height
+        if area < _MIN_VIRTUAL_CONTENT_REGION_AREA_PT2 or area <= best_area:
+            continue
+        best_region = region
+        best_area = area
+
+    if best_region is None:
+        return None
+
+    bounds = _region_to_bounds(best_region)
+    zone = _resolve_color_zone(
+        color_zones,
+        slot_x=bounds["x"],
+        slot_width=bounds["width"],
+    )
+    return {
+        "role": "body",
+        "virtual": True,
+        "allowed_content": ["chart", "table", "image"],
+        "bounds": bounds,
+        "bg_color": zone.bg_color if zone is not None else None,
+        "text_color": zone.text_color if zone is not None else None,
+    }
+
+
 def _coerce_manifest_bounds(value: object, *, context: str) -> dict[str, float]:
     bounds = _as_dict(value, context=context)
     left = _optional_number(bounds, "x", "left")
@@ -734,7 +815,13 @@ def _augment_virtual_slots(
         editable_regions=editable_regions,
         color_zones=color_zones,
     )
-    if virtual_body is None:
+    virtual_content = _build_virtual_content_slot(
+        slot_mapping,
+        placeholders_by_idx=placeholders_by_idx,
+        editable_regions=editable_regions,
+        color_zones=color_zones,
+    )
+    if virtual_body is None and virtual_content is None:
         return slot_mapping
 
     augmented: dict[str, Any] = {}
@@ -742,10 +829,17 @@ def _augment_virtual_slots(
     for slot_name, slot_value in slot_mapping.items():
         augmented[slot_name] = slot_value
         if slot_name == "heading":
-            augmented["body"] = virtual_body
-            inserted = True
+            if virtual_body is not None:
+                augmented["body"] = virtual_body
+                inserted = True
+            if virtual_content is not None:
+                augmented["content"] = virtual_content
+                inserted = True
     if not inserted:
-        augmented["body"] = virtual_body
+        if virtual_body is not None:
+            augmented["body"] = virtual_body
+        if virtual_content is not None:
+            augmented["content"] = virtual_content
     return augmented
 
 

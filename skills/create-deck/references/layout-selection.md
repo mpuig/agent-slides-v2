@@ -10,9 +10,18 @@ Read it before Phase 1 (storyline) and Phase 2 (build) to pick layouts correctly
 - Heading widths vary from 195pt (very narrow) to 861pt (full width). Word count must match.
 - Native body: `title_slide`, `title_and_text`, `disclaimer`
 - Virtual body (free-floating text box below heading): `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`
+- Virtual content (editable-region chart/table/image slot when available): use `content` on template layouts whose learned manifest exposes a large editable region. In the BCG template this primarily includes `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, and `green_arrow_two_third`.
 - No body (heading vertically centered or large placeholder): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`
 - No body (image layouts): `green_half`, `green_two_third` (heading + image only)
 - Image slot: `title_slide`, `green_half`, `green_two_third`
+
+## Charts and Tables on Template Layouts
+
+- When a learned template layout exposes a large editable region, target the virtual `content` slot for charts, tables, and large images instead of forcing them into `body`.
+- Use `chart add <deck> --slide <n> --slot content --type <chart-type> --data ...` for native PowerPoint charts on template slides.
+- Use `table add <deck> --slide <n> --slot content --data ...` for native PowerPoint tables on template slides.
+- Keep `body` for narrative bullets and use `content` for data-heavy visuals. If the slide needs axes, multiple series, or more than 3 numeric comparisons, prefer a chart over bullet text.
+- Prefer `green_highlight`, `title_only`, `special_gray`, `arrow_two_third`, and `green_arrow_two_third` for charts and tables because they usually have the largest editable regions. Use `gray_slice_heading`, `arrow_half`, and `green_arrow_half` only for compact visuals.
 
 ## Complete Layout Catalog
 
@@ -93,6 +102,7 @@ Do NOT include them in decks — they will produce visual artifacts.
 | subheading | `title_slide` only |
 | body (native) | `title_slide`, `title_and_text`, `disclaimer`, `layout_guide` |
 | body (virtual) | `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
+| content (virtual chart/table/image) | Template layouts with large editable regions, especially `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
 | image | `title_slide`, `green_half`, `green_two_third` |
 
 **Use body on every layout that supports it.** For heading-only layouts (no body), the heading IS the entire message -- make it a strong action title.
@@ -118,6 +128,7 @@ Do NOT include them in decks — they will produce visual artifacts.
 | Bold key takeaway | `big_statement_green` or `big_statement_icon` | Full-width, high-contrast emphasis. Heading IS the message (no body). |
 | Section divider | `section_header_box` or `section_header_line` | Structural break. Heading-only. |
 | Data slide with source | `title_and_text` or `title_only` | Heading states insight; body has source line + bullets |
+| Data-heavy chart or table | `green_highlight`, `title_only`, `special_gray`, `arrow_two_third` | Use the virtual `content` slot so the editable region controls chart/table placement |
 | Highlighted insight | `green_highlight` | Green band emphasis + virtual body for 2-3 supporting bullets |
 | Image with explanation | `green_half` or `green_two_third` | Heading + image (no body). Make heading the full message. |
 | Directional callout / arrow | `arrow_half` or `green_arrow_half` | Arrow implies momentum + virtual body for 2 supporting points |
@@ -129,6 +140,7 @@ Do NOT include them in decks — they will produce visual artifacts.
 
 - **Long headings on narrow layouts.** A 15-word heading on `left_arrow` (195pt) will overflow or become unreadable.
 - **Skipping body on layouts that support it.** If a layout has body (native or virtual), fill it with supporting content.
+- **Putting charts or tables in `body` when `content` exists.** On template layouts with editable regions, use `content` for charts/tables so they take the full safe zone instead of text-box geometry.
 - **Setting body on layouts without it.** `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third` do NOT have body. Do not attempt `slot set --slot body` on these.
 - **Overloading narrow layout bodies.** `gray_slice_heading` body should have at most 1-2 very short bullets.
 - **Using `title_and_text` for everything.** With virtual body slots on 8+ layouts, mix layout types for variety.
