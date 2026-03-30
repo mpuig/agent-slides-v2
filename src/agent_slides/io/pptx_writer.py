@@ -201,8 +201,11 @@ def _apply_template_run_styles(
         run.font.bold = run_spec.bold
     if run_spec.italic is not None:
         run.font.italic = run_spec.italic
-    if run_spec.color:
-        run.font.color.rgb = hex_to_rgb(run_spec.color)
+    color = run_spec.color
+    if color is None and computed is not None:
+        color = computed.color
+    if color is not None:
+        run.font.color.rgb = hex_to_rgb(color)
     if run_spec.underline:
         run.font.underline = True
     if run_spec.strikethrough:
@@ -956,6 +959,7 @@ def _write_template_pptx(
                     node,
                     computed,
                     conditional_formatting=conditional_formatting,
+                    render_bg_fill=False,
                 )
             _fill_image_placeholder(
                 node,
@@ -973,6 +977,7 @@ def _render_text_node(
     computed: ComputedNode,
     *,
     conditional_formatting: ConditionalFormatting | None = None,
+    render_bg_fill: bool = True,
 ) -> None:
     """Render a single text node as a positioned text box."""
 
@@ -984,7 +989,7 @@ def _render_text_node(
     )
     shape.line.fill.background()
 
-    if computed.bg_color is not None:
+    if render_bg_fill and computed.bg_color is not None:
         shape.fill.solid()
         shape.fill.fore_color.rgb = hex_to_rgb(computed.bg_color)
         shape.fill.transparency = computed.bg_transparency
