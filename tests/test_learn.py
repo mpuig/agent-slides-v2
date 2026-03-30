@@ -9,7 +9,8 @@ from zipfile import ZipFile
 import pytest
 from click.testing import CliRunner, Result
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.dml import MSO_FILL
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
 from agent_slides.cli import cli
 from agent_slides.errors import AgentSlidesError, FILE_NOT_FOUND, SCHEMA_ERROR
@@ -221,6 +222,15 @@ def test_learn_command_writes_manifest_and_extracts_expected_structure(
     }
     assert layouts["blank"]["usable"] is True
     assert layouts["blank"]["placeholders"] == []
+    assert layouts["blank"]["color_zones"] == [
+        {
+            "region": "full_slide",
+            "left": 0.0,
+            "width": 960.0,
+            "bg_color": "FAFAFA",
+            "text_color": "333333",
+        }
+    ]
     assert layouts["agenda"]["placeholders"][1]["idx"] == 1
     assert layouts["agenda"]["placeholders"][1]["type"] == "BODY"
     assert layouts["agenda"]["placeholders"][1]["name"] == "Content Placeholder 2"
@@ -505,6 +515,194 @@ def test_read_template_manifest_extracts_non_placeholder_content_shapes(
     # TABLE, CHART, GROUP are at different vertical positions (not same row),
     # so the first body-like shape wins as "body", not col1/col2/col3
     assert layout["slot_mapping"]["body"] == 1_000_003
+
+
+def test_read_template_manifest_extracts_color_zones_from_large_filled_shapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = tmp_path / "template.pptx"
+    template_path.write_bytes(b"placeholder")
+
+    class FakePlaceholderFormat:
+        idx = 0
+        type = PP_PLACEHOLDER.TITLE
+
+    class FakeTitlePlaceholder:
+        name = "Title Placeholder 1"
+        left = 60 * 12700
+        top = 40 * 12700
+        width = 360 * 12700
+        height = 50 * 12700
+        shape_id = 1
+        placeholder_format = FakePlaceholderFormat()
+
+    class FakeForeColor:
+        def __init__(self, rgb: str) -> None:
+            self.rgb = rgb
+
+    class FakeFill:
+        def __init__(self, rgb: str) -> None:
+            self.type = MSO_FILL.SOLID
+            self.fore_color = FakeForeColor(rgb)
+
+    class FakePanelShape:
+        is_placeholder = False
+        has_text_frame = False
+        has_table = False
+        has_chart = False
+        shape_type = MSO_SHAPE_TYPE.AUTO_SHAPE
+
+        def __init__(
+            self, *, shape_id: int, name: str, left_pt: float, width_pt: float, rgb: str
+        ) -> None:
+            self.shape_id = shape_id
+            self.name = name
+            self.left = int(left_pt * 12700)
+            self.top = 0
+            self.width = int(width_pt * 12700)
+            self.height = int(template_reader.SLIDE_HEIGHT_PT * 12700)
+            self.fill = FakeFill(rgb)
+
+    class FakeDecorativeShape:
+        is_placeholder = False
+        has_text_frame = False
+        has_table = False
+        has_chart = False
+        shape_type = MSO_SHAPE_TYPE.AUTO_SHAPE
+        shape_id = 4
+        name = "Small Accent"
+        left = 200 * 12700
+        top = 120 * 12700
+        width = 100 * 12700
+        height = 60 * 12700
+        fill = FakeFill("FFAA00")
+
+    layout_root = ET.fromstring(
+        f"""
+        <p:sldLayout xmlns:p="{PML_NS}" xmlns:a="{DML_NS}">
+          <p:cSld name="Green Highlight">
+            <p:bg>
+              <p:bgPr>
+                <a:solidFill>
+                  <a:srgbClr val="FFFFFF" />
+                </a:solidFill>
+              </p:bgPr>
+            </p:bg>
+          </p:cSld>
+        </p:sldLayout>
+        """
+    )
+    master_root = ET.fromstring(
+        f"""
+        <p:sldMaster xmlns:p="{PML_NS}" xmlns:a="{DML_NS}">
+          <p:cSld>
+            <p:bg>
+              <p:bgPr>
+                <a:solidFill>
+                  <a:srgbClr val="F1F5F9" />
+                </a:solidFill>
+              </p:bgPr>
+            </p:bg>
+          </p:cSld>
+        </p:sldMaster>
+        """
+    )
+
+    class FakeSlideMaster:
+        def __init__(self) -> None:
+            self._element = master_root
+            self.slide_layouts = [FakeLayout(self)]
+
+    class FakeLayout:
+        def __init__(self, slide_master: FakeSlideMaster) -> None:
+            self.name = "Green Highlight"
+            self.slide_master = slide_master
+            self.placeholders = [FakeTitlePlaceholder()]
+            self.shapes = [
+                FakePanelShape(
+                    shape_id=2,
+                    name="Left Panel",
+                    left_pt=0.0,
+                    width_pt=420.0,
+                    rgb="FFFFFF",
+                ),
+                FakePanelShape(
+                    shape_id=3,
+                    name="Right Panel",
+                    left_pt=540.0,
+                    width_pt=420.0,
+                    rgb="00A651",
+                ),
+                FakeDecorativeShape(),
+            ]
+            self._element = layout_root
+
+    class FakePresentation:
+        slide_masters = [FakeSlideMaster()]
+
+    monkeypatch.setattr(
+        template_reader, "_open_presentation", lambda _: FakePresentation()
+    )
+    monkeypatch.setattr(
+        template_reader,
+        "_extract_theme",
+        lambda _: {
+            "colors": {
+                "primary": "#112233",
+                "secondary": "#445566",
+                "accent": "#778899",
+                "text": "#111111",
+                "heading_text": "#222222",
+                "subtle_text": "#E5E7EB",
+                "background": "#FAFAFA",
+            },
+            "fonts": {},
+            "spacing": {},
+        },
+    )
+
+    result = read_template_manifest(template_path)
+    layout = json.loads(result.manifest_path.read_text(encoding="utf-8"))[
+        "slide_masters"
+    ][0]["layouts"][0]
+
+    assert result.usable_layouts == 1
+    assert layout["slug"] == "green_highlight"
+    assert layout["color_zones"] == [
+        {
+            "region": "panel_0",
+            "left": 0.0,
+            "width": 420.0,
+            "bg_color": "FFFFFF",
+            "text_color": "333333",
+            "editable_above": {
+                "left": 0.0,
+                "top": 0.0,
+                "width": 420.0,
+                "height": 40.0,
+            },
+            "editable_below": {
+                "left": 0.0,
+                "top": 90.0,
+                "width": 420.0,
+                "height": 450.0,
+            },
+        },
+        {
+            "region": "gap_0",
+            "left": 420.0,
+            "width": 120.0,
+            "bg_color": "FFFFFF",
+            "text_color": "333333",
+        },
+        {
+            "region": "panel_1",
+            "left": 540.0,
+            "width": 420.0,
+            "bg_color": "00A651",
+            "text_color": "FFFFFF",
+        },
+    ]
 
 
 def test_read_template_manifest_marks_blank_variants_usable(
