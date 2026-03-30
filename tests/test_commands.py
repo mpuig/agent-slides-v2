@@ -71,6 +71,43 @@ def write_deck(path: Path, deck: Deck) -> None:
     write_computed_deck(str(path), deck)
 
 
+def write_heading_only_template_manifest(path: Path, template_path: Path) -> None:
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+    write_json(
+        path,
+        {
+            "source": template_path.name,
+            "source_hash": "abc123",
+            "theme": {
+                "colors": {
+                    "primary": "#112233",
+                    "secondary": "#223344",
+                    "accent": "#445566",
+                    "background": "#FAFAFA",
+                    "text": "#101010",
+                    "heading_text": "#202020",
+                    "subtle_text": "#606060",
+                },
+                "fonts": {"heading": "Aptos Display", "body": "Aptos"},
+                "spacing": {"base_unit": 10, "margin": 48, "gutter": 18},
+            },
+            "layouts": [
+                {
+                    "slug": "green_highlight",
+                    "usable": True,
+                    "slot_mapping": {
+                        "heading": {
+                            "role": "heading",
+                            "bounds": {"x": 72, "y": 64, "width": 560, "height": 72},
+                        }
+                    },
+                }
+            ],
+        },
+    )
+
+
 def build_slide(
     slide_id: str, layout: str, slots: list[str], *, start_node: int = 1
 ) -> Slide:
@@ -523,6 +560,64 @@ def test_init_with_template_sets_relative_manifest_and_uses_manifest_layouts(
             "message": "Unknown layout 'two_col'. Available layouts: title_slide, two_content",
         },
     }
+
+
+def test_slot_set_accepts_virtual_body_slot_for_heading_only_template_layouts(
+    tmp_path: Path,
+) -> None:
+    deck_path = tmp_path / "decks" / "deck.json"
+    manifest_path = tmp_path / "templates" / "heading-only.manifest.json"
+    template_path = tmp_path / "templates" / "heading-only.pptx"
+    deck_path.parent.mkdir(parents=True)
+    manifest_path.parent.mkdir(parents=True)
+    write_heading_only_template_manifest(manifest_path, template_path)
+
+    init_result = invoke_cli(["init", str(deck_path), "--template", str(manifest_path)])
+    assert init_result.exit_code == 0
+
+    slide_add = invoke_cli(["slide", "add", str(deck_path), "--layout", "green_highlight"])
+    assert slide_add.exit_code == 0
+
+    heading_result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "heading",
+            "--text",
+            "Heading",
+        ]
+    )
+    body_result = invoke_cli(
+        [
+            "slot",
+            "set",
+            str(deck_path),
+            "--slide",
+            "0",
+            "--slot",
+            "body",
+            "--text",
+            "Bullet copy",
+        ]
+    )
+
+    assert heading_result.exit_code == 0
+    assert body_result.exit_code == 0
+
+    deck = read_deck(str(deck_path))
+    slide = deck.slides[0]
+    assert {node.slot_binding for node in slide.nodes} == {"heading", "body"}
+    assert slide.computed
+    assert slide.computed[next(node.node_id for node in slide.nodes if node.slot_binding == "body")].y == pytest.approx(154.0)
+
+    validate_result = invoke_cli(["validate", str(deck_path)])
+    assert validate_result.exit_code == 0
+    validate_payload = json.loads(validate_result.output)
+    assert validate_payload["ok"] is True
 
 
 def test_init_returns_error_when_theme_and_template_are_both_provided(

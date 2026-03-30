@@ -791,13 +791,13 @@ def _fill_placeholder(
     *,
     computed: ComputedNode | None = None,
     conditional_formatting: ConditionalFormatting | None = None,
-) -> None:
+) -> bool:
     if node.slot_binding is None or node.type != "text":
-        return
+        return False
 
     placeholder_idx = binding.slot_mapping.get(node.slot_binding)
     if placeholder_idx is None:
-        return
+        return False
 
     target = binding.placeholders_by_idx.get(
         placeholder_idx, {"idx": placeholder_idx, "type": "BODY"}
@@ -808,7 +808,7 @@ def _fill_placeholder(
         _saved_pPr = None
     elif target_type == "GROUP":
         # Group shapes cannot be filled with text; skip silently.
-        return
+        return True
     else:
         placeholder = slide.placeholders[placeholder_idx]
         text_frame = placeholder.text_frame
@@ -871,6 +871,7 @@ def _fill_placeholder(
                 if position is not None
                 else None,
             )
+    return True
 
 
 def _text_box_frame_for_slot(slide, target: dict[str, Any]):
@@ -932,18 +933,30 @@ def _write_template_pptx(
                     else:
                         _render_pattern_node(pptx_slide.shapes, computed)
         for node in slide.nodes:
+            computed = slide.computed.get(node.node_id)
             if node.type == "icon":
-                computed = slide.computed.get(node.node_id)
                 if computed is not None:
                     _render_icon_node(pptx_slide.shapes, node, computed)
                 continue
-            _fill_placeholder(
+            handled_text = _fill_placeholder(
                 node,
                 binding,
                 pptx_slide,
-                computed=slide.computed.get(node.node_id),
+                computed=computed,
                 conditional_formatting=conditional_formatting,
             )
+            if (
+                not handled_text
+                and node.type == "text"
+                and node.slot_binding is not None
+                and computed is not None
+            ):
+                _render_text_node(
+                    pptx_slide.shapes,
+                    node,
+                    computed,
+                    conditional_formatting=conditional_formatting,
+                )
             _fill_image_placeholder(
                 node,
                 binding.slot_mapping,
