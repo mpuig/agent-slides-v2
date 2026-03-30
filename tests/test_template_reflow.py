@@ -378,11 +378,11 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert set(computed) == {"n-1", "n-2"}
 
     body = computed["n-2"]
-    assert (body.x, body.y, body.width, body.height) == (72.0, 154.0, 600.0, 338.0)
+    assert (body.x, body.y, body.width, body.height) == (72.0, 262.0, 600.0, 230.0)
     assert body.font_size_pt == 14.0
     assert body.font_family == "Aptos"
     assert body.color == "#101010"
     assert body.text_overflow is False
 
     body_call = fit_calls[1]
-    assert body_call[:6] == (600.0, 338.0, 18.0, 10.0, "body", "Aptos")
+    assert body_call[:6] == (600.0, 230.0, 18.0, 10.0, "body", "Aptos")

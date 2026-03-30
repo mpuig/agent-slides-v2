@@ -436,7 +436,12 @@ def _build_virtual_body_slot(
     margin = float(theme.spacing.margin)
     gutter = float(theme.spacing.gutter)
     left = max(float(heading_x), margin)
-    top = float(heading_y) + float(heading_height) + gutter
+    # Heading text often wraps beyond the placeholder height, so start the
+    # virtual body well below the heading bottom edge. Use at least 2x the
+    # heading height or heading height + 40pt, whichever is larger.
+    heading_h = float(heading_height)
+    body_offset = max(heading_h * 2.5, heading_h + 40)
+    top = float(heading_y) + body_offset + gutter
     right = STANDARD_SLIDE_WIDTH_PT - margin
     bottom = STANDARD_SLIDE_HEIGHT_PT - margin
     if top >= bottom or left >= right:

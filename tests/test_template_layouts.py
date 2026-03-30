@@ -328,9 +328,9 @@ def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only
     assert "body" not in manifest["layouts"][0]["slot_mapping"]
     assert layout.slots["body"].role == "body"
     assert layout.slots["body"].x == 72.0
-    assert layout.slots["body"].y == 154.0
+    assert layout.slots["body"].y == 262.0
     assert layout.slots["body"].width == 600.0
-    assert layout.slots["body"].height == 338.0
+    assert layout.slots["body"].height == 230.0
 
 
 def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology(
