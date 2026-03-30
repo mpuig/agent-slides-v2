@@ -1173,9 +1173,17 @@ class SlotDef(AgentSlidesModel):
     width: float | None = None
     height: float | None = None
     bg_color: str | None = None
+    text_color: str | None = None
     bg_transparency: float = 0.0
     height_mode: ConstraintHeightMode = "fixed"
     width_mode: ConstraintWidthMode = "fixed"
+
+    @field_validator("bg_color", "text_color")
+    @classmethod
+    def validate_color(cls, value: str | None, info) -> str | None:
+        if value is None:
+            return None
+        return _normalize_hex_color(value, field_name=info.field_name)
 
     @field_validator("bg_transparency")
     @classmethod

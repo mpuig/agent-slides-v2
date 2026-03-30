@@ -158,6 +158,171 @@ def _build_heading_only_manifest(base_dir: Path) -> Path:
     return manifest_path
 
 
+def _build_color_zone_manifest(base_dir: Path) -> Path:
+    template_path = base_dir / "templates" / "zones" / "template.pptx"
+    manifest_path = base_dir / "templates" / "zones" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "zoned-template",
+                "source": "template.pptx",
+                "source_hash": "zones123",
+                "theme": {
+                    "name": "zoned-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                        "heading_text": "#111111",
+                        "subtle_text": "#666666",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 12,
+                        "margin": 48,
+                        "gutter": 18,
+                    },
+                },
+                "layouts": [
+                    {
+                        "slug": "two_panel_story",
+                        "usable": True,
+                        "color_zones": [
+                            {
+                                "region": "panel_0",
+                                "left": 0,
+                                "width": 360,
+                                "bg_color": "FFFFFF",
+                                "text_color": "333333",
+                            },
+                            {
+                                "region": "panel_1",
+                                "left": 360,
+                                "width": 360,
+                                "bg_color": "00A651",
+                                "text_color": "FFFFFF",
+                            },
+                        ],
+                        "slot_mapping": {
+                            "heading": {
+                                "role": "heading",
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 64,
+                                    "width": 220,
+                                    "height": 96,
+                                },
+                            },
+                            "body": {
+                                "role": "body",
+                                "bounds": {
+                                    "x": 420,
+                                    "y": 180,
+                                    "width": 220,
+                                    "height": 220,
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _build_heading_only_color_zone_manifest(base_dir: Path) -> Path:
+    template_path = base_dir / "templates" / "heading-zones" / "template.pptx"
+    manifest_path = base_dir / "templates" / "heading-zones" / "manifest.json"
+    template_path.parent.mkdir(parents=True, exist_ok=True)
+    template_path.write_bytes(b"pptx")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "name": "heading-zones-template",
+                "source": "template.pptx",
+                "source_hash": "heading-zones123",
+                "theme": {
+                    "name": "heading-zones-theme",
+                    "colors": {
+                        "primary": "#101820",
+                        "secondary": "#203040",
+                        "accent": "#ff6600",
+                        "background": "#faf7f2",
+                        "text": "#1f1f1f",
+                        "heading_text": "#111111",
+                        "subtle_text": "#666666",
+                    },
+                    "fonts": {
+                        "heading": "Aptos Display",
+                        "body": "Aptos",
+                    },
+                    "spacing": {
+                        "base_unit": 12,
+                        "margin": 48,
+                        "gutter": 18,
+                    },
+                },
+                "layouts": [
+                    {
+                        "slug": "green_highlight",
+                        "usable": True,
+                        "color_zones": [
+                            {
+                                "region": "panel_0",
+                                "left": 0,
+                                "width": 360,
+                                "bg_color": "FFFFFF",
+                                "text_color": "333333",
+                            },
+                            {
+                                "region": "panel_1",
+                                "left": 360,
+                                "width": 360,
+                                "bg_color": "00A651",
+                                "text_color": "FFFFFF",
+                            },
+                        ],
+                        "editable_regions": [
+                            {
+                                "name": "content_area",
+                                "left": 390,
+                                "top": 170,
+                                "width": 270,
+                                "height": 240,
+                                "source": "visual_inference_no_placeholders",
+                            }
+                        ],
+                        "slot_mapping": {
+                            "heading": {
+                                "role": "heading",
+                                "bounds": {
+                                    "x": 72,
+                                    "y": 64,
+                                    "width": 220,
+                                    "height": 72,
+                                },
+                            }
+                        },
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
 def _build_template_deck(manifest_relpath: str) -> Deck:
     return Deck(
         deck_id="deck-template",
@@ -290,6 +455,17 @@ def test_template_layout_registry_returns_bounds_backed_layout(tmp_path: Path) -
     assert layout.slots["body"].role == "body"
 
 
+def test_template_layout_registry_applies_zone_colors_to_slots(tmp_path: Path) -> None:
+    manifest_path = _build_color_zone_manifest(tmp_path)
+
+    layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("two_panel_story")
+
+    assert layout.slots["heading"].bg_color == "#FFFFFF"
+    assert layout.slots["heading"].text_color == "#333333"
+    assert layout.slots["body"].bg_color == "#00A651"
+    assert layout.slots["body"].text_color == "#FFFFFF"
+
+
 def test_template_layout_registry_invalid_layout_raises_invalid_layout(
     tmp_path: Path,
 ) -> None:
@@ -331,6 +507,21 @@ def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only
     assert layout.slots["body"].y == 262.0
     assert layout.slots["body"].width == 600.0
     assert layout.slots["body"].height == 230.0
+
+
+def test_template_layout_registry_uses_editable_region_and_zone_colors_for_virtual_body(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _build_heading_only_color_zone_manifest(tmp_path)
+
+    layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("green_highlight")
+
+    assert layout.slots["body"].x == 390.0
+    assert layout.slots["body"].y == 170.0
+    assert layout.slots["body"].width == 270.0
+    assert layout.slots["body"].height == 240.0
+    assert layout.slots["body"].bg_color == "#00A651"
+    assert layout.slots["body"].text_color == "#FFFFFF"
 
 
 def test_template_layout_registry_infers_slot_metadata_from_placeholder_topology(
