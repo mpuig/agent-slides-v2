@@ -81,7 +81,7 @@ def _adjust_text_fitting_for_slot(fitting: TextFitting, slot: SlotDef) -> TextFi
         # current min_size.  Use a binary search to find the font size where
         # the text fits within both width and height constraints.
         if available_width > 0 and available_height > 0:
-            typical_chars = 40.0 if slot.role == "heading" else 60.0
+            typical_chars = 80.0 if slot.role == "heading" else 60.0
             size_factor = 1.35 if slot.role == "heading" else 1.0
             lh_factor = 1.1 if slot.role == "heading" else 1.2
             lo, hi = 8.0, min_size
