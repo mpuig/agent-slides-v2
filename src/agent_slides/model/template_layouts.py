@@ -131,7 +131,9 @@ def _optional_string(mapping: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
-def _coerce_color_zones(raw_color_zones: object, *, slug: str) -> tuple[_ColorZone, ...]:
+def _coerce_color_zones(
+    raw_color_zones: object, *, slug: str
+) -> tuple[_ColorZone, ...]:
     if raw_color_zones is None:
         return ()
     if not isinstance(raw_color_zones, list):
@@ -607,6 +609,15 @@ def _build_virtual_body_slot(
         top = float(manifest_bounds["y"])
         right = left + float(manifest_bounds["width"])
         bottom = top + float(manifest_bounds["height"])
+        # Ensure a gutter between the heading bottom and the body top so
+        # the two never visually overlap.
+        heading_bottom = float(heading_y) + float(heading_height)
+        gutter = float(theme.spacing.gutter)
+        min_top = heading_bottom + gutter
+        if top < min_top:
+            top = min_top
+            if top >= bottom:
+                top = heading_bottom + gutter
     else:
         margin = float(theme.spacing.margin)
         gutter = float(theme.spacing.gutter)
@@ -737,21 +748,6 @@ def _build_virtual_content_slot(
     if "heading" not in slot_mapping:
         return None
 
-    has_body_slot = any(
-        _infer_role(
-            slot_name,
-            _coerce_slot_mapping(
-                slot_name,
-                raw_slot,
-                placeholders_by_idx=placeholders_by_idx,
-            ),
-        )
-        == "body"
-        for slot_name, raw_slot in slot_mapping.items()
-    )
-    if has_body_slot:
-        return None
-
     best_region: _EditableRegion | None = None
     best_area = -1.0
     for region in _virtual_content_region_candidates(
@@ -792,10 +788,7 @@ def _coerce_manifest_bounds(value: object, *, context: str) -> dict[str, float]:
     if left is None or top is None or width is None or height is None:
         raise AgentSlidesError(
             SCHEMA_ERROR,
-            (
-                f"{context} must define numeric left/top/width/height "
-                "or x/y/w/h bounds"
-            ),
+            (f"{context} must define numeric left/top/width/height or x/y/w/h bounds"),
         )
     return {"x": left, "y": top, "width": width, "height": height}
 
@@ -815,12 +808,16 @@ def _augment_virtual_slots(
         editable_regions=editable_regions,
         color_zones=color_zones,
     )
-    virtual_content = _build_virtual_content_slot(
-        slot_mapping,
-        placeholders_by_idx=placeholders_by_idx,
-        editable_regions=editable_regions,
-        color_zones=color_zones,
-    )
+    # Only create a content slot when there is no virtual body — the two
+    # would overlap since both derive bounds from the same editable regions.
+    virtual_content: dict[str, Any] | None = None
+    if virtual_body is None:
+        virtual_content = _build_virtual_content_slot(
+            slot_mapping,
+            placeholders_by_idx=placeholders_by_idx,
+            editable_regions=editable_regions,
+            color_zones=color_zones,
+        )
     if virtual_body is None and virtual_content is None:
         return slot_mapping
 
@@ -1217,7 +1214,9 @@ class TemplateLayoutRegistry:
                 raw_layout.get("placeholders"), slug=slug
             )
             color_context = _LayoutColorContext(
-                color_zones=_coerce_color_zones(raw_layout.get("color_zones"), slug=slug),
+                color_zones=_coerce_color_zones(
+                    raw_layout.get("color_zones"), slug=slug
+                ),
                 editable_regions=_coerce_editable_regions(
                     raw_layout.get("editable_regions"), slug=slug
                 ),

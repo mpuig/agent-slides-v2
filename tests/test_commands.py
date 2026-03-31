@@ -76,9 +76,21 @@ def write_heading_only_template_manifest(
     template_path: Path,
     *,
     editable_regions: list[dict[str, object]] | None = None,
+    include_body: bool = False,
 ) -> None:
     template_path.parent.mkdir(parents=True, exist_ok=True)
     template_path.write_bytes(b"pptx")
+    slot_mapping: dict[str, object] = {
+        "heading": {
+            "role": "heading",
+            "bounds": {"x": 72, "y": 64, "width": 560, "height": 72},
+        }
+    }
+    if include_body:
+        slot_mapping["body"] = {
+            "role": "body",
+            "bounds": {"x": 72, "y": 150, "width": 400, "height": 300},
+        }
     write_json(
         path,
         {
@@ -106,12 +118,7 @@ def write_heading_only_template_manifest(
                         if editable_regions is not None
                         else {}
                     ),
-                    "slot_mapping": {
-                        "heading": {
-                            "role": "heading",
-                            "bounds": {"x": 72, "y": 64, "width": 560, "height": 72},
-                        }
-                    },
+                    "slot_mapping": slot_mapping,
                 }
             ],
         },
@@ -1584,6 +1591,7 @@ def test_chart_add_accepts_virtual_content_slot_on_template_layout(
     write_heading_only_template_manifest(
         manifest_path,
         template_path,
+        include_body=True,
         editable_regions=[
             {
                 "name": "content_area",
@@ -1595,9 +1603,14 @@ def test_chart_add_accepts_virtual_content_slot_on_template_layout(
             }
         ],
     )
-    assert invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code == 0
     assert (
-        invoke_cli(["slide", "add", str(deck_path), "--layout", "green_highlight"]).exit_code
+        invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code
+        == 0
+    )
+    assert (
+        invoke_cli(
+            ["slide", "add", str(deck_path), "--layout", "green_highlight"]
+        ).exit_code
         == 0
     )
 
@@ -2031,6 +2044,7 @@ def test_table_add_accepts_virtual_content_slot_on_template_layout(
     write_heading_only_template_manifest(
         manifest_path,
         template_path,
+        include_body=True,
         editable_regions=[
             {
                 "name": "content_area",
@@ -2042,9 +2056,14 @@ def test_table_add_accepts_virtual_content_slot_on_template_layout(
             }
         ],
     )
-    assert invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code == 0
     assert (
-        invoke_cli(["slide", "add", str(deck_path), "--layout", "green_highlight"]).exit_code
+        invoke_cli(["init", str(deck_path), "--template", str(manifest_path)]).exit_code
+        == 0
+    )
+    assert (
+        invoke_cli(
+            ["slide", "add", str(deck_path), "--layout", "green_highlight"]
+        ).exit_code
         == 0
     )
 

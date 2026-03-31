@@ -142,7 +142,11 @@ def _build_heading_only_manifest(
                     {
                         "slug": "green_highlight",
                         "usable": True,
-                        **({"color_zones": color_zones} if color_zones is not None else {}),
+                        **(
+                            {"color_zones": color_zones}
+                            if color_zones is not None
+                            else {}
+                        ),
                         **(
                             {"editable_regions": editable_regions}
                             if editable_regions is not None
@@ -552,19 +556,16 @@ def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only
     layout = registry.get_layout("green_highlight")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert registry.get_slot_names("green_highlight") == ["heading", "body", "content"]
+    assert registry.get_slot_names("green_highlight") == ["heading", "body"]
     assert "body" not in manifest["layouts"][0]["slot_mapping"]
     assert layout.slots["body"].role == "body"
     assert layout.slots["body"].x == 0.0
-    assert layout.slots["body"].y == 90.0
+    # Virtual body top is clamped to heading_bottom + gutter (64+72+18=154)
+    assert layout.slots["body"].y == 154.0
     assert layout.slots["body"].width == 420.0
-    assert layout.slots["body"].height == 450.0
-    assert layout.slots["content"].role == "body"
-    assert layout.slots["content"].allowed_content == ["chart", "table", "image"]
-    assert layout.slots["content"].x == 540.0
-    assert layout.slots["content"].y == 170.0
-    assert layout.slots["content"].width == 420.0
-    assert layout.slots["content"].height == 320.0
+    assert layout.slots["body"].height == pytest.approx(540.0 - 154.0)
+    # Content slot is suppressed when virtual body exists to avoid overlap
+    assert "content" not in layout.slots
 
 
 def test_template_layout_registry_uses_editable_regions_when_zone_lacks_editable_below(

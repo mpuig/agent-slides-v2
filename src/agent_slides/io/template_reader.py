@@ -376,7 +376,9 @@ def _select_visual_inference_region(
         if title_placeholder is not None:
             title_rect = _rect_from_placeholder(title_placeholder)
             if title_rect is not None:
-                top = max(top, min(SLIDE_HEIGHT_PT, title_rect.bottom + DEFAULT_GUTTER_PT))
+                top = max(
+                    top, min(SLIDE_HEIGHT_PT, title_rect.bottom + DEFAULT_GUTTER_PT)
+                )
         return _rect_from_edges(zone_rect.left, top, zone_rect.right, SLIDE_HEIGHT_PT)
 
     zones = [
@@ -390,9 +392,7 @@ def _select_visual_inference_region(
     ]
     if not zones:
         zones = [
-            _zone_rect(zone)
-            for zone in color_zones
-            if float(zone.get("width", 0)) > 0
+            _zone_rect(zone) for zone in color_zones if float(zone.get("width", 0)) > 0
         ]
     if not zones:
         return _Rect(left=0.0, top=0.0, width=SLIDE_WIDTH_PT, height=SLIDE_HEIGHT_PT)
@@ -468,7 +468,9 @@ def _obstacle_rect_for_shape(shape: object) -> _Rect | None:
         return None
     if getattr(shape, "has_text_frame", False) and _shape_text(shape).strip():
         if _is_fixed_label_shape(shape, rect):
-            return _expand_rect(rect, top=DEFAULT_GUTTER_PT / 2, bottom=DEFAULT_GUTTER_PT / 2)
+            return _expand_rect(
+                rect, top=DEFAULT_GUTTER_PT / 2, bottom=DEFAULT_GUTTER_PT / 2
+            )
         return None
     if getattr(shape, "has_table", False) or getattr(shape, "has_chart", False):
         return None
@@ -516,8 +518,12 @@ def _subtract_rect(candidate: _Rect, obstacle: _Rect) -> list[_Rect]:
         return [candidate]
 
     remainder: list[_Rect] = []
-    remainder.append(_rect_from_edges(candidate.left, candidate.top, candidate.right, top))
-    remainder.append(_rect_from_edges(candidate.left, bottom, candidate.right, candidate.bottom))
+    remainder.append(
+        _rect_from_edges(candidate.left, candidate.top, candidate.right, top)
+    )
+    remainder.append(
+        _rect_from_edges(candidate.left, bottom, candidate.right, candidate.bottom)
+    )
     remainder.append(_rect_from_edges(candidate.left, top, left, bottom))
     remainder.append(_rect_from_edges(right, top, candidate.right, bottom))
     return [rect for rect in remainder if rect is not None]
@@ -614,9 +620,9 @@ def _rect_from_edges(
 
 
 def _rectangles_overlap(first: _Rect, second: _Rect) -> bool:
-    return _ranges_overlap(first.left, first.right, second.left, second.right) and _ranges_overlap(
-        first.top, first.bottom, second.top, second.bottom
-    )
+    return _ranges_overlap(
+        first.left, first.right, second.left, second.right
+    ) and _ranges_overlap(first.top, first.bottom, second.top, second.bottom)
 
 
 def _ranges_overlap(
@@ -779,26 +785,45 @@ def _solid_fill_color(
     if parent is None or not hasattr(parent, "find"):
         return None
     solid_fill = parent.find("./a:solidFill", OOXML_NS)
-    if solid_fill is None:
+    if solid_fill is not None:
+        return _resolve_color_element(solid_fill, scheme_colors=scheme_colors)
+    grad_fill = parent.find("./a:gradFill", OOXML_NS)
+    if grad_fill is not None:
+        first_stop = grad_fill.find("./a:gsLst/a:gs", OOXML_NS)
+        if first_stop is not None:
+            return _resolve_color_element(first_stop, scheme_colors=scheme_colors)
+    return None
+
+
+def _resolve_color_element(
+    element: object, *, scheme_colors: Mapping[str, str]
+) -> str | None:
+    if element is None or not hasattr(element, "find"):
         return None
-    srgb = solid_fill.find("./a:srgbClr", OOXML_NS)
+    srgb = element.find("./a:srgbClr", OOXML_NS)
     if srgb is not None:
         return _normalize_hex_color(srgb.attrib.get("val"))
-    system = solid_fill.find("./a:sysClr", OOXML_NS)
+    system = element.find("./a:sysClr", OOXML_NS)
     if system is not None:
-        return _normalize_hex_color(system.attrib.get("lastClr", system.attrib.get("val")))
-    scheme = solid_fill.find("./a:schemeClr", OOXML_NS)
+        return _normalize_hex_color(
+            system.attrib.get("lastClr", system.attrib.get("val"))
+        )
+    scheme = element.find("./a:schemeClr", OOXML_NS)
     if scheme is not None:
         scheme_name = scheme.attrib.get("val")
         if scheme_name:
-            return _normalize_hex_color(scheme_colors.get(scheme_name, DEFAULT_BG_COLOR))
+            return _normalize_hex_color(
+                scheme_colors.get(scheme_name, DEFAULT_BG_COLOR)
+            )
     return None
 
 
 def _title_placeholder(
     placeholders: list[dict[str, object]],
 ) -> dict[str, object] | None:
-    titles = sorted(_placeholders_of_type(placeholders, "TITLE"), key=_sort_key_by_position)
+    titles = sorted(
+        _placeholders_of_type(placeholders, "TITLE"), key=_sort_key_by_position
+    )
     return titles[0] if titles else None
 
 
@@ -859,10 +884,8 @@ def _attach_editable_regions(
 
 def _contrasting_text_color(bg_color: str) -> str:
     red, green, blue = _hex_to_rgb(bg_color)
-    luminance = (
-        (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
-    ) / 255.0
-    return DEFAULT_DARK_TEXT if luminance > 0.5 else DEFAULT_LIGHT_TEXT
+    luminance = ((0.2126 * red) + (0.7152 * green) + (0.0722 * blue)) / 255.0
+    return DEFAULT_DARK_TEXT if luminance > 0.65 else DEFAULT_LIGHT_TEXT
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -889,14 +912,23 @@ def _theme_scheme_colors(theme: Mapping[str, object]) -> dict[str, str]:
     colors = theme.get("colors")
     if not isinstance(colors, Mapping):
         return {}
+    dk1 = _normalize_hex_color(str(colors.get("text", DEFAULT_DARK_TEXT)))
+    dk2 = _normalize_hex_color(str(colors.get("heading_text", DEFAULT_DARK_TEXT)))
+    lt1 = _normalize_hex_color(str(colors.get("background", DEFAULT_BG_COLOR)))
+    lt2 = _normalize_hex_color(str(colors.get("subtle_text", DEFAULT_LIGHT_TEXT)))
     return {
         "accent1": _normalize_hex_color(str(colors.get("primary", DEFAULT_BG_COLOR))),
         "accent2": _normalize_hex_color(str(colors.get("secondary", DEFAULT_BG_COLOR))),
         "accent3": _normalize_hex_color(str(colors.get("accent", DEFAULT_BG_COLOR))),
-        "dk1": _normalize_hex_color(str(colors.get("text", DEFAULT_DARK_TEXT))),
-        "dk2": _normalize_hex_color(str(colors.get("heading_text", DEFAULT_DARK_TEXT))),
-        "lt1": _normalize_hex_color(str(colors.get("background", DEFAULT_BG_COLOR))),
-        "lt2": _normalize_hex_color(str(colors.get("subtle_text", DEFAULT_LIGHT_TEXT))),
+        "dk1": dk1,
+        "dk2": dk2,
+        "lt1": lt1,
+        "lt2": lt2,
+        # OOXML aliases: tx1/tx2 are the same as dk1/dk2, bg1/bg2 = lt1/lt2
+        "tx1": dk1,
+        "tx2": dk2,
+        "bg1": lt1,
+        "bg2": lt2,
     }
 
 

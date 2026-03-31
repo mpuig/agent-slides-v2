@@ -574,7 +574,8 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert set(computed) == {"n-1", "n-2"}
 
     body = computed["n-2"]
-    assert (body.x, body.y, body.width, body.height) == (0.0, 90.0, 420.0, 450.0)
+    # Virtual body top is clamped to heading_bottom + gutter (64+72+18=154)
+    assert (body.x, body.y, body.width, body.height) == (0.0, 154.0, 420.0, 386.0)
     assert body.font_size_pt == 14.0
     assert body.font_family == "Aptos"
     assert body.color == "#333333"
@@ -582,28 +583,60 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert body.text_overflow is False
 
     body_call = fit_calls[1]
-    assert body_call[:6] == (420.0, 450.0, 18.0, 10.0, "body", "Aptos")
+    assert body_call[:6] == (420.0, 386.0, 18.0, 10.0, "body", "Aptos")
 
 
 def test_reflow_deck_places_template_chart_nodes_in_virtual_content_slot(
     tmp_path: Path,
 ) -> None:
+    """When a layout has a native body slot, a content slot is created from the
+    editable region so charts can be placed there independently."""
     manifest_path = tmp_path / "template.manifest.json"
     (tmp_path / "template.pptx").write_bytes(b"pptx")
     write_json(
         manifest_path,
-        make_heading_only_manifest(
-            editable_regions=[
+        {
+            "name": "template",
+            "source": "template.pptx",
+            "source_hash": "abc123",
+            "layouts": [
                 {
-                    "name": "chart_area",
-                    "left": 540.0,
-                    "top": 170.0,
-                    "width": 420.0,
-                    "height": 320.0,
-                    "source": "visual_inference_no_placeholders",
+                    "slug": "chart_layout",
+                    "usable": True,
+                    "editable_regions": [
+                        {
+                            "name": "chart_area",
+                            "left": 540.0,
+                            "top": 170.0,
+                            "width": 420.0,
+                            "height": 320.0,
+                            "source": "visual_inference_no_placeholders",
+                        }
+                    ],
+                    "slot_mapping": {
+                        "heading": {
+                            "role": "heading",
+                            "bounds": {
+                                "x": 72.0,
+                                "y": 64.0,
+                                "width": 560.0,
+                                "height": 72.0,
+                            },
+                        },
+                        "body": {
+                            "role": "body",
+                            "bounds": {
+                                "x": 72.0,
+                                "y": 150.0,
+                                "width": 400.0,
+                                "height": 300.0,
+                            },
+                        },
+                    },
                 }
             ],
-        ),
+            "theme": make_heading_only_manifest()["theme"],
+        },
     )
 
     deck = Deck(
@@ -615,7 +648,7 @@ def test_reflow_deck_places_template_chart_nodes_in_virtual_content_slot(
         slides=[
             Slide(
                 slide_id="s-1",
-                layout="green_highlight",
+                layout="chart_layout",
                 nodes=[
                     Node(
                         node_id="n-1",
