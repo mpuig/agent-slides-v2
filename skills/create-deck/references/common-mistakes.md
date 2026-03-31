@@ -27,7 +27,22 @@ Better example: `Q4 margin expanded 4 points despite flat volume`
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
 
-### 2. Too much text on one slide
+### 2. Heading too long for template placeholder
+
+**What it looks like**
+Bad example: "The EU mid-market SaaS opportunity has reached EUR 48B and is growing at 14% CAGR driven by digital transformation across all segments" (21 words)
+
+**Why it's wrong**
+Template heading placeholders are only 37pt tall. Long headings force the engine to shrink the font to 14-16pt, making the heading hard to read and visually cramped. The heading may also overlap with body content below.
+
+**How to fix it**
+Keep headings to 6-10 words (40-60 characters). Put the detail in the body, not the heading. Write the conclusion, not the full explanation.
+Better example: "EU SaaS market reached EUR 48B at 14% CAGR" (9 words)
+
+**Which agent-slides validate rule catches it**
+Text overflow is detected by the reflow engine. The validator reports `TEXT_OVERFLOW` when content does not fit at minimum font size.
+
+### 3. Too much text on one slide
 
 **What it looks like**
 Bad example: a single body area packed with long paragraphs or more than roughly 50 words in one column, so the audience cannot find the point in 5 seconds.

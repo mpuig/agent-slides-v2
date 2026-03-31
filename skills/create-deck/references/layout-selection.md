@@ -107,6 +107,15 @@ Do NOT include them in decks — they will produce visual artifacts.
 
 **Use body on every layout that supports it.** For heading-only layouts (no body), the heading IS the entire message -- make it a strong action title.
 
+## CRITICAL: Heading Placeholder Height
+
+The BCG template heading placeholder is only **37pt tall** (about 1 line at 24pt font). The engine will shrink the font to fit, but long headings still look cramped and may overlap with body content.
+
+**Rule of thumb: keep headings to 6-10 words (40-60 characters) on all layouts.** This ensures readable text at a good font size. Put the detail in the body, not the heading.
+
+Bad: "The EU mid-market SaaS opportunity has reached EUR 48B and is growing at 14% CAGR driven by digital transformation" (18 words, will shrink to tiny font)
+Good: "EU SaaS market reached EUR 48B at 14% CAGR" (9 words, fits in 1 line)
+
 ## Width Classes and Word Limits
 
 | Width Class | Points | Max Words in Heading | Layouts |
@@ -114,9 +123,9 @@ Do NOT include them in decks — they will produce visual artifacts.
 | Very narrow | 195pt | 3 words | `left_arrow`, `green_left_arrow` |
 | Narrow | 246-272pt | 5 words | `white_one_third`, `green_one_third`, `gray_slice_heading` |
 | Medium-narrow | 320-368pt | 8 words | `arrow_one_third`, `green_arrow_one_third`, `arrow_half`, `green_arrow_half`, `green_half` |
-| Medium | 493-541pt | 12 words | `green_highlight`, `arrow_two_third`, `green_arrow_two_third`, `green_two_third`, `title_slide` |
-| Wide | 758pt | 18 words | `section_header_box` |
-| Full | 861pt | 20+ words | `title_only`, `title_and_text`, `section_header_line`, `big_statement_green`, `big_statement_icon`, `special_gray` |
+| Medium | 493-541pt | 8 words | `green_highlight`, `arrow_two_third`, `green_arrow_two_third`, `green_two_third`, `title_slide` |
+| Wide | 758pt | 12 words | `section_header_box` |
+| Full | 861pt | 10 words | `title_only`, `title_and_text`, `section_header_line`, `big_statement_green`, `big_statement_icon`, `special_gray` |
 
 ## Content-Type-to-Layout Mapping
 

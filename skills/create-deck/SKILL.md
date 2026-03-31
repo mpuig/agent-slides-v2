@@ -280,7 +280,7 @@ Key rules:
 - **Source lines go FIRST in body content.** Place `Source: ...` as the FIRST text block in the body, before bullet points. The scoring system checks if a node's text starts with "Source:" — if bullets come first, the source line is not detected. Example: `[{"type":"paragraph","text":"Source: McKinsey, 2025"},{"type":"bullet","text":"Key finding 1"},...]`
 - **Plan source lines in Phase 1.** Mark which slides get source lines. Use layouts with body slots (native or virtual).
 - **BAN topic-label titles.** Every title must be an action statement. NEVER: "Market Overview". ALWAYS: "Market share fell 15% after competitor undercut pricing".
-- **Keep headings under ~50 characters** to avoid overflow in the heading placeholder.
+- **CRITICAL: Keep headings SHORT.** Template heading placeholders are only 37pt tall (~1 line at normal size). Headings over 50 characters WILL overflow and overlap with body text. Target 6-10 words (40-60 chars) for full-width layouts, fewer for narrow. Write the "so what" concisely: "Revenue grew 12% YoY to EUR 847M" not "The company achieved strong revenue growth of 12% year over year reaching a total of EUR 847M in Q1".
 - **Word count limits for body:** max 100 words full-width, aim for 40-60. Use 3-5 short bullets.
 
 ### Practical build sequence
