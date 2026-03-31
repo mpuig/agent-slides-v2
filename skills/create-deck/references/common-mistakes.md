@@ -33,10 +33,10 @@ No current validator rule. Manual QA only.
 Bad example: "The EU mid-market SaaS opportunity has reached EUR 48B and is growing at 14% CAGR driven by digital transformation across all segments" (21 words)
 
 **Why it's wrong**
-Template heading placeholders are only 37pt tall. Long headings force the engine to shrink the font to 14-16pt, making the heading hard to read and visually cramped. The heading may also overlap with body content below.
+Template heading placeholders are typically short (30-40pt tall). Long headings force the engine to shrink the font, making the heading hard to read. The heading may also overlap with body content below.
 
 **How to fix it**
-Keep headings to 6-10 words (40-60 characters). Put the detail in the body, not the heading. Write the conclusion, not the full explanation.
+Check `max_heading_words` from `inspect` output. Keep headings to 6-10 words. Put detail in the body, not the heading.
 Better example: "EU SaaS market reached EUR 48B at 14% CAGR" (9 words)
 
 **Which agent-slides validate rule catches it**
@@ -101,13 +101,13 @@ No current validator rule. Manual QA only. Related layout guidance exists in [do
 ### 6. Setting body on heading-only layouts
 
 **What it looks like**
-Bad example: using `slot set` to put body text on a layout like `big_statement_green` or `arrow_half` which only has a heading slot.
+Bad example: using `slot set --slot body` on a layout where `has_body` is false in the `inspect` output.
 
 **Why it's wrong**
-20 of 24 BCG template layouts have no body slot. Body content set on these layouts is silently dropped, resulting in incomplete slides that look unfinished.
+Many template layouts have no body slot. Body content set on these layouts is silently dropped, resulting in incomplete slides that look unfinished.
 
 **How to fix it**
-Check the layout catalog in `layout-selection.md` before setting slots. If you need both heading and body, use `title_and_text` (the only content layout with both). Otherwise, write the heading as a complete, self-contained action title.
+Run `uv run agent-slides inspect <manifest>` and check `has_body` for each layout before setting slots. If you need both heading and body, pick a layout from the `full_width_with_body` or `medium_with_body` categories. For heading-only layouts, write the heading as a complete, self-contained action title.
 
 **Which agent-slides validate rule catches it**
 `UNBOUND_NODES` may catch some cases, but the real fix is choosing the right layout upfront.
@@ -121,7 +121,7 @@ Bad example: a slide citing "$4.2B market opportunity" or "32% CAGR" with no sou
 Unsourced numbers destroy credibility in consulting decks. Every data claim needs provenance.
 
 **How to fix it**
-Add "Source: [publisher], [report/dataset], [year]" in the body slot (for `title_and_text`) or as a trailing line in the heading. For internal data, use "Source: Internal analysis" or "Source: Company data, [year]".
+Add "Source: [publisher], [report/dataset], [year]" in the body slot (on any layout where `has_body` is true) or as a trailing line in the heading. For internal data, use "Source: Internal analysis" or "Source: Company data, [year]".
 
 **Which agent-slides validate rule catches it**
 No current validator rule. Manual QA only.
@@ -129,16 +129,16 @@ No current validator rule. Manual QA only.
 ### 8. Long headings on narrow layouts
 
 **What it looks like**
-Bad example: "Digital transformation is reshaping the competitive landscape across all segments" on a `left_arrow` layout (195pt wide).
+Bad example: "Digital transformation is reshaping the competitive landscape across all segments" on a narrow layout with `max_heading_words: 3`.
 
 **Why it's wrong**
-Narrow layouts (195-272pt) can hold at most 3-5 words. Longer headings overflow, get shrunk to unreadable sizes, or break the visual design.
+Narrow layouts can hold at most 3-5 words. Longer headings overflow, get shrunk to unreadable sizes, or break the visual design.
 
 **How to fix it**
-Match word count to width class: 3 words for very narrow (195pt), 5 words for narrow (246-272pt), 8 words for medium-narrow (320-368pt). If the message needs more words, pick a wider layout.
+Check `max_heading_words` from the `inspect` output for each layout. Match word count to the limit. If the message needs more words, pick a wider layout.
 
 **Which agent-slides validate rule catches it**
-`OVERFLOW` may catch the worst cases after shrink-to-fit. Prevention is better: consult the width table in `layout-selection.md`.
+`OVERFLOW` may catch the worst cases after shrink-to-fit. Prevention is better: check `inspect` output before writing headings.
 
 ### 9. Evidence is unreadable even after shrink-to-fit
 

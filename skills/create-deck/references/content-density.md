@@ -114,33 +114,32 @@ Source line rules:
 
 ## 10. Virtual body slot usage
 
-Several BCG template layouts now accept body content via virtual body slots. Setting `--slot body` creates a free-floating text box below the heading. Use this on every layout that supports it.
+Many template layouts accept body content via virtual body slots even when they have no native body placeholder. Run `uv run agent-slides inspect <manifest>` to see which layouts have `has_body: true`.
 
-Layouts with virtual body: `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`.
+Body density should match the layout's capacity. Check the `body_density` and `body_max_bullets` fields from `inspect`:
 
-Layouts WITHOUT body (do not attempt `slot set --slot body`): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third`.
+- **dense** (body_max_bullets=6): 4-6 bullets, up to 100 words.
+- **medium** (body_max_bullets=4): 3-4 bullets, 40-60 words.
+- **light** (body_max_bullets=3): 2-3 short bullets, 20-40 words.
+- **minimal** (body_max_bullets=2): 1-2 very short bullets, 10-15 words.
 
-Body density by layout width:
-
-- **Full-width with body** (`title_and_text`, `title_only`, `special_gray`): 4-6 bullets, up to 100 words.
-- **Medium with body** (`green_highlight`, `arrow_two_third`, `green_arrow_two_third`): 2-3 short bullets, 30-50 words.
-- **Medium-narrow with body** (`arrow_half`, `green_arrow_half`): 2 short bullets, 20-30 words.
-- **Narrow with body** (`gray_slice_heading`): 1-2 very short bullets, 10-15 words.
-
-Rules for body on virtual-body layouts:
+Rules for body content:
 
 - The heading IS still the main message. Body provides supporting evidence, not a repeat.
-- On arrow layouts: add 1-2 directional next steps or supporting facts.
-- On `green_highlight`: add 2-3 bullets that explain why the highlight matters.
 - Source lines work on any layout with body. Place `Source:` as the first text block.
-- For heading-only layouts (no body), the heading must be a complete, self-contained action title.
+- For heading-only layouts (`has_body: false`), the heading must be a complete, self-contained action title.
+- Do not attempt `slot set --slot body` on layouts where `has_body` is false.
 
-## 11. Narrow layout word limits
+## 11. Heading word limits
 
-Arrow and one-third layouts have heading widths as narrow as 195-272pt. Long text will overflow or become unreadable.
+Template heading placeholders vary in width. Check the `max_heading_words` field from `inspect` for each layout. The `width_class` gives a quick reference:
 
-- Very narrow (195pt): `left_arrow`, `green_left_arrow` -- max 3 words
-- Narrow (246-272pt): `white_one_third`, `green_one_third`, `gray_slice_heading` -- max 5 words
-- Medium-narrow (320-368pt): arrow half variants, `green_half` -- max 8 words
+- **very_narrow**: max 3 words
+- **narrow**: max 5 words
+- **medium_narrow**: max 8 words
+- **medium**: max 10 words
+- **wide** / **full**: max 12 words
 
-If your message needs more words, choose a wider layout. Do not force long headings into narrow slots.
+Even on full-width layouts, keep headings concise (6-10 words). Template heading placeholders are often only 30-40pt tall, so long headings shrink to small fonts or overflow.
+
+If your message needs more words, choose a wider layout or move detail to the body.

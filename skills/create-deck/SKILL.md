@@ -274,14 +274,15 @@ Before building with a template, run `uv run agent-slides inspect <manifest>` an
 
 Key rules:
 
-- **Set body on every layout that supports it.** Layouts with body (native or virtual): `title_slide`, `title_and_text`, `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`, `disclaimer`, agenda layouts. Do NOT set body on other layouts.
-- **Scale body density to layout width.** Full-width: 4-6 bullets. Medium (493pt): 2-3 bullets. Medium-narrow (368pt): 2 short bullets. Narrow (272pt): 1-2 very short bullets.
-- **Short headings on narrow layouts (MAX 5 WORDS).** Arrow one-third, green one-third, white one-third, green highlight, left arrow, green left arrow. Examples: "3x cost reduction", "Phase 2: scale".
-- **Source lines go FIRST in body content.** Place `Source: ...` as the FIRST text block in the body, before bullet points. The scoring system checks if a node's text starts with "Source:" — if bullets come first, the source line is not detected. Example: `[{"type":"paragraph","text":"Source: McKinsey, 2025"},{"type":"bullet","text":"Key finding 1"},...]`
-- **Plan source lines in Phase 1.** Mark which slides get source lines. Use layouts with body slots (native or virtual).
+- **Run `inspect` first.** Run `uv run agent-slides inspect <manifest>` and use the per-layout `has_body`, `max_heading_words`, `body_max_bullets`, and `width_class` fields to guide every slot decision. Do not guess layout constraints.
+- **Set body on every layout where `has_body: true`.** Do NOT set body where `has_body` is false.
+- **Scale body density to `body_max_bullets`.** Dense (6): 4-6 bullets. Medium (4): 3-4 bullets. Light (3): 2-3 bullets. Minimal (2): 1-2 short bullets.
+- **Respect `max_heading_words` strictly.** Long headings on narrow layouts will overflow or shrink to unreadable sizes.
+- **Source lines go FIRST in body content.** Place `Source: ...` as the FIRST text block in the body, before bullet points. Example: `[{"type":"paragraph","text":"Source: McKinsey, 2025"},{"type":"bullet","text":"Key finding 1"},...]`
+- **Plan source lines in Phase 1.** Mark which slides get source lines. Use layouts where `has_body` is true.
 - **BAN topic-label titles.** Every title must be an action statement. NEVER: "Market Overview". ALWAYS: "Market share fell 15% after competitor undercut pricing".
-- **CRITICAL: Keep headings SHORT.** Template heading placeholders are only 37pt tall (~1 line at normal size). Headings over 50 characters WILL overflow and overlap with body text. Target 6-10 words (40-60 chars) for full-width layouts, fewer for narrow. Write the "so what" concisely: "Revenue grew 12% YoY to EUR 847M" not "The company achieved strong revenue growth of 12% year over year reaching a total of EUR 847M in Q1".
-- **Word count limits for body:** max 100 words full-width, aim for 40-60. Use 3-5 short bullets.
+- **CRITICAL: Keep headings SHORT (6-10 words).** Template heading placeholders are typically short. Headings over 50 characters will overflow. Write the conclusion concisely: "Revenue grew 12% YoY to EUR 847M" not "The company achieved strong revenue growth of 12% year over year reaching EUR 847M".
+- **Word count limits for body:** check `body_max_bullets` from inspect. Max 100 words for dense layouts, 40-60 for medium.
 
 ### Practical build sequence
 
@@ -297,22 +298,17 @@ Key rules:
 
 ### Layout guidance for template decks
 
-Refer to the slot table in `${CLAUDE_SKILL_DIR}/references/layout-selection.md` for every layout. All layouts now accept body content via virtual body slots.
+Run `uv run agent-slides inspect <manifest>` and use the `categories` field to pick layouts:
 
-- **title_slide** for the opener (heading + subheading + body + image)
-- **end** for the closer (no fillable slots)
-- **title_and_text** for dense body content (heading + native body, 4-6 bullets)
-- **title_only** for action titles with supporting evidence (heading + virtual body, 3-5 bullets)
-- **green_half** or **green_two_third** for image slides (heading + image, no body)
-- **big_statement_green** or **big_statement_icon** for bold emphasis (heading only, no body)
-- **section_header_box** or **section_header_line** for section breaks (heading only, no body)
-- **green_highlight** for highlighted insight (heading + virtual body, 2-3 bullets)
-- **arrow_half** / **green_arrow_half** for directional callouts (heading + virtual body, 2 bullets)
-- **arrow_two_third** / **green_arrow_two_third** for wider directional (heading + virtual body, 2-3 bullets)
-- **arrow_one_third** / **green_arrow_one_third** for narrow directional (heading only, no body)
-- **left_arrow** / **green_left_arrow** for 2-3 word labels (heading only, no body)
-- **agenda_*** for agenda slides (body only)
-- **disclaimer** for legal text (body only)
+- **Opener**: pick from layouts with a `subheading` slot (usually the first layout)
+- **Dense content**: pick from `full_width_with_body` category (largest body area)
+- **Key insight / highlight**: pick from `medium_with_body` category (emphasis + supporting points)
+- **Bold statement / section break**: pick from `heading_only` category (heading IS the message)
+- **Image slides**: pick from `image_layouts` category (heading + image)
+- **Short callout**: pick from `narrow_with_body` category (1-2 compact bullets)
+
+Use the per-layout `max_heading_words` and `body_max_bullets` to size content.
+Alternate between light-background and colored-background layouts for visual variety.
 
 ## Phase 3: QA Review
 

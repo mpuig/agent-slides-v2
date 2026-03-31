@@ -1,167 +1,140 @@
-# Layout Selection (BCG Template)
+# Layout Selection (Template-Agnostic)
 
-This reference is the authoritative catalog of usable BCG template layouts.
-Read it before Phase 1 (storyline) and Phase 2 (build) to pick layouts correctly.
+This reference teaches you how to pick layouts for any template.
+Read it before Phase 1 (storyline) and Phase 2 (build).
 
-## Key Facts
+## Step 1: Run inspect
 
-- 24 usable primary layouts (non-d\_ duplicates, non-agenda)
-- 12 layouts have a body slot (native or virtual). Use body on every content slide that supports it.
-- Heading widths vary from 195pt (very narrow) to 861pt (full width). Word count must match.
-- Native body: `title_slide`, `title_and_text`, `disclaimer`
-- Virtual body (free-floating text box below heading): `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third`
-- Virtual content (editable-region chart/table/image slot when available): use `content` on template layouts whose learned manifest exposes a large editable region. In the BCG template this primarily includes `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, and `green_arrow_two_third`.
-- No body (heading vertically centered or large placeholder): `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`
-- No body (image layouts): `green_half`, `green_two_third` (heading + image only)
-- Image slot: `title_slide`, `green_half`, `green_two_third`
+Before planning slides, run `uv run agent-slides inspect <manifest>` to get the full layout catalog with computed constraints. The output includes:
 
-## Charts and Tables on Template Layouts
+```json
+{
+  "data": {
+    "theme": { "fonts": {...}, "colors": {...} },
+    "categories": {
+      "full_width_with_body": ["layout_a", "layout_b"],
+      "medium_with_body": ["layout_c"],
+      "narrow_with_body": ["layout_d"],
+      "heading_only": ["layout_e"],
+      "image_layouts": ["layout_f"]
+    },
+    "layouts": [
+      {
+        "slug": "layout_a",
+        "slots": ["heading", "body"],
+        "heading_width_pt": 861.0,
+        "heading_height_pt": 37.0,
+        "width_class": "full",
+        "max_heading_words": 12,
+        "has_body": true,
+        "has_image": false,
+        "body_density": "dense",
+        "body_max_bullets": 6,
+        "heading_text_color": "#333333",
+        "bg_color": "#FFFFFF"
+      }
+    ]
+  }
+}
+```
 
-- When a learned template layout exposes a large editable region, target the virtual `content` slot for charts, tables, and large images instead of forcing them into `body`.
-- Use `chart add <deck> --slide <n> --slot content --type <chart-type> --data ...` for native PowerPoint charts on template slides.
-- Use `table add <deck> --slide <n> --slot content --data ...` for native PowerPoint tables on template slides.
-- Keep `body` for narrative bullets and use `content` for data-heavy visuals. If the slide needs axes, multiple series, or more than 3 numeric comparisons, prefer a chart over bullet text.
-- Prefer `green_highlight`, `title_only`, `special_gray`, `arrow_two_third`, and `green_arrow_two_third` for charts and tables because they usually have the largest editable regions. Use `gray_slice_heading`, `arrow_half`, and `green_arrow_half` only for compact visuals.
+## Step 2: Understand the categories
 
-## Complete Layout Catalog
+The `categories` field groups layouts by their content capacity:
 
-### Opening and Closing
+| Category | What it means | Use for |
+|----------|--------------|---------|
+| `full_width_with_body` | Wide heading + large body area | Dense content slides with 4-6 bullets |
+| `medium_with_body` | Medium heading + smaller body | Highlighted insights, 2-3 bullets |
+| `narrow_with_body` | Narrow heading + compact body | Short callouts, 1-2 bullets |
+| `heading_only` | Heading is the only content | Bold statements, section dividers |
+| `image_layouts` | Heading + image slot | Visual slides with photos/graphics |
 
-| Slug | Slots | Heading Width | Use For |
-|------|-------|--------------|---------|
-| `title_slide` | heading, subheading, body, image | 541pt | Deck opener. Set heading, subheading, and optionally body. |
-| `end` | (none) | -- | Closing slide. No editable slots; use as-is. |
+## Step 3: Use per-layout constraints
 
-### Full-Width Content (heading w=861pt)
+Each layout in the `layouts` array tells you exactly what you can do:
 
-| Slug | Slots | Use For |
-|------|-------|---------|
-| `title_and_text` | heading, body (native) | Primary content slide with native body placeholder. Best for dense body text (4-6 bullets). |
-| `title_only` | heading, body (virtual) | Action title + supporting bullets via virtual body (3-5 bullets). |
-| `section_header_line` | heading | Section divider with a line accent. Heading-only -- no body. |
-| `big_statement_green` | heading | Bold statement on green background. Heading IS the message -- no body. |
-| `big_statement_icon` | heading | Bold statement with icon accent. Heading IS the message -- no body. |
-| `special_gray` | heading, body (virtual) | Statement on gray background. Add 2-3 supporting points in virtual body. |
+### Heading word limits
 
-### Medium-Width Layouts (heading w=320-541pt)
+The `max_heading_words` field is computed from `heading_width_pt`. **Respect it strictly** -- long headings on narrow placeholders will overflow or shrink to unreadable sizes.
 
-| Slug | Slots | Heading Width | Use For |
-|------|-------|--------------|---------|
-| `section_header_box` | heading | 758pt | Section divider with box accent. Heading-only -- no body. |
-| `green_highlight` | heading, body (virtual) | 493pt | Highlighted takeaway on green band. Add 2-3 short bullets in body. |
-| `green_two_third` | heading, image | 492pt | Heading plus image, two-thirds text. No body. |
-| `arrow_two_third` | heading, body (virtual) | 493pt | Directional takeaway, wide arrow. Add 2-3 bullets in body. |
-| `green_arrow_two_third` | heading, body (virtual) | 493pt | Green directional takeaway. Add 2-3 bullets in body. |
-| `arrow_half` | heading, body (virtual) | 368pt | Directional takeaway, half-width. Add 2 short bullets in body. |
-| `green_arrow_half` | heading, body (virtual) | 368pt | Green directional half-width. Add 2 short bullets in body. |
-| `green_half` | heading, image | 346pt | Half-and-half image split. No body. |
-| `arrow_one_third` | heading | 320pt | Narrow directional takeaway. Heading-only -- no body. |
-| `green_arrow_one_third` | heading | 320pt | Narrow green directional. Heading-only -- no body. |
+| width_class | max_heading_words | Heading style |
+|-------------|-------------------|---------------|
+| `very_narrow` | 3 | Label: "IoT First" |
+| `narrow` | 5 | Short phrase: "Data drives growth" |
+| `medium_narrow` | 8 | Brief statement: "Move fast on IoT deployment" |
+| `medium` | 10 | Action title: "Revenue grew 12% YoY to EUR 847M" |
+| `wide` / `full` | 12 | Full action title with conclusion |
 
-### Narrow Layouts (heading w=195-272pt)
+**CRITICAL**: Template heading placeholders are often short (30-40pt tall). Even on full-width layouts, keep headings concise -- 6-10 words is the sweet spot. Put detail in the body, not the heading.
 
-| Slug | Slots | Heading Width | Use For |
-|------|-------|--------------|---------|
-| `gray_slice_heading` | heading, body (virtual) | 272pt | Narrow slice heading. Max ~5 words. Add 1-2 very short bullets in body. |
-| `white_one_third` | heading | 246pt | Narrow white panel. Max ~5 words. Heading-only -- no body. |
-| `green_one_third` | heading | 246pt | Narrow green panel. Max ~5 words. Heading-only -- no body. |
-| `left_arrow` | heading | 195pt | Very narrow arrow callout. Max ~3 words. Heading-only -- no body. |
-| `green_left_arrow` | heading | 195pt | Very narrow green arrow. Max ~3 words. Heading-only -- no body. |
+### Body density
 
-### Agenda Layouts
+The `body_density` and `body_max_bullets` fields tell you how much content fits:
 
-These layouts have baked-in template titles (e.g., "Agenda", "Strategy").
-Fill the `body` slot ONLY with actual agenda items (numbered topic list
-with page references), not titles or descriptions. If the deck has no
-real agenda, skip these layouts entirely.
+| body_density | body_max_bullets | Content guidance |
+|-------------|-----------------|------------------|
+| `dense` | 6 | Full body: 4-6 bullets, up to 100 words |
+| `medium` | 4 | Moderate: 3-4 bullets, 40-60 words |
+| `light` | 3 | Brief: 2-3 short bullets, 20-40 words |
+| `minimal` | 2 | Compact: 1-2 very short bullets |
 
-| Slug | Slots | Use For |
-|------|-------|---------|
-| `agenda_full_width_overview` | body | Full-width agenda with items |
-| `agenda_section_header_overview` | body | Section-specific agenda |
-| `agenda_two_thirds` | body | Two-thirds width agenda |
+### Background colors
 
-### Do Not Use (excluded)
+The `bg_color` and `heading_text_color` fields tell you the slide's visual character:
+- Light background (white/gray) with dark text: standard content
+- Dark/colored background with white text: emphasis, statements, section breaks
 
-These layouts have baked-in template content or serve no content purpose.
-Do NOT include them in decks — they will produce visual artifacts.
+Use colored-background layouts for key messages, transitions, and bold statements.
+Use light-background layouts for detailed content, data, and analysis.
 
-| Slug | Reason |
-|------|--------|
-| `disclaimer` | Template has full legal text baked in; adding body overlaps |
-| `layout_guide` | Reference/guide layout, not for presentations |
-| `blank` | No fillable slots |
-| `blank_green` | No fillable content area |
-| `end` | Pre-designed closing graphic; use as-is with no content |
+## Slot rules
 
-## Quick Slot Lookup
+### Body slot
 
-| Slot | Available On |
-|------|-------------|
-| heading | All layouts except `blank`, `end`, `disclaimer`, `layout_guide` |
-| subheading | `title_slide` only |
-| body (native) | `title_slide`, `title_and_text`, `disclaimer`, `layout_guide` |
-| body (virtual) | `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
-| content (virtual chart/table/image) | Template layouts with large editable regions, especially `title_only`, `special_gray`, `green_highlight`, `gray_slice_heading`, `arrow_half`, `green_arrow_half`, `arrow_two_third`, `green_arrow_two_third` |
-| image | `title_slide`, `green_half`, `green_two_third` |
+- **Set body on every layout that has `has_body: true`.** Empty body slots waste space.
+- Body content should support the heading, not repeat it.
+- Source lines go FIRST in body: `Source: [attribution]` as the first text block.
 
-**Use body on every layout that supports it.** For heading-only layouts (no body), the heading IS the entire message -- make it a strong action title.
+### Image slot
 
-## CRITICAL: Heading Placeholder Height
+- Layouts with `has_image: true` expect a real image file.
+- Use relative paths from the deck directory.
+- If no image is available, use a different layout.
 
-The BCG template heading placeholder is only **37pt tall** (about 1 line at 24pt font). The engine will shrink the font to fit, but long headings still look cramped and may overlap with body content.
+### Heading-only layouts
 
-**Rule of thumb: keep headings to 6-10 words (40-60 characters) on all layouts.** This ensures readable text at a good font size. Put the detail in the body, not the heading.
+- When `has_body: false`, the heading IS the entire message.
+- Make it a complete, strong action statement.
+- These layouts are for section breaks, bold statements, and emphasis.
 
-Bad: "The EU mid-market SaaS opportunity has reached EUR 48B and is growing at 14% CAGR driven by digital transformation" (18 words, will shrink to tiny font)
-Good: "EU SaaS market reached EUR 48B at 14% CAGR" (9 words, fits in 1 line)
+## Content-type-to-category mapping
 
-## Width Classes and Word Limits
+| Content type | Best category | Why |
+|-------------|---------------|-----|
+| Deck title | First layout with subheading slot | Opener with title + subtitle |
+| Dense narrative | `full_width_with_body` | Maximum body area for bullets |
+| Key insight | `medium_with_body` | Highlighted takeaway + supporting points |
+| Bold statement | `heading_only` (colored bg) | Heading IS the message |
+| Section divider | `heading_only` | Structural break |
+| Data with source | `full_width_with_body` | Room for data + source line |
+| Image + explanation | `image_layouts` | Heading + image |
+| Directional callout | `medium_with_body` or `narrow_with_body` | Arrow/directional layouts |
+| Closing / CTA | `heading_only` (colored bg) | Compelling final statement |
 
-| Width Class | Points | Max Words in Heading | Layouts |
-|-------------|--------|---------------------|---------|
-| Very narrow | 195pt | 3 words | `left_arrow`, `green_left_arrow` |
-| Narrow | 246-272pt | 5 words | `white_one_third`, `green_one_third`, `gray_slice_heading` |
-| Medium-narrow | 320-368pt | 8 words | `arrow_one_third`, `green_arrow_one_third`, `arrow_half`, `green_arrow_half`, `green_half` |
-| Medium | 493-541pt | 8 words | `green_highlight`, `arrow_two_third`, `green_arrow_two_third`, `green_two_third`, `title_slide` |
-| Wide | 758pt | 12 words | `section_header_box` |
-| Full | 861pt | 10 words | `title_only`, `title_and_text`, `section_header_line`, `big_statement_green`, `big_statement_icon`, `special_gray` |
+## Anti-patterns
 
-## Content-Type-to-Layout Mapping
+- **Long headings on narrow layouts.** Check `max_heading_words` and stay within it.
+- **Skipping body on layouts that support it.** If `has_body: true`, fill the body.
+- **Setting body on heading-only layouts.** If `has_body: false`, do not attempt `slot set --slot body`.
+- **Repeating the same layout 3+ times consecutively.** Alternate between categories.
+- **Using heading-only layouts for data slides.** Data needs body for bullets and source lines.
+- **Ignoring background color variants.** Mix light and colored backgrounds for visual rhythm.
 
-| Content Type | Best Layout | Why |
-|-------------|-------------|-----|
-| Deck title with subtitle | `title_slide` | Has heading + subheading + body + image slots |
-| Single narrative with body text | `title_and_text` | Native body placeholder, best for dense text (4-6 bullets) |
-| Action title + supporting evidence | `title_only` | Full-width heading + virtual body for 3-5 bullets |
-| Bold key takeaway | `big_statement_green` or `big_statement_icon` | Full-width, high-contrast emphasis. Heading IS the message (no body). |
-| Section divider | `section_header_box` or `section_header_line` | Structural break. Heading-only. |
-| Data slide with source | `title_and_text` or `title_only` | Heading states insight; body has source line + bullets |
-| Data-heavy chart or table | `green_highlight`, `title_only`, `special_gray`, `arrow_two_third` | Use the virtual `content` slot so the editable region controls chart/table placement |
-| Highlighted insight | `green_highlight` | Green band emphasis + virtual body for 2-3 supporting bullets |
-| Image with explanation | `green_half` or `green_two_third` | Heading + image (no body). Make heading the full message. |
-| Directional callout / arrow | `arrow_half` or `green_arrow_half` | Arrow implies momentum + virtual body for 2 supporting points |
-| Short label or tag | `left_arrow` or `green_left_arrow` | Very narrow, 2-3 word heading only. No body. |
-| Agenda overview | `agenda_full_width_overview` | Body slot for numbered topic list |
-| Closing | `big_statement_green` | Call-to-action heading (no body). Make heading compelling. |
+## Layout variety rule
 
-## Anti-Patterns
-
-- **Long headings on narrow layouts.** A 15-word heading on `left_arrow` (195pt) will overflow or become unreadable.
-- **Skipping body on layouts that support it.** If a layout has body (native or virtual), fill it with supporting content.
-- **Putting charts or tables in `body` when `content` exists.** On template layouts with editable regions, use `content` for charts/tables so they take the full safe zone instead of text-box geometry.
-- **Setting body on layouts without it.** `big_statement_green`, `big_statement_icon`, `section_header_box`, `section_header_line`, `left_arrow`, `green_left_arrow`, `white_one_third`, `green_one_third`, `arrow_one_third`, `green_arrow_one_third`, `green_half`, `green_two_third` do NOT have body. Do not attempt `slot set --slot body` on these.
-- **Overloading narrow layout bodies.** `gray_slice_heading` body should have at most 1-2 very short bullets.
-- **Using `title_and_text` for everything.** With virtual body slots on 8+ layouts, mix layout types for variety.
-- **Repeating the same layout 3+ times consecutively.** Breaks visual rhythm. Alternate between layout categories.
-- **Ignoring the green/white variants.** Green variants add visual weight and color. Alternate them to create contrast.
-- **Using arrow layouts for non-directional content.** Arrow shapes imply momentum, transition, or direction. Do not use them for static facts.
-- **Adding content to disclaimer/layout_guide/blank layouts.** These have baked-in template content or no content areas. Adding text creates visual artifacts.
-- **Adding titles to agenda layouts.** Agenda layouts have their own template titles. Fill body with agenda items only, not headings.
-
-## Layout Variety Rule
-
-In any deck longer than 6 slides, use at least 3 different layouts.
-Never repeat the same layout for 3 or more consecutive content slides.
-Alternate between full-width, medium, and narrow layouts to create visual rhythm.
-Mix green and white variants to maintain color contrast.
+In any deck longer than 6 slides:
+- Use at least 3 different layouts.
+- Never repeat the same layout for 3+ consecutive content slides.
+- Alternate between categories to create visual rhythm.
+- Mix light-background and colored-background layouts for contrast.
