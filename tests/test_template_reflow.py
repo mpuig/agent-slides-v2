@@ -574,16 +574,17 @@ def test_reflow_deck_uses_virtual_body_slot_bounds_for_heading_only_templates(
     assert set(computed) == {"n-1", "n-2"}
 
     body = computed["n-2"]
-    # Virtual body top is clamped to heading_bottom + gutter (64+72+18=154)
-    assert (body.x, body.y, body.width, body.height) == (0.0, 154.0, 420.0, 386.0)
+    # Visual-inference editable region at (540,170,420,320) preferred over
+    # editable_below. Top clamped to heading_bottom+heading_height (64+72+72=208).
+    assert (body.x, body.y, body.width, body.height) == (540.0, 208.0, 420.0, 282.0)
     assert body.font_size_pt == 14.0
     assert body.font_family == "Aptos"
-    assert body.color == "#333333"
-    assert body.bg_color == "#FFFFFF"
+    assert body.color == "#FFFFFF"
+    assert body.bg_color == "#00A651"
     assert body.text_overflow is False
 
     body_call = fit_calls[1]
-    assert body_call[:6] == (420.0, 386.0, 18.0, 10.0, "body", "Aptos")
+    assert body_call[:6] == (420.0, 282.0, 18.0, 10.0, "body", "Aptos")
 
 
 def test_reflow_deck_places_template_chart_nodes_in_virtual_content_slot(

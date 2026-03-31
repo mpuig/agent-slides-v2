@@ -559,11 +559,13 @@ def test_template_layout_registry_synthesizes_virtual_body_slot_for_heading_only
     assert registry.get_slot_names("green_highlight") == ["heading", "body"]
     assert "body" not in manifest["layouts"][0]["slot_mapping"]
     assert layout.slots["body"].role == "body"
-    assert layout.slots["body"].x == 0.0
-    # Virtual body top is clamped to heading_bottom + gutter (64+72+18=154)
-    assert layout.slots["body"].y == 154.0
+    # Visual-inference editable region at (540, 170, 420, 320) is preferred
+    # over editable_below. Left stays at 540 (above min margin). Top is
+    # clamped to heading_bottom + heading_height = 64+72+72 = 208.
+    assert layout.slots["body"].x == 540.0
+    assert layout.slots["body"].y == 208.0
     assert layout.slots["body"].width == 420.0
-    assert layout.slots["body"].height == pytest.approx(540.0 - 154.0)
+    assert layout.slots["body"].height == pytest.approx(490.0 - 208.0)
     # Content slot is suppressed when virtual body exists to avoid overlap
     assert "content" not in layout.slots
 
@@ -621,9 +623,11 @@ def test_template_layout_registry_uses_editable_regions_when_zone_lacks_editable
     layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("green_highlight")
 
     assert layout.slots["body"].x == 320.0
-    assert layout.slots["body"].y == 180.0
+    # Top clamped to heading_bottom + heading_height = 64+72+72 = 208
+    assert layout.slots["body"].y == 208.0
     assert layout.slots["body"].width == 280.0
-    assert layout.slots["body"].height == 240.0
+    # Height reduced: original bottom (180+240=420) - clamped top (208) = 212
+    assert layout.slots["body"].height == pytest.approx(420.0 - 208.0)
 
 
 def test_template_layout_registry_falls_back_to_offset_formula_without_manifest_regions(
@@ -647,9 +651,10 @@ def test_template_layout_registry_uses_editable_region_and_zone_colors_for_virtu
     layout = TemplateLayoutRegistry(str(manifest_path)).get_layout("green_highlight")
 
     assert layout.slots["body"].x == 390.0
-    assert layout.slots["body"].y == 170.0
+    # Top clamped to heading_bottom + heading_height = 64+72+72 = 208
+    assert layout.slots["body"].y == 208.0
     assert layout.slots["body"].width == 270.0
-    assert layout.slots["body"].height == 240.0
+    assert layout.slots["body"].height == pytest.approx(410.0 - 208.0)
     assert layout.slots["body"].bg_color == "#00A651"
     assert layout.slots["body"].text_color == "#FFFFFF"
 

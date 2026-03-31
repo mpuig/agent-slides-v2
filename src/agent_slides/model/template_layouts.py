@@ -609,11 +609,21 @@ def _build_virtual_body_slot(
         top = float(manifest_bounds["y"])
         right = left + float(manifest_bounds["width"])
         bottom = top + float(manifest_bounds["height"])
-        # Ensure a gutter between the heading bottom and the body top so
-        # the two never visually overlap.
+        # Apply minimum left margin matching the heading indentation so the
+        # body text doesn't start at x=0 when the heading is indented.
+        margin = float(theme.spacing.margin)
+        min_left = min(float(heading_x), margin)
+        if left < min_left:
+            left = min_left
+            right = max(right, left)
+        # Ensure a generous gap between the heading bottom and the body top.
+        # The heading placeholder is often small (37pt) but text wraps
+        # visually beyond it. Use heading_height * 2 as minimum clearance
+        # to account for 2-line heading wrap.
         heading_bottom = float(heading_y) + float(heading_height)
+        heading_h = float(heading_height)
         gutter = float(theme.spacing.gutter)
-        min_top = heading_bottom + gutter
+        min_top = heading_bottom + max(heading_h, gutter)
         if top < min_top:
             top = min_top
             if top >= bottom:
@@ -657,15 +667,19 @@ def _select_virtual_body_bounds_from_manifest(
     color_zones: tuple[_ColorZone, ...],
     editable_regions: tuple[_EditableRegion, ...],
 ) -> dict[str, float] | None:
-    zone_bounds = _select_color_zone_editable_below(
-        heading_midpoint_x=heading_midpoint_x,
-        color_zones=color_zones,
-    )
-    if zone_bounds is not None:
-        return zone_bounds
-    return _select_editable_region_below_heading(
+    # Prefer visual-inference editable regions — they account for decorative
+    # shapes and panel boundaries, producing tighter bounds than the crude
+    # editable_below from color zones (which is just full-zone-width below
+    # the heading).
+    region_bounds = _select_editable_region_below_heading(
         heading_midpoint_y=heading_midpoint_y,
         editable_regions=editable_regions,
+    )
+    if region_bounds is not None:
+        return region_bounds
+    return _select_color_zone_editable_below(
+        heading_midpoint_x=heading_midpoint_x,
+        color_zones=color_zones,
     )
 
 
@@ -748,6 +762,23 @@ def _build_virtual_content_slot(
     if "heading" not in slot_mapping:
         return None
 
+    # Collect bounds of existing body-like slots to avoid overlapping content
+    body_bounds: list[tuple[float, float, float, float]] = []
+    for slot_name, raw_slot in slot_mapping.items():
+        if slot_name == "heading":
+            continue
+        resolved = _coerce_slot_mapping(
+            slot_name, raw_slot, placeholders_by_idx=placeholders_by_idx
+        )
+        if _infer_role(slot_name, resolved) != "body":
+            continue
+        raw_b = _as_dict(resolved.get("bounds", resolved), context=f"slot {slot_name}")
+        bx = _optional_number(raw_b, "x", "left") or 0
+        by = _optional_number(raw_b, "y", "top") or 0
+        bw = _optional_number(raw_b, "width", "w") or 0
+        bh = _optional_number(raw_b, "height", "h") or 0
+        body_bounds.append((float(bx), float(by), float(bw), float(bh)))
+
     best_region: _EditableRegion | None = None
     best_area = -1.0
     for region in _virtual_content_region_candidates(
@@ -756,6 +787,19 @@ def _build_virtual_content_slot(
     ):
         area = region.width * region.height
         if area < _MIN_VIRTUAL_CONTENT_REGION_AREA_PT2 or area <= best_area:
+            continue
+        # Skip regions that overlap with existing body slots
+        overlaps = False
+        for bx, by, bw, bh in body_bounds:
+            if (
+                region.left < bx + bw
+                and region.left + region.width > bx
+                and region.top < by + bh
+                and region.top + region.height > by
+            ):
+                overlaps = True
+                break
+        if overlaps:
             continue
         best_region = region
         best_area = area
