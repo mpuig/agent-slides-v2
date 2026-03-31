@@ -105,12 +105,17 @@ def _brief_compliance_for_slides(
 ) -> dict:
     layouts_used = {slide.get("layout", "unknown") for slide in slides}
 
+    def _layout_matches(required_slug: str, used: set[str]) -> bool:
+        if required_slug in used:
+            return True
+        return any(layout.startswith(required_slug + "_") for layout in used)
+
     required_layouts = brief.get("required_layouts", [])
     required_layouts_present = [
-        slug for slug in required_layouts if slug in layouts_used
+        slug for slug in required_layouts if _layout_matches(slug, layouts_used)
     ]
     required_layouts_missing = [
-        slug for slug in required_layouts if slug not in layouts_used
+        slug for slug in required_layouts if not _layout_matches(slug, layouts_used)
     ]
 
     slides_by_layout: dict[str, list[dict]] = {}
